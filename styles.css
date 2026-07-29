@@ -860,19 +860,19 @@
 .bible-focus-mode-btn:hover {
     opacity: 0.9;
 }
-/* 搜索页面专注模式 */
-.bible-search-fixed-top.focus-mode .bible-section,
-.bible-search-fixed-top.focus-mode .bible-input-row,
-.bible-search-fixed-top.focus-mode .bible-search-hint {
-    display: none !important;
+/* 搜索页面专注模式 - 使用更高特异性选择器替代 !important */
+.bible-search-container .bible-search-fixed-top.focus-mode .bible-section,
+.bible-search-container .bible-search-fixed-top.focus-mode .bible-input-row,
+.bible-search-container .bible-search-fixed-top.focus-mode .bible-search-hint {
+    display: none;
 }
-/* 阅读页面专注模式 */
-.bible-reader-fixed-top.focus-mode .bible-reader-nav-row,
-.bible-reader-fixed-top.focus-mode .bible-reader-jump-row,
-.bible-reader-fixed-top.focus-mode .bible-reader-font-row,
-.bible-reader-fixed-top.focus-mode .bible-reader-content-nav,
-.bible-reader-fixed-top.focus-mode .bible-reader-book-theme {
-    display: none !important;
+/* 阅读页面专注模式 - 使用更高特异性选择器替代 !important */
+.bible-search-container .bible-reader-fixed-top.focus-mode .bible-reader-nav-row,
+.bible-search-container .bible-reader-fixed-top.focus-mode .bible-reader-jump-row,
+.bible-search-container .bible-reader-fixed-top.focus-mode .bible-reader-font-row,
+.bible-search-container .bible-reader-fixed-top.focus-mode .bible-reader-content-nav,
+.bible-search-container .bible-reader-fixed-top.focus-mode .bible-reader-book-theme {
+    display: none;
 }
 
 /* ===== 纲目引用块样式 ===== */
