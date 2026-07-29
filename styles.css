@@ -645,6 +645,52 @@
     .bible-proj-toolbar-center {
         display: none;
     }
+    .bible-search-fixed-top {
+        max-height: 40vh;
+    }
+    .bible-reader-fixed-top {
+        max-height: 45vh;
+    }
+    .bible-search-container {
+        padding: 6px;
+        font-size: 12px;
+    }
+    .bible-section {
+        margin-bottom: 6px;
+    }
+    .bible-section-body {
+        padding: 0 8px 8px 8px;
+    }
+    .bible-action-grid {
+        gap: 4px;
+        padding: 0 8px 8px 8px;
+    }
+    .bible-action-btn {
+        padding: 5px 4px;
+        font-size: 11px;
+    }
+    .bible-input-row {
+        gap: 4px;
+    }
+    .bible-search-input {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+    .bible-book-grid {
+        grid-template-columns: repeat(6, 1fr);
+    }
+    .bible-book-grid-btn {
+        font-size: 10px;
+        padding: 4px 1px;
+        min-height: 24px;
+    }
+    .bible-reader-nav-btn {
+        padding: 3px 6px;
+        font-size: 10px;
+    }
+    .bible-reader-content-nav {
+        gap: 4px;
+    }
 }
 
 
@@ -842,4 +888,57 @@
 .bible-page-jump-label {
     font-size: 11px;
     color: var(--text-muted);
+}
+
+/* ===== 书卷选择器 ===== */
+.bible-book-select-count {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--bible-accent);
+    margin-bottom: 6px;
+    padding: 4px 0;
+}
+.bible-book-select-actions {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.bible-book-group {
+    margin-bottom: 8px;
+}
+.bible-book-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.bible-book-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+.bible-book-grid-btn {
+    padding: 5px 2px;
+    border: 1px solid var(--bible-card-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 11px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-height: 28px;
+    line-height: 1.2;
+}
+.bible-book-grid-btn:hover {
+    border-color: var(--bible-accent);
+    background: var(--background-modifier-hover);
+}
+.bible-book-grid-btn.active {
+    background: var(--bible-accent);
+    color: var(--text-on-accent);
+    border-color: var(--bible-accent);
+    font-weight: 600;
 }

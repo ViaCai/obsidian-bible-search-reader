@@ -761,6 +761,7 @@ class BibleSearchView extends ItemView {
         this.currentChapterVerses = [];
         this.readerResults = [];
         this.readerSelectCounter = 0;
+        this.selectedBookIds = new Set();
     }
     getViewType() { return BIBLE_SEARCH_VIEW_TYPE; }
     getDisplayText() { return '圣经检索'; }
@@ -807,8 +808,7 @@ class BibleSearchView extends ItemView {
         this.rangeRadios = {};
         const rangeOptions = [
             { value: 'all', label: '全部圣经' },
-            { value: 'single', label: '单卷书' },
-            { value: 'multi', label: '书卷范围' }
+            { value: 'multi', label: '选择范围' }
         ];
         for (const opt of rangeOptions) {
             const label = rangeBody.createEl('label', { cls: 'bible-radio-label' });
@@ -820,17 +820,40 @@ class BibleSearchView extends ItemView {
 
         this.bookSelectWrapper = rangeBody.createDiv({ cls: 'bible-book-select-wrapper' });
         this.bookSelectWrapper.style.display = 'none';
-        this.bookSelectWrapper.createEl('label', { text: '选择书卷：', cls: 'bible-small-label' });
-        this.bookSelect = this.bookSelectWrapper.createEl('select', { attr: { multiple: 'true', size: '6' } });
-        this.bookSelect.style.width = '100%';
-        for (const book of BIBLE_BOOKS) {
-            this.bookSelect.createEl('option', { value: String(book.id), text: book.id + '. ' + book.fullName });
+        this.bookSelectCount = this.bookSelectWrapper.createEl('div', { cls: 'bible-book-select-count', text: '已选 0 卷' });
+        const bookSelectActions = this.bookSelectWrapper.createDiv({ cls: 'bible-book-select-actions' });
+        const selectAllBooksBtn = bookSelectActions.createEl('button', { cls: 'bible-small-btn', text: '全选' });
+        const clearBooksBtn = bookSelectActions.createEl('button', { cls: 'bible-small-btn', text: '清空' });
+
+        const oldGroup = this.bookSelectWrapper.createDiv({ cls: 'bible-book-group' });
+        oldGroup.createEl('div', { cls: 'bible-book-group-title', text: '旧约' });
+        const oldGrid = oldGroup.createDiv({ cls: 'bible-book-grid' });
+        for (const book of BIBLE_BOOKS.filter(b => b.testament === 'old')) {
+            const btn = oldGrid.createEl('button', { cls: 'bible-book-grid-btn', text: book.shortName, attr: { 'data-book-id': String(book.id) } });
+            btn.addEventListener('click', () => this.toggleBookSelection(btn));
         }
+
+        const newGroup = this.bookSelectWrapper.createDiv({ cls: 'bible-book-group' });
+        newGroup.createEl('div', { cls: 'bible-book-group-title', text: '新约' });
+        const newGrid = newGroup.createDiv({ cls: 'bible-book-grid' });
+        for (const book of BIBLE_BOOKS.filter(b => b.testament === 'new')) {
+            const btn = newGrid.createEl('button', { cls: 'bible-book-grid-btn', text: book.shortName, attr: { 'data-book-id': String(book.id) } });
+            btn.addEventListener('click', () => this.toggleBookSelection(btn));
+        }
+
+        selectAllBooksBtn.addEventListener('click', () => {
+            for (const book of BIBLE_BOOKS) { this.selectedBookIds.add(book.id); }
+            this.updateBookSelectUI();
+        });
+        clearBooksBtn.addEventListener('click', () => {
+            this.selectedBookIds.clear();
+            this.updateBookSelectUI();
+        });
 
         for (const key in this.rangeRadios) {
             this.rangeRadios[key].addEventListener('change', () => {
                 const val = this.getRangeValue();
-                this.bookSelectWrapper.style.display = (val === 'single' || val === 'multi') ? 'block' : 'none';
+                this.bookSelectWrapper.style.display = (val === 'multi') ? 'block' : 'none';
             });
         }
 
@@ -915,6 +938,33 @@ class BibleSearchView extends ItemView {
         return 'all';
     }
 
+    toggleBookSelection(btn) {
+        const id = parseInt(btn.dataset.bookId);
+        if (this.selectedBookIds.has(id)) {
+            this.selectedBookIds.delete(id);
+            btn.classList.remove('active');
+        } else {
+            this.selectedBookIds.add(id);
+            btn.classList.add('active');
+        }
+        this.updateBookSelectCount();
+    }
+
+    updateBookSelectUI() {
+        const buttons = this.bookSelectWrapper.querySelectorAll('.bible-book-grid-btn');
+        for (const btn of buttons) {
+            const id = parseInt(btn.dataset.bookId);
+            if (this.selectedBookIds.has(id)) btn.classList.add('active');
+            else btn.classList.remove('active');
+        }
+        this.updateBookSelectCount();
+    }
+
+    updateBookSelectCount() {
+        const count = this.selectedBookIds.size;
+        if (this.bookSelectCount) this.bookSelectCount.setText('已选 ' + count + ' 卷');
+    }
+
     async performSearch() {
         const query = this.searchInput.value.trim();
         if (!query) { new Notice('请输入检索内容'); return; }
@@ -929,8 +979,8 @@ class BibleSearchView extends ItemView {
 
         const rangeValue = this.getRangeValue();
         let bookIds = [];
-        if (rangeValue === 'single' || rangeValue === 'multi') {
-            bookIds = Array.from(this.bookSelect.selectedOptions).map(o => parseInt(o.value));
+        if (rangeValue === 'multi') {
+            bookIds = Array.from(this.selectedBookIds);
             if (bookIds.length === 0) { new Notice('请选择书卷'); return; }
         }
 
@@ -1189,7 +1239,7 @@ class BibleSearchView extends ItemView {
             else if (item.type === 'outline') lines.push('> ' + item.content);
             else lines.push(item.bookShortName + item.chapter + ':' + item.verse + ' ' + item.content);
         }
-        navigator.clipboard.writeText(lines.join('\\n\\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条内容'); }).catch(() => new Notice('复制失败'));
+        navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条内容'); }).catch(() => new Notice('复制失败'));
     }
 
     copyAll() { this.copySelected(this.results); }
@@ -1248,6 +1298,14 @@ class BibleSearchView extends ItemView {
     async renderChapterContent() {
         this.readerContent.empty();
         this.readerFixedTop.empty();
+        // 同步 readerSelectCounter，确保当前章的选中数字从1开始显示
+        this.readerSelectCounter = 0;
+        for (const r of this.readerResults) {
+            if (r.selected) {
+                this.readerSelectCounter++;
+                r.order = this.readerSelectCounter;
+            }
+        }
         const book = this.readerBook;
         const chapter = this.readerChapter;
         if (!book) { this.readerState = 'books'; this.renderReader(); return; }
@@ -1310,8 +1368,9 @@ class BibleSearchView extends ItemView {
         const copyVersesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📋 复制经文' });
         const copyOutlinesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📋 复制纲目' });
         const copySelectedBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📋 复制选中项' });
-        const focusProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📄 聚焦投影' });
+        const focusProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📄 逐节投影' });
         const parallelProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📑 并列投影' });
+        const mixedProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '🔀 混合投影' });
 
         prevChBtn.disabled = chapter <= 1;
         nextChBtn.disabled = chapter >= book.maxChapters;
@@ -1394,7 +1453,7 @@ class BibleSearchView extends ItemView {
             const verses = items.filter(i => i.type === 'verse');
             if (verses.length === 0) { new Notice('本章没有经文内容'); return; }
             const lines = verses.map(v => v.bookShortName + v.chapter + ':' + v.verse + ' ' + v.content);
-            navigator.clipboard.writeText(lines.join('\\n\\n')).then(() => { new Notice('已复制 ' + verses.length + ' 节经文'); });
+            navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + verses.length + ' 节经文'); });
         });
 
         // 复制纲目（此页全部纲目，无论是否选中）
@@ -1402,7 +1461,7 @@ class BibleSearchView extends ItemView {
             const outlines = items.filter(i => i.type === 'outline');
             if (outlines.length === 0) { new Notice('本章没有纲目内容'); return; }
             const lines = outlines.map(o => '> ' + o.content);
-            navigator.clipboard.writeText(lines.join('\\n\\n')).then(() => { new Notice('已复制 ' + outlines.length + ' 条纲目'); });
+            navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + outlines.length + ' 条纲目'); });
         });
 
         // 复制选中项（只复制选中的主题+纲目+经文）
@@ -1410,7 +1469,7 @@ class BibleSearchView extends ItemView {
             const allItems = [...themeItems, ...items];
             const selected = [];
             for (const item of allItems) {
-                const r = this.results.find(r =>
+                const r = this.readerResults.find(r =>
                     r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
                 );
                 if (r) selected.push(r);
@@ -1424,7 +1483,7 @@ class BibleSearchView extends ItemView {
                 else if (item.type === 'outline') lines.push('> ' + item.content);
                 else lines.push(item.bookShortName + item.chapter + ':' + item.verse + ' ' + item.content);
             }
-            navigator.clipboard.writeText(lines.join('\\n\\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条选中项'); });
+            navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条选中项'); });
         });
 
         // 聚焦投影（当前章选中的内容）
@@ -1456,6 +1515,22 @@ class BibleSearchView extends ItemView {
             selected.sort((a, b) => a.order - b.order);
             if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
             const overlay = new BibleProjectionOverlay(this.app, selected, 'parallel');
+            overlay.open();
+        });
+
+        // 混合投影（当前章选中的内容）
+        mixedProjBtn.addEventListener('click', () => {
+            const allItems = [...themeItems, ...items];
+            const selected = [];
+            for (const item of allItems) {
+                const r = this.readerResults.find(r =>
+                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
+                );
+                if (r) selected.push(r);
+            }
+            selected.sort((a, b) => a.order - b.order);
+            if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
+            const overlay = new BibleProjectionOverlay(this.app, selected, 'mixed');
             overlay.open();
         });
     }
