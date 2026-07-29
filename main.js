@@ -762,6 +762,8 @@ class BibleSearchView extends ItemView {
         this.readerResults = [];
         this.readerSelectCounter = 0;
         this.selectedBookIds = new Set();
+        this.searchFocusMode = false;
+        this.readerFocusMode = false;
     }
     getViewType() { return BIBLE_SEARCH_VIEW_TYPE; }
     getDisplayText() { return '圣经检索'; }
@@ -782,6 +784,8 @@ class BibleSearchView extends ItemView {
         this.tabReader = tabBar.createEl('button', { cls: 'bible-tab', text: '圣经阅读' });
         this.tabSearch.addEventListener('click', () => this.switchTab('search'));
         this.tabReader.addEventListener('click', () => this.switchTab('reader'));
+        this.focusModeBtn = tabBar.createEl('button', { cls: 'bible-focus-mode-btn', text: '专注模式' });
+        this.focusModeBtn.addEventListener('click', () => this.toggleFocusMode());
     }
 
     switchTab(tab) {
@@ -791,6 +795,7 @@ class BibleSearchView extends ItemView {
         if (this.searchPanel) this.searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
         if (this.readerPanel) this.readerPanel.style.display = tab === 'reader' ? 'flex' : 'none';
         if (tab === 'reader') this.renderReader();
+        this.updateFocusModeBtn();
     }
 
     buildSearchTab() {
@@ -798,6 +803,7 @@ class BibleSearchView extends ItemView {
 
         // 固定顶部区域
         const fixedTop = this.searchPanel.createDiv({ cls: 'bible-search-fixed-top' });
+        this.searchFixedTop = fixedTop;
 
         // 检索范围
         const rangeSection = fixedTop.createDiv({ cls: 'bible-section' });
@@ -923,33 +929,6 @@ class BibleSearchView extends ItemView {
         focusBtn.addEventListener('click', () => this.openProjection('focus'));
         parallelBtn.addEventListener('click', () => this.openProjection('parallel'));
         mixedBtn.addEventListener('click', () => this.openProjection('mixed'));
-
-        // 移动端默认折叠全局操作和检索种类区域
-        if (window.innerWidth <= 500) {
-            if (actionBody) actionBody.style.display = 'none';
-            if (typeBody) typeBody.style.display = 'none';
-            const actionIcon = actionHeader.querySelector('.bible-section-icon');
-            const typeIcon = typeHeader.querySelector('.bible-section-icon');
-            if (actionIcon) actionIcon.textContent = '▶';
-            if (typeIcon) typeIcon.textContent = '▶';
-            actionHeader.dataset.collapsed = 'true';
-            typeHeader.dataset.collapsed = 'true';
-        }
-
-        // 折叠功能
-        const makeCollapsible = (header, body) => {
-            header.style.cursor = 'pointer';
-            header.addEventListener('click', () => {
-                const isCollapsed = header.dataset.collapsed === 'true';
-                body.style.display = isCollapsed ? 'block' : 'none';
-                const icon = header.querySelector('.bible-section-icon');
-                if (icon) icon.textContent = isCollapsed ? '▼' : '▶';
-                header.dataset.collapsed = String(!isCollapsed);
-            });
-        };
-        makeCollapsible(actionHeader, actionBody);
-        makeCollapsible(rangeHeader, rangeBody);
-        makeCollapsible(typeHeader, typeBody);
     }
 
     buildReaderTab() {
@@ -990,6 +969,34 @@ class BibleSearchView extends ItemView {
     updateBookSelectCount() {
         const count = this.selectedBookIds.size;
         if (this.bookSelectCount) this.bookSelectCount.setText('已选 ' + count + ' 卷');
+    }
+
+    toggleFocusMode() {
+        if (this.activeTab === 'search') {
+            this.searchFocusMode = !this.searchFocusMode;
+            if (this.searchFocusMode) {
+                this.searchFixedTop.classList.add('focus-mode');
+            } else {
+                this.searchFixedTop.classList.remove('focus-mode');
+            }
+        } else {
+            this.readerFocusMode = !this.readerFocusMode;
+            if (this.readerFocusMode) {
+                this.readerFixedTop.classList.add('focus-mode');
+            } else {
+                this.readerFixedTop.classList.remove('focus-mode');
+            }
+        }
+        this.updateFocusModeBtn();
+    }
+
+    updateFocusModeBtn() {
+        if (!this.focusModeBtn) return;
+        if (this.activeTab === 'search') {
+            this.focusModeBtn.textContent = this.searchFocusMode ? '退出专注' : '专注模式';
+        } else {
+            this.focusModeBtn.textContent = this.readerFocusMode ? '退出专注' : '专注模式';
+        }
     }
 
     async performSearch() {
@@ -1130,7 +1137,7 @@ class BibleSearchView extends ItemView {
             const result = paged[i];
             const item = result.item;
 
-            const card = this.resultsContainer.createDiv({ cls: 'bible-result-card' + (result.selected ? ' selected' : '') });
+            const card = this.resultsContainer.createDiv({ cls: 'bible-result-card' + (result.selected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : '') });
             const cardHeader = card.createDiv({ cls: 'bible-result-header' });
             const checkbox = cardHeader.createDiv({ cls: 'bible-result-checkbox' + (result.selected ? ' checked' : '') });
             if (result.selected) checkbox.setText(String(result.order));
@@ -1544,22 +1551,6 @@ class BibleSearchView extends ItemView {
             const overlay = new BibleProjectionOverlay(this.app, selected, 'parallel');
             overlay.open();
         });
-
-        // 混合投影（当前章选中的内容）
-        mixedProjBtn.addEventListener('click', () => {
-            const allItems = [...themeItems, ...items];
-            const selected = [];
-            for (const item of allItems) {
-                const r = this.readerResults.find(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
-                );
-                if (r) selected.push(r);
-            }
-            selected.sort((a, b) => a.order - b.order);
-            if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-            const overlay = new BibleProjectionOverlay(this.app, selected, 'mixed');
-            overlay.open();
-        });
     }
 
     renderReaderItemCard(container, item) {
@@ -1570,7 +1561,7 @@ class BibleSearchView extends ItemView {
         const isSelected = existingIdx !== -1 && this.readerResults[existingIdx].selected;
         const result = existingIdx !== -1 ? this.readerResults[existingIdx] : null;
 
-        const card = container.createDiv({ cls: 'bible-reader-verse-card' + (isSelected ? ' selected' : '') });
+        const card = container.createDiv({ cls: 'bible-reader-verse-card' + (isSelected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : '') });
         card.setAttribute('data-item-key', key);
 
         if (item.type === 'outline') {
