@@ -629,12 +629,224 @@
 
 /* 移动端适配 */
 @media (max-width: 500px) {
+    .b bible-search-container {
+        padding: 4px;
+        font-size: 12px;
+    }
+    .bible-tab-bar {
+        margin-bottom: 6px;
+        padding-bottom: 1px;
+    }
+    .bible-tab {
+        padding: 6px 8px;
+        font-size: 12px;
+    }
+    /* 固定区域高度大幅压缩 */
+    .bible-search-fixed-top {
+        max-height: 32vh;
+        padding-right: 2px;
+    }
+    .bible-reader-fixed-top {
+        max-height: 35vh;
+        padding-right: 2px;
+    }
+    /* 折叠区块更紧凑 */
+    .bible-section {
+        margin-bottom: 4px;
+        border-radius: 6px;
+    }
+    .bible-section-header {
+        padding: 5px 8px;
+        font-size: 12px;
+    }
+    .bible-section-body {
+        padding: 0 8px 6px 8px;
+    }
+    /* 输入框更紧凑 */
+    .bible-input-row {
+        gap: 3px;
+        margin-bottom: 4px;
+    }
+    .bible-search-input {
+        padding: 5px 8px;
+        font-size: 12px;
+        border-radius: 5px;
+    }
+    .bible-input-btn {
+        padding: 5px 8px;
+        font-size: 12px;
+        border-radius: 5px;
+    }
+    .bible-search-hint {
+        font-size: 10px;
+        margin-bottom: 6px;
+    }
+    /* 全局操作按钮：横向滚动条，单行显示 */
+    .bible-action-grid {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 4px;
+        padding: 0 8px 6px 8px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .bible-action-btn {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        font-size: 11px;
+        white-space: nowrap;
+        min-width: 70px;
+    }
+    /* 检索种类更紧凑 */
+    .bible-type-grid {
+        gap: 12px;
+        padding: 0 8px 6px 8px;
+    }
+    .bible-checkbox-label {
+        font-size: 12px;
+    }
+    /* 结果头部更紧凑 */
+    .bible-results-header {
+        margin: 6px 0 4px 0;
+        padding: 0 2px;
+    }
+    .bible-results-count {
+        font-size: 12px;
+    }
+    .bible-small-btn {
+        padding: 3px 6px;
+        font-size: 10px;
+    }
+    /* 分页导航更紧凑 */
+    .bible-pagination {
+        gap: 3px;
+        margin-bottom: 2px;
+        padding: 0 2px;
+    }
+    .bible-page-info {
+        font-size: 11px;
+    }
+    .bible-page-size {
+        font-size: 10px;
+    }
+    .bible-page-nav {
+        gap: 3px;
+        margin-top: 2px;
+    }
+    .bible-page-btn {
+        min-width: 24px;
+        height: 24px;
+        padding: 0 4px;
+        font-size: 11px;
+    }
+    .bible-page-jump {
+        margin-left: 2px;
+    }
+    .bible-page-jump-input {
+        width: 32px !important;
+        height: 24px;
+        padding: 1px 2px !important;
+        font-size: 11px;
+    }
+    .bible-page-jump-label {
+        font-size: 10px;
+    }
+    /* 书卷选择器 */
+    .bible-book-grid {
+        grid-template-columns: repeat(6, 1fr);
+        gap: 3px;
+    }
+    .bible-book-grid-btn {
+        font-size: 10px;
+        padding: 3px 1px;
+        min-height: 22px;
+    }
+    .bible-book-select-count {
+        font-size: 11px;
+        margin-bottom: 4px;
+    }
+    .bible-book-select-actions {
+        gap: 4px;
+        margin-bottom: 6px;
+    }
+    .bible-book-group-title {
+        font-size: 10px;
+    }
+    /* 阅读页面 */
     .bible-reader-grid {
         grid-template-columns: repeat(5, 1fr);
+        gap: 4px;
     }
-    .bible-action-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .bible-reader-book-btn,
+    .bible-reader-chapter-btn {
+        padding: 6px 2px;
+        font-size: 11px;
     }
+    .bible-reader-nav-row {
+        margin-bottom: 6px;
+        gap: 6px;
+    }
+    .bible-reader-nav-btn {
+        padding: 3px 6px;
+        font-size: 10px;
+    }
+    .bible-reader-nav-title {
+        font-size: 12px;
+    }
+    .bible-reader-jump-row {
+        gap: 4px;
+        margin-bottom: 6px;
+        padding: 5px 6px;
+    }
+    .bible-reader-jump-label {
+        font-size: 11px;
+    }
+    .bible-reader-jump-select {
+        padding: 3px 6px;
+        font-size: 11px;
+        min-width: 80px;
+    }
+    .bible-reader-font-row {
+        gap: 4px;
+        margin-bottom: 6px;
+        padding: 4px 6px;
+    }
+    .bible-reader-font-label {
+        font-size: 11px;
+    }
+    .bible-reader-font-btn {
+        width: 24px;
+        height: 24px;
+        font-size: 12px;
+    }
+    .bible-reader-font-size {
+        font-size: 11px;
+        min-width: 30px;
+    }
+    .bible-reader-content-nav {
+        gap: 3px;
+        margin-bottom: 6px;
+    }
+    .bible-reader-book-theme {
+        margin-bottom: 8px;
+        padding: 8px;
+    }
+    .bible-reader-book-theme-title {
+        font-size: 11px;
+    }
+    .bible-reader-verse-card {
+        margin-bottom: 4px;
+        padding: 6px 8px 6px 6px;
+    }
+    .bible-reader-verse-checkbox {
+        width: 18px;
+        height: 18px;
+        font-size: 10px;
+    }
+    .bible-reader-verse-text {
+        padding-left: 26px;
+    }
+    /* 投影 */
     .bible-proj-slide-wrapper {
         width: 95%;
         padding: 10px;
@@ -644,52 +856,6 @@
     }
     .bible-proj-toolbar-center {
         display: none;
-    }
-    .bible-search-fixed-top {
-        max-height: 40vh;
-    }
-    .bible-reader-fixed-top {
-        max-height: 45vh;
-    }
-    .bible-search-container {
-        padding: 6px;
-        font-size: 12px;
-    }
-    .bible-section {
-        margin-bottom: 6px;
-    }
-    .bible-section-body {
-        padding: 0 8px 8px 8px;
-    }
-    .bible-action-grid {
-        gap: 4px;
-        padding: 0 8px 8px 8px;
-    }
-    .bible-action-btn {
-        padding: 5px 4px;
-        font-size: 11px;
-    }
-    .bible-input-row {
-        gap: 4px;
-    }
-    .bible-search-input {
-        padding: 6px 8px;
-        font-size: 12px;
-    }
-    .bible-book-grid {
-        grid-template-columns: repeat(6, 1fr);
-    }
-    .bible-book-grid-btn {
-        font-size: 10px;
-        padding: 4px 1px;
-        min-height: 24px;
-    }
-    .bible-reader-nav-btn {
-        padding: 3px 6px;
-        font-size: 10px;
-    }
-    .bible-reader-content-nav {
-        gap: 4px;
     }
 }
 

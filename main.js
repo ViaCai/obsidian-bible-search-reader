@@ -923,6 +923,33 @@ class BibleSearchView extends ItemView {
         focusBtn.addEventListener('click', () => this.openProjection('focus'));
         parallelBtn.addEventListener('click', () => this.openProjection('parallel'));
         mixedBtn.addEventListener('click', () => this.openProjection('mixed'));
+
+        // 移动端默认折叠全局操作和检索种类区域
+        if (window.innerWidth <= 500) {
+            if (actionBody) actionBody.style.display = 'none';
+            if (typeBody) typeBody.style.display = 'none';
+            const actionIcon = actionHeader.querySelector('.bible-section-icon');
+            const typeIcon = typeHeader.querySelector('.bible-section-icon');
+            if (actionIcon) actionIcon.textContent = '▶';
+            if (typeIcon) typeIcon.textContent = '▶';
+            actionHeader.dataset.collapsed = 'true';
+            typeHeader.dataset.collapsed = 'true';
+        }
+
+        // 折叠功能
+        const makeCollapsible = (header, body) => {
+            header.style.cursor = 'pointer';
+            header.addEventListener('click', () => {
+                const isCollapsed = header.dataset.collapsed === 'true';
+                body.style.display = isCollapsed ? 'block' : 'none';
+                const icon = header.querySelector('.bible-section-icon');
+                if (icon) icon.textContent = isCollapsed ? '▼' : '▶';
+                header.dataset.collapsed = String(!isCollapsed);
+            });
+        };
+        makeCollapsible(actionHeader, actionBody);
+        makeCollapsible(rangeHeader, rangeBody);
+        makeCollapsible(typeHeader, typeBody);
     }
 
     buildReaderTab() {
