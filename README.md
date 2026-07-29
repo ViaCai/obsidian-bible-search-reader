@@ -1,142 +1,142 @@
-# 圣经检索与阅读 (Bible Search & Reader)
+# Bible Search and Reader
 
-> Obsidian 插件，用于本地圣经 Markdown 文档的检索、阅读与投影。
+> An Obsidian plugin for local Bible Markdown document search, reading, and projection.
 
-## 功能特性
+## Features
 
-### 圣经搜索
-- **检索种类**：主题、纲目、经文（可多选）
-- **检索范围**：全部圣经、单卷书、书卷范围（多选）
-- **检索语法**：
-  - 经文出处：`太1:1`、`路一1～3`、`太1:1-2:5`
-  - 词语检索：多词同时检索（空格/逗号/顿号/分号分隔）
-  - 混合检索：可同时输入经文出处和词语
-- **结果展示**：分页显示（每页 50 条），关键词高亮
-- **选中排序**：点击候选框选中，显示顺序编号（1, 2, 3…）
-- **并列标记**：选中后可标记"并列"，用于混合投影分组
+### Bible Search
+- **Search types**: Theme, Outline, Verse (multi-selectable)
+- **Search scope**: Entire Bible, Single book, Multiple books
+- **Search syntax**:
+  - Verse references: `Gal1:1`, `Luke1:1-3`, `Matt1:1-2:5`
+  - Keyword search: multiple words separated by spaces/commas
+  - Mixed search: combine verse references and keywords
+- **Results**: Paginated display (50 per page), keyword highlighting
+- **Selection**: Click to select/unselect, numbered order (1, 2, 3...)
+- **Side-by-side tag**: Mark items for mixed projection grouping
 
-### 投影模式
-- **逐节投影**：每条内容单独一页，左右翻页
-- **并列投影**：所有内容在同一页面展示
-- **混合投影**：按"并列"标记分组，每组一页
-- **操作**：支持键盘方向键翻页、滚轮切换、+/- 调字体、T 切换主题、ESC 退出
+### Projection Modes
+- **Focus mode**: One item per slide, navigate with arrow keys
+- **Parallel mode**: All items on one slide
+- **Mixed mode**: Grouped by side-by-side tags, one group per slide
+- **Controls**: Arrow keys / scroll wheel for navigation, +/- for font size, T for theme toggle, ESC to exit
 
-### 圣经阅读
-- **书卷浏览**：旧约 / 新约书卷简称网格，点击进入章节选择
-- **章节阅读**：显示主题、纲目、经文，支持字体大小调节
-- **快速跳转**：书卷下拉框 + 章节下拉框，一键切换
-- **章节导航**：上一章 / 下一章按钮
-- **选中功能**：
-  - 点击卡片选中/取消，顺序累计
-  - "全选"仅选中纲目和经文，**不自动选中主题**（主题需手动勾选）
-  - 纲目在阅读界面中不显示书卷出处，与内容同行显示
-- **复制功能**：复制经文 / 复制纲目 / 复制选中项
-- **投影功能**：聚焦投影 / 并列投影（仅投影当前章选中内容）
+### Bible Reader
+- **Book browsing**: Old Testament / New Testament grid, click to enter chapter selection
+- **Chapter reading**: Display themes, outlines, and verses with adjustable font size
+- **Quick jump**: Book dropdown + Chapter dropdown for instant navigation
+- **Chapter navigation**: Previous / Next chapter buttons
+- **Selection**: Click cards to select/unselect, cumulative numbering
+- **Copy functions**: Copy verses / copy outlines / copy selected items
+- **Projection**: Focus projection / Parallel projection (current chapter only)
 
-## 安装方法
+## Installation
 
-### 手动安装
+### From Obsidian Community Plugins (Recommended)
 
-1. 下载本插件的发布文件
-2. 在你的 Obsidian 仓库的 `.obsidian/plugins/` 目录下创建 `bible-search-reader` 文件夹
-3. 将以下文件复制到该文件夹：
-   - `manifest.json`
-   - `main.js`
-   - `styles.css`
-4. 在 Obsidian 设置 → 第三方插件中启用"圣经检索与阅读"
+1. Open Obsidian Settings → Community Plugins
+2. Turn on "Safe mode" off if needed
+3. Click "Browse" and search for "Bible Search and Reader"
+4. Click "Install" then "Enable"
 
-### 文件结构
+### Manual Installation
 
-```
-.obsidian/plugins/bible-search-reader/
-├── manifest.json    # 插件元信息
-├── main.js          # 插件主代码（已编译）
-└── styles.css       # 样式文件
-```
+1. Download the latest release from [GitHub Releases](https://github.com/ViaCai/obsidian-bible-search-reader/releases)
+2. Extract the files to your vault's `.obsidian/plugins/bible-search-reader/` folder
+3. In Obsidian Settings → Community Plugins, enable "Bible Search and Reader"
 
-## 文档格式要求
+## Setup
 
-### 文件命名
-建议格式：`序号. 书卷名.md`
+1. Open Obsidian Settings → Community Plugins → Bible Search and Reader
+2. Set **Old Testament Path**: the folder containing Old Testament Markdown files (e.g., `Bible/Old Testament`)
+3. Set **New Testament Path**: the folder containing New Testament Markdown files (e.g., `Bible/New Testament`)
 
-- 旧约示例：`01. 创世记.md`、`37. 哈该书.md`
-- 新约示例：`40. 马太福音.md`、`48. 加拉太书.md`
-- 旧约和新约文件应放在不同的目录中
+## Document Format Requirements
 
-### 文件内容格式
+### File Naming
+Recommended format: `Number. Book Name.md`
+
+- Old Testament examples: `01. Genesis.md`, `37. Haggai.md`
+- New Testament examples: `40. Matthew.md`, `48. Galatians.md`
+- Old and New Testament files should be in separate folders
+
+### File Content Format
 
 ```markdown
 ---
 title:
 author:
 ---
-> **主题：书卷主题内容**
+> **Theme: Book theme content**
 
-# 书卷名第1章
+# Book Name Chapter 1
 
-> 壹　纲目内容　一1～5
+> I. Outline content 1:1-5
 
-书卷简称1:1 经文内容
-书卷简称1:2 经文内容
+BookShortName1:1 Verse content
+BookShortName1:2 Verse content
 
-# 书卷名第2章
+# Book Name Chapter 2
 
-> 贰　纲目内容　二1～10
+> II. Outline content 2:1-10
 
-书卷简称2:1 经文内容
+BookShortName2:1 Verse content
 ```
 
-### 格式说明
-1. **主题**：`> **主题：主题内容**`
-2. **纲目**：`> 纲目内容`（以 `>` 开头但不包含"主题"）
-3. **经文**：`书卷简称章数:节数 经文内容`，如 `加1:1 作使徒的保罗...`
-4. **章标题**：`# 书卷名第X章`（用于识别当前章节）
+### Format Rules
+1. **Theme**: `> **Theme: theme content**`
+2. **Outline**: `> outline content` (starts with `>` but does not contain "Theme")
+3. **Verse**: `BookShortNameChapter:Verse Verse content`, e.g., `Gal1:1 Paul, an apostle...`
+4. **Chapter title**: `# Book Name Chapter X` (used to identify current chapter)
 
-## 使用说明
+## Usage
 
-### 初始设置
-1. 打开 Obsidian 设置 → 第三方插件 → 圣经检索与阅读
-2. 设置旧约圣经目录路径（如：`圣经/旧约`）
-3. 设置新约圣经目录路径（如：`圣经/新约`）
+### Search
+1. Click the 📖 icon in the left sidebar or run the command "Open Bible Search"
+2. In the "Bible Search" tab:
+   - Select search types (Theme / Outline / Verse)
+   - Select search scope (All / Single book / Multiple books)
+   - Enter search query and click "🔍 Search"
+3. Click cards to select/unselect
+4. Click "Focus Projection", "Parallel Projection", or "Mixed Projection"
 
-### 检索操作
-1. 点击左侧边栏的 📖 图标或运行命令"打开圣经检索"
-2. 在"圣经搜索"选项卡中：
-   - 选择检索种类（主题/纲目/经文）
-   - 选择检索范围（全部 / 单卷 / 多卷）
-   - 输入检索内容，点击"🔍 查询"
-3. 在结果中点击卡片选中，再次点击取消
-4. 选中后点击"逐节投影"、"并列投影"或"混合投影"
+### Reading
+1. Switch to the "Bible Reader" tab
+2. Click a book abbreviation → click a chapter number → read content
+3. Use top buttons for select all, copy, projection, etc.
+4. Use "Quick Jump" dropdowns to switch books and chapters instantly
 
-### 阅读操作
-1. 切换到"圣经阅读"选项卡
-2. 点击书卷简称 → 点击章节编号 → 阅读内容
-3. 使用顶部按钮进行全选、复制、投影等操作
-4. 使用"快速跳转"下拉框快速切换书卷和章节
+### Search Syntax Examples
 
-### 检索语法示例
+| Input | Description |
+|-------|-------------|
+| `Gal1:1` | Galatians 1:1 |
+| `Luke1:1-3` | Luke 1:1 to 1:3 |
+| `Matt1:1-2:5` | Matthew 1:1 to 2:5 |
+| `grace love` | Verses containing both "grace" and "love" |
+| `Luke2:1, grace` | Luke 2:1, plus verses containing "grace" |
 
-| 输入 | 说明 |
-|------|------|
-| `加1:1` | 加拉太书1章1节 |
-| `路一1～3` | 路加福音1章1至3节 |
-| `太1:1-2:5` | 马太福音1章1节至2章5节 |
-| `世人 恩典` | 同时包含"世人"和"恩典"的经文 |
-| `路2:1，世人` | 路加2章1节，以及包含"世人"的经文 |
+## Notes
 
-## 注意事项
+1. Ensure Bible documents are stored according to the naming and format requirements
+2. The plugin loads Bible data on startup; first load may take some time
+3. After modifying Bible documents, reload the search view or restart Obsidian to update data
+4. Supports both desktop and mobile platforms
 
-1. 确保圣经文档严格按照命名规则和格式要求存放
-2. 插件启动时会自动加载圣经数据，首次加载可能需要一些时间
-3. 修改圣经文档后，需要重新打开检索视图或重启 Obsidian 以更新数据
-4. 移动端和桌面端均支持
-
-## 技术说明
-
-- 开发语言：JavaScript (ES2018)
-- 目标平台：Obsidian (桌面端 + 移动端)
-- 最低 Obsidian 版本：v0.15.0
-
-## 许可证
+## License
 
 MIT License
+
+
+---
+
+> 本插件为第三方社区作品，与缤纷云官方无直接关联。
+
+## ☕ 如果觉得这个插件对你有帮助，可以给予支持，以便继续开发。
+
+## 加6:6 只是那在话语上受教的，当与施教的人共同分享一切的美物。
+
+<img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="微信收款码" width="240" />
+
+
+
