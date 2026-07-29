@@ -14,3 +14,9 @@ Thumbs.db
 
 # 日志
 *.log
+
+#附件
+*.zip
+*.rar
+*.7z
+*.tar.gz
