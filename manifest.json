@@ -1,9 +1,9 @@
 {
   "id": "bible-search-reader",
-  "name": "圣经检索与阅读",
+  "name": "Bible Search and Reader",
   "version": "1.0.0",
   "minAppVersion": "0.15.0",
-  "description": "本地圣经文档检索与阅读插件，支持主题、纲目、经文检索，提供聚焦/并列/混合投影模式",
+  "description": "Local Bible Markdown document search and reading plugin, supporting theme/outline/verse search with focus/parallel/mixed projection modes",
   "author": "ViaCai",
   "authorUrl": "https://github.com/ViaCai",
   "isDesktopOnly": false
