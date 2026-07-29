@@ -130,11 +130,9 @@ MIT License
 
 ---
 
-> 本插件为第三方社区作品，与缤纷云官方无直接关联。
-
 ## ☕ 如果觉得这个插件对你有帮助，可以给予支持，以便继续开发。
 
-## 加6:6 只是那在话语上受教的，当与施教的人共同分享一切的美物。
+加6:6 只是那在话语上受教的，当与施教的人共同分享一切的美物。
 
 <img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="微信收款码" width="240" />
 
