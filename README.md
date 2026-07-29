@@ -1,3 +1,11 @@
+<div align="center">
+
+**English** | [中文](README_CN.md)
+
+</div>
+
+---
+
 # Bible Search and Reader
 
 > An Obsidian plugin for local Bible Markdown document search, reading, and projection.
@@ -44,16 +52,6 @@
 1. Download the latest release from [GitHub Releases](https://github.com/ViaCai/obsidian-bible-search-reader/releases)
 2. Extract the files to your vault's `.obsidian/plugins/bible-search-reader/` folder
 3. In Obsidian Settings → Community Plugins, enable "Bible Search and Reader"
-
-## Bible Documents
-
-This plugin requires Bible Markdown documents in the specific format described above.
-
-You can download the sample Bible documents here:
-
-- [Download Bible Documents (ZIP)](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip)
-
-After downloading, extract the files to your vault and configure the paths in the plugin settings.
 
 ## Setup
 
@@ -133,18 +131,14 @@ BookShortName2:1 Verse content
 3. After modifying Bible documents, reload the search view or restart Obsidian to update data
 4. Supports both desktop and mobile platforms
 
+## ☕ Support
+
+If you find this plugin helpful, your support is greatly appreciated to continue development.
+
+> **Galatians 6:6** — Let the one who is taught the word share all good things with the one who teaches.
+
+<img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="WeChat Pay" width="240" />
+
 ## License
 
 MIT License
-
-
----
-
-## ☕ 如果觉得这个插件对你有帮助，可以给予支持，以便继续开发。
-
-加6:6 只是那在话语上受教的，当与施教的人共同分享一切的美物。
-
-<img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="微信收款码" width="240" />
-
-
-
