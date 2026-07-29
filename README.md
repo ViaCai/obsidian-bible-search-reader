@@ -51,10 +51,9 @@ This plugin requires Bible Markdown documents in the specific format described a
 
 You can download the sample Bible documents here:
 
-- [Download Bible Documents (ZIP)](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/%E5%8E%9F%E6%B3%A8%E7%89%88%E5%9C%A3%E7%BB%8F%EF%BC%88%E5%B8%A6%E7%BA%B2%E7%9B%AE%EF%BC%89.zip)
+- [Download Bible Documents (ZIP)](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip)
 
 After downloading, extract the files to your vault and configure the paths in the plugin settings.
-
 
 ## Setup
 
