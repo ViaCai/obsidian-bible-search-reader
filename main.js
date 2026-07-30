@@ -77,6 +77,9 @@ for (const book of BIBLE_BOOKS) {
     BOOK_MAP[book.fullName] = book;
     BOOK_ID_MAP[book.id] = book;
 }
+// 别名映射（文档中使用约二/约三，但标准简称是约贰/约叁）
+BOOK_MAP['约二'] = BOOK_MAP['约贰'];
+BOOK_MAP['约三'] = BOOK_MAP['约叁'];
 const BOOK_SHORT_NAMES = BIBLE_BOOKS.map(b => b.shortName).sort((a, b) => b.length - a.length);
 
 // ==================== 工具函数 ====================
@@ -251,7 +254,28 @@ class BibleParser {
                 continue;
             }
 
-            const verseMatch2 = trimmed.match(/^([撒上下王代林前后帖前后提前后彼前后约壹贰叁])(\d+)[：:](\d+)\s*(.*)$/);
+            // 特殊处理：文档中约翰二书/三书使用约二/约三
+            const verseMatchJohn23 = trimmed.match(/^(约[二三])(\d+)[：:](\d+)\s*(.*)$/);
+            if (verseMatchJohn23) {
+                const mappedName = verseMatchJohn23[1] === '约二' ? '约贰' : '约叁';
+                const chapter = parseInt(verseMatchJohn23[2]);
+                const verse = parseInt(verseMatchJohn23[3]);
+                const verseContent = verseMatchJohn23[4].trim();
+                const matchedBook = BOOK_MAP[mappedName];
+                if (matchedBook && matchedBook.id === bookInfo.id) {
+                    currentChapter = chapter;
+                    items.push({
+                        type: 'verse', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
+                        bookFullName: bookInfo.fullName, testament: bookInfo.testament,
+                        chapter: chapter, verse: verse, lineIndex: lineIndex,
+                        content: verseContent, rawLine: trimmed
+                    });
+                }
+                lineIndex++;
+                continue;
+            }
+
+            const verseMatch2 = trimmed.match(/^(约[壹贰叁]|[撒上下王代林前后帖前后提前后彼前后])(\d+)[：:](\d+)\s*(.*)$/);
             if (verseMatch2) {
                 const shortName = verseMatch2[1];
                 const chapter = parseInt(verseMatch2[2]);
@@ -271,7 +295,7 @@ class BibleParser {
                 continue;
             }
 
-            const verseMatch = trimmed.match(/^([创出利民申书士得撒上下王代拉尼斯伯诗箴传歌赛耶哀结但何珥摩俄拿弥鸿哈番该亚玛太可路约徒罗林前后加弗腓西帖前后提前后多门来雅彼前后约壹贰叁犹启])(\d+)[：:](\d+)\s*(.*)$/);
+            const verseMatch = trimmed.match(/^(约[壹贰叁]|[创出利民申书士得撒上下王代拉尼斯伯诗箴传歌赛耶哀结但何珥摩俄拿弥鸿哈番该亚玛太可路约徒罗林前后加弗腓西帖前后提前后多门来雅彼前后犹启])(\d+)[：:](\d+)\s*(.*)$/);
             if (verseMatch) {
                 const shortName = verseMatch[1];
                 const chapter = parseInt(verseMatch[2]);
@@ -309,6 +333,7 @@ class BibleSearchEngine {
         const parsed = this.parseQuery(query);
         const refs = parsed.refs;
         const keywords = parsed.keywords;
+        const keywordMode = parsed.keywordMode || 'and';
 
         const results = [];
         const seen = new Set();
@@ -328,8 +353,24 @@ class BibleSearchEngine {
             }
             if (keywords.length > 0) {
                 const contentLower = item.content.toLowerCase();
-                const allMatch = keywords.every(k => contentLower.includes(k.toLowerCase()));
-                if (allMatch) matched = true;
+                if (keywordMode === 'or' || keywordMode === 'or_ordered') {
+                    // OR 模式：包含任意一个关键词
+                    matched = matched || keywords.some(k => contentLower.includes(k.toLowerCase()));
+                } else if (keywordMode === 'and_ordered') {
+                    // AND + 顺序：同时包含，且按输入顺序出现
+                    let lastIndex = -1;
+                    let allFound = true;
+                    for (const kw of keywords) {
+                        const idx = contentLower.indexOf(kw.toLowerCase(), lastIndex + 1);
+                        if (idx === -1) { allFound = false; break; }
+                        lastIndex = idx;
+                    }
+                    if (allFound) matched = true;
+                } else {
+                    // AND 模式（默认）：同时包含，忽略顺序
+                    const allMatch = keywords.every(k => contentLower.includes(k.toLowerCase()));
+                    if (allMatch) matched = true;
+                }
             }
 
             if (matched) {
@@ -340,87 +381,83 @@ class BibleSearchEngine {
                 }
             }
         }
+
+        // OR_ordered 模式：按关键词顺序排序结果
+        if (keywordMode === 'or_ordered' && keywords.length > 0 && refs.length === 0) {
+            results.sort((a, b) => {
+                const aContent = a.item.content.toLowerCase();
+                const bContent = b.item.content.toLowerCase();
+                for (const kw of keywords) {
+                    const aIdx = aContent.indexOf(kw.toLowerCase());
+                    const bIdx = bContent.indexOf(kw.toLowerCase());
+                    if (aIdx !== -1 && bIdx === -1) return -1;
+                    if (aIdx === -1 && bIdx !== -1) return 1;
+                    if (aIdx !== -1 && bIdx !== -1 && aIdx !== bIdx) return aIdx - bIdx;
+                }
+                return 0;
+            });
+        }
+
         return results;
     }
 
     parseQuery(query) {
         const refs = [];
         const keywords = [];
-        query = query.replace(/[～]/g, '-').replace(/[：]/g, ':');
 
-        let remaining = query;
-        const refStrings = [];
+        // 统一标点符号（保留原始分隔符信息用于判断模式）
+        const normalizedQuery = query.replace(/[～~]/g, '-').replace(/[：:]/g, ':');
 
-        for (const sn of BOOK_SHORT_NAMES) {
-            let idx = remaining.indexOf(sn);
-            while (idx !== -1) {
-                const after = remaining.slice(idx + sn.length);
-                const numMatch = after.match(/^(\d+[:：]\d+(?:[-—]\d+(?:[:：]?\d+)?)?)/);
-                const cnMatch = after.match(/^([一二三四五六七八九十百零]+[:：][一二三四五六七八九十百零]+(?:[-—][一二三四五六七八九十百零]+(?:[:：]?[一二三四五六七八九十百零]+)?)?)/);
-                if (numMatch) {
-                    refStrings.push(sn + numMatch[1]);
-                    remaining = remaining.slice(0, idx) + ' ' + remaining.slice(idx + sn.length + numMatch[1].length) + ' ';
-                    idx = remaining.indexOf(sn);
-                } else if (cnMatch) {
-                    refStrings.push(sn + cnMatch[1]);
-                    remaining = remaining.slice(0, idx) + ' ' + remaining.slice(idx + sn.length + cnMatch[1].length) + ' ';
-                    idx = remaining.indexOf(sn);
-                } else {
-                    const noColonMatch = after.match(/^([一二三四五六七八九十百零]+)([一二三四五六七八九十百零]+)/);
-                    if (noColonMatch) {
-                        refStrings.push(sn + noColonMatch[1] + ':' + noColonMatch[2]);
-                        remaining = remaining.slice(0, idx) + ' ' + remaining.slice(idx + sn.length + noColonMatch[0].length) + ' ';
-                        idx = remaining.indexOf(sn);
-                    } else {
-                        idx = remaining.indexOf(sn, idx + 1);
+        // 判断关键词匹配模式
+        let keywordMode = 'and'; // 默认：空格/顿号 = AND，忽略顺序
+        if (/[,，]/.test(query) && !/[；;。.]/.test(query)) {
+            keywordMode = 'and_ordered'; // 逗号 = AND，不忽略顺序
+        } else if (/[；;]/.test(query) && !/[。.]/.test(query)) {
+            keywordMode = 'or_ordered'; // 分号 = OR，按关键词顺序展示
+        } else if (/[。.]/.test(query)) {
+            keywordMode = 'or'; // 句号 = OR，按经文顺序展示
+        }
+
+        // 按所有分隔符分割成 tokens（逗号、顿号、分号、句号、空格）
+        const tokens = normalizedQuery.split(/[,，、；;\s。\.]+/).map(t => t.trim()).filter(t => t.length > 0);
+
+        let currentBookId = null;
+        let currentChapter = 1;
+
+        for (const token of tokens) {
+            let matched = false;
+
+            // 1. 尝试作为带书卷的完整引用
+            for (const sn of BOOK_SHORT_NAMES) {
+                if (token.startsWith(sn)) {
+                    const parsed = this.parseVerseReference(token);
+                    if (parsed.length > 0) {
+                        refs.push(...parsed);
+                        currentBookId = parsed[0].bookId;
+                        currentChapter = parsed[0].startChapter;
+                        matched = true;
+                        break;
                     }
                 }
             }
-        }
+            if (matched) continue;
 
-        for (const rs of refStrings) {
-            const parsed = this.parseVerseReference(rs);
-            refs.push(...parsed);
-        }
-
-        remaining = remaining.replace(/[,，、；;]/g, ' ').trim();
-        if (remaining) {
-            const kwParts = remaining.split(/\s+/).filter(p => p.length > 0);
-            for (const kw of kwParts) {
-                let isRef = false;
-                for (const sn of BOOK_SHORT_NAMES) {
-                    if (kw.startsWith(sn)) {
-                        const after = kw.slice(sn.length);
-                        if (/^[\d一二三四五六七八九十百零]/.test(after)) { isRef = true; break; }
-                    }
-                }
-                if (!isRef) keywords.push(kw);
-            }
-        }
-
-        if (refs.length === 0 && keywords.length === 0) {
-            const parts = query.split(/[,，、；;\s]+/).map(p => p.trim()).filter(p => p);
-            for (const part of parts) {
-                if (this.isVerseReference(part)) {
-                    const parsed = this.parseVerseReference(part);
-                    refs.push(...parsed);
-                } else {
-                    keywords.push(part);
+            // 2. 尝试作为延续引用（基于上一个书卷）
+            if (currentBookId !== null) {
+                const contParsed = this.parseContinuationReference(token, currentBookId, currentChapter);
+                if (contParsed.length > 0) {
+                    refs.push(...contParsed);
+                    currentChapter = contParsed[0].startChapter;
+                    matched = true;
                 }
             }
+            if (matched) continue;
+
+            // 3. 作为关键词
+            keywords.push(token);
         }
 
-        return { refs: refs, keywords: keywords };
-    }
-
-    isVerseReference(part) {
-        for (const shortName of BOOK_SHORT_NAMES) {
-            if (part.startsWith(shortName)) {
-                const after = part.slice(shortName.length);
-                if (/^[\d一二三四五六七八九十百零]+/.test(after)) return true;
-            }
-        }
-        return false;
+        return { refs: refs, keywords: keywords, keywordMode: keywordMode };
     }
 
     parseVerseReference(part) {
@@ -434,23 +471,14 @@ class BibleSearchEngine {
         const book = BOOK_MAP[bookShortName];
         if (!book) return ranges;
 
-        const noColonMatch = remaining.match(/^([一二三四五六七八九十百零\d]+)([一二三四五六七八九十百零\d]+)$/);
-        if (noColonMatch && !remaining.includes(':') && !remaining.includes('：')) {
-            const ch = parseNumber(noColonMatch[1]);
-            const vs = parseNumber(noColonMatch[2]);
-            if (!isNaN(ch) && !isNaN(vs)) {
-                ranges.push({ bookId: book.id, startChapter: ch, startVerse: vs, endChapter: ch, endVerse: vs });
-            }
-            return ranges;
-        }
+        // 处理范围分隔符（支持 ~ 和 -）
+        const rangeParts = remaining.split(/[~\-]/);
 
-        const rangeParts = remaining.split(/[-—]/);
         if (rangeParts.length === 2) {
             const start = this.parseChapterVerse(rangeParts[0]);
             const end = this.parseChapterVerse(rangeParts[1]);
             if (start && end) {
-                const endCh = end.chapter > 0 ? end.chapter : start.chapter;
-                ranges.push({ bookId: book.id, startChapter: start.chapter, startVerse: start.verse, endChapter: endCh, endVerse: end.verse });
+                ranges.push({ bookId: book.id, startChapter: start.chapter, startVerse: start.verse, endChapter: end.chapter, endVerse: end.verse });
             } else if (start) {
                 const endVerse = parseNumber(rangeParts[1]);
                 if (!isNaN(endVerse)) {
@@ -468,13 +496,139 @@ class BibleSearchEngine {
 
     parseChapterVerse(s) {
         s = s.trim();
-        const match = s.match(/^([一二三四五六七八九十百零\d]+)[:：]([一二三四五六七八九十百零\d]+)$/);
+        // 格式1: 阿拉伯数字:阿拉伯数字，如 "1:1", "2:5"
+        let match = s.match(/^(\d+):(\d+)$/);
         if (match) {
-            const ch = parseNumber(match[1]);
-            const vs = parseNumber(match[2]);
-            if (!isNaN(ch) && !isNaN(vs)) return { chapter: ch, verse: vs };
+            const ch = parseInt(match[1]);
+            const vs = parseInt(match[2]);
+            if (ch > 0 && vs > 0) return { chapter: ch, verse: vs };
+        }
+        // 格式2: 中文数字:阿拉伯数字，如 "一:1", "十一:2"
+        match = s.match(/^([一二三四五六七八九十百零]+):(\d+)$/);
+        if (match) {
+            const ch = chineseToNumber(match[1]);
+            const vs = parseInt(match[2]);
+            if (!isNaN(ch) && ch > 0 && vs > 0) return { chapter: ch, verse: vs };
+        }
+        // 格式3: 中文数字+阿拉伯数字（无冒号），如 "一1", "十一2"
+        match = s.match(/^([一二三四五六七八九十百零]+)(\d+)$/);
+        if (match) {
+            const ch = chineseToNumber(match[1]);
+            const vs = parseInt(match[2]);
+            if (!isNaN(ch) && ch > 0 && vs > 0) return { chapter: ch, verse: vs };
+        }
+        // 格式4: 阿拉伯数字+中文数字（无冒号），如 "1一"
+        match = s.match(/^(\d+)([一二三四五六七八九十百零]+)$/);
+        if (match) {
+            const ch = parseInt(match[1]);
+            const vs = chineseToNumber(match[2]);
+            if (ch > 0 && !isNaN(vs) && vs > 0) return { chapter: ch, verse: vs };
         }
         return null;
+    }
+
+    parseContinuationReference(token, bookId, currentChapter) {
+        const ranges = [];
+
+        // 格式1: chapter:verse-range，如 "14:7-21", "2:9-10"
+        let m = token.match(/^([一二三四五六七八九十百零\d]+):(\d+)-(\d+)$/);
+        if (m) {
+            const ch = parseNumber(m[1]);
+            const vs = parseInt(m[2]);
+            const endVs = parseInt(m[3]);
+            if (!isNaN(ch) && ch > 0 && vs > 0 && endVs > 0) {
+                ranges.push({ bookId: bookId, startChapter: ch, startVerse: vs, endChapter: ch, endVerse: endVs });
+                return ranges;
+            }
+        }
+
+        // 格式2: chapter:verse，如 "2:3", "3:34"
+        m = token.match(/^([一二三四五六七八九十百零\d]+):(\d+)$/);
+        if (m) {
+            const ch = parseNumber(m[1]);
+            const vs = parseInt(m[2]);
+            if (!isNaN(ch) && ch > 0 && vs > 0) {
+                ranges.push({ bookId: bookId, startChapter: ch, startVerse: vs, endChapter: ch, endVerse: vs });
+                return ranges;
+            }
+        }
+
+        // 格式3: 中文章+数字节-range，如 "十四7-21", "二一9-10"
+        m = token.match(/^([一二三四五六七八九十百零]+)(\d+)-(\d+)$/);
+        if (m) {
+            const ch = chineseToNumber(m[1]);
+            const vs = parseInt(m[2]);
+            const endVs = parseInt(m[3]);
+            if (!isNaN(ch) && ch > 0 && vs > 0 && endVs > 0) {
+                ranges.push({ bookId: bookId, startChapter: ch, startVerse: vs, endChapter: ch, endVerse: endVs });
+                return ranges;
+            }
+        }
+
+        // 格式4: 中文章+数字节，如 "三34", "二一9", "二二13", "十四7"
+        m = token.match(/^([一二三四五六七八九十百零]+)(\d+)$/);
+        if (m) {
+            const ch = chineseToNumber(m[1]);
+            const vs = parseInt(m[2]);
+            if (!isNaN(ch) && ch > 0 && vs > 0) {
+                ranges.push({ bookId: bookId, startChapter: ch, startVerse: vs, endChapter: ch, endVerse: vs });
+                return ranges;
+            }
+        }
+
+        // 格式5: 纯数字节号（同章），如 "23", "4", "9"
+        m = token.match(/^(\d+)$/);
+        if (m) {
+            const vs = parseInt(m[1]);
+            if (vs > 0) {
+                ranges.push({ bookId: bookId, startChapter: currentChapter, startVerse: vs, endChapter: currentChapter, endVerse: vs });
+                return ranges;
+            }
+        }
+
+        // 格式6: 纯中文数字节号（同章），如 "二十三", "四"
+        m = token.match(/^([一二三四五六七八九十百零]+)$/);
+        if (m) {
+            const vs = chineseToNumber(m[1]);
+            if (!isNaN(vs) && vs > 0) {
+                ranges.push({ bookId: bookId, startChapter: currentChapter, startVerse: vs, endChapter: currentChapter, endVerse: vs });
+                return ranges;
+            }
+        }
+
+        // 格式7: 纯数字节范围（同章），如 "7-21", "13-15"
+        m = token.match(/^(\d+)-(\d+)$/);
+        if (m) {
+            const vs = parseInt(m[1]);
+            const endVs = parseInt(m[2]);
+            if (vs > 0 && endVs > 0) {
+                ranges.push({ bookId: bookId, startChapter: currentChapter, startVerse: vs, endChapter: currentChapter, endVerse: endVs });
+                return ranges;
+            }
+        }
+
+        // 格式8: 纯中文数字节范围（同章），如 "七-二十一"
+        m = token.match(/^([一二三四五六七八九十百零]+)-([一二三四五六七八九十百零]+)$/);
+        if (m) {
+            const vs = chineseToNumber(m[1]);
+            const endVs = chineseToNumber(m[2]);
+            if (!isNaN(vs) && !isNaN(endVs) && vs > 0 && endVs > 0) {
+                ranges.push({ bookId: bookId, startChapter: currentChapter, startVerse: vs, endChapter: currentChapter, endVerse: endVs });
+                return ranges;
+            }
+        }
+
+        return ranges;
+    }
+
+    isVerseReference(part) {
+        for (const shortName of BOOK_SHORT_NAMES) {
+            if (part.startsWith(shortName)) {
+                const after = part.slice(shortName.length);
+                if (/^[\d一二三四五六七八九十百零]+/.test(after)) return true;
+            }
+        }
+        return false;
     }
 
     matchVerseRef(item, ref) {
@@ -486,8 +640,6 @@ class BibleSearchEngine {
         return true;
     }
 }
-
-// ==================== 全窗口投影组件 ====================
 class BibleProjectionOverlay {
     constructor(app, results, mode) {
         this.app = app;
@@ -887,10 +1039,10 @@ class BibleSearchView extends ItemView {
         const actionBody = actionSection.createDiv({ cls: 'bible-action-grid' });
         const selectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局全选' });
         const deselectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '取消全选' });
-        const focusBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '📄 逐节投影' });
-        const parallelBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '📑 并列投影' });
-        const mixedBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '🔀 混合投影' });
-        const copyAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '📋 全局复制' });
+        const focusBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '逐节投影' });
+        const parallelBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '并列投影' });
+        const mixedBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '混合投影' });
+        const copyAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局复制' });
 
         // 检索种类
         const typeSection = fixedTop.createDiv({ cls: 'bible-section' });
@@ -1332,6 +1484,9 @@ class BibleSearchView extends ItemView {
     async renderChapterContent() {
         this.readerContent.empty();
         this.readerFixedTop.empty();
+        // 切换章节时清空上一章的选中状态
+        this.readerResults = [];
+        this.readerSelectCounter = 0;
         // 同步 readerSelectCounter，确保当前章的选中数字从1开始显示
         this.readerSelectCounter = 0;
         for (const r of this.readerResults) {
@@ -1399,12 +1554,12 @@ class BibleSearchView extends ItemView {
         const nextChBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '下一章 ▶' });
         const selectAllBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '全选' });
         const deselectAllBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '取消全选' });
-        const copyVersesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📋 复制经文' });
-        const copyOutlinesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📋 复制纲目' });
-        const copySelectedBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📋 复制选中项' });
-        const focusProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📄 逐节投影' });
-        const parallelProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '📑 并列投影' });
-        const mixedProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '🔀 混合投影' });
+        const copyVersesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '复制经文' });
+        const copyOutlinesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '复制纲目' });
+        const copySelectedBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '复制选中' });
+        const focusProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '逐节投影' });
+        const parallelProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '并列投影' });
+        const mixedProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '混合投影' });
 
         prevChBtn.disabled = chapter <= 1;
         nextChBtn.disabled = chapter >= book.maxChapters;
@@ -1746,3 +1901,4 @@ class BibleSearchPlugin extends Plugin {
 }
 
 module.exports = BibleSearchPlugin;
+/* nosourcemap */

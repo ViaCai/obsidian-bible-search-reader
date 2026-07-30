@@ -8,6 +8,8 @@
 
 # Bible Search and Reader
 
+![Version](https://img.shields.io/badge/version-1.0.2-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+
 > An Obsidian plugin for local Bible Markdown document search, reading, and projection.
 
 ## Features
@@ -131,6 +133,39 @@ BookShortName2:1 Verse content
 | `Matt1:1-2:5` | Matthew 1:1 to 2:5 |
 | `grace love` | Verses containing both "grace" and "love" |
 | `Luke2:1, grace` | Luke 2:1, plus verses containing "grace" |
+| `Matt1:1-2:5` | Matthew 1:1 to 2:5 |
+| `Matt1:1~5` | Matthew 1:1 to 1:5 |
+| `Matt1:1, 5` | Matthew 1:1 and Matthew 1:5 (continuation) |
+| `John1:1, 14:7-21, 23` | John 1:1, John 14:7-21, John 14:23 (mixed continuation) |
+| `grace love` | Verses containing both "grace" and "love" (ignore order) |
+| `grace, love` | Verses containing both, in input order |
+| `grace; love` | Verses containing either, sorted by keyword order |
+| `grace. love` | Verses containing either, sorted by verse order |
+
+## Keyword Matching Modes
+
+When searching by keywords (not verse references), the separator determines the matching behavior:
+
+| Separator | Mode | Order Sensitive | Result Sorting |
+|-----------|------|-----------------|----------------|
+| Space ` ` / 顿号 `、` | AND | No (ignore order) | Verse order |
+| Comma `,` / `，` | AND | **Yes** (input order) | Verse order |
+| Semicolon `;` / `；` | OR | Yes | Keyword order |
+| Period `.` / `。` | OR | No | Verse order |
+
+## Search Syntax Reference
+
+### Verse Reference Formats
+
+| Format | Example | Meaning |
+|--------|---------|---------|
+| Book + Chinese chapter + Arabic verse | `太一1` | Matthew 1:1 |
+| Book + Arabic chapter:verse | `太1:1` | Matthew 1:1 |
+| Book + Chinese chapter + Arabic verse range | `太一1~5` | Matthew 1:1-5 |
+| Book + Arabic chapter:verse range | `太1:1~5` | Matthew 1:1-5 |
+| Book + cross-chapter range | `太一1~二1` | Matthew 1:1 to 2:1 |
+| Book + Arabic cross-chapter range | `太1:1~2:1` | Matthew 1:1 to 2:1 |
+| Continuation (same book) | `约一1, 十四7~21` | John 1:1, John 14:7-21 |
 
 ## Notes
 
