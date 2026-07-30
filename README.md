@@ -59,6 +59,14 @@
 2. Set **Old Testament Path**: the folder containing Old Testament Markdown files (e.g., `Bible/Old Testament`)
 3. Set **New Testament Path**: the folder containing New Testament Markdown files (e.g., `Bible/New Testament`)
 
+## Bible Documents Download
+
+This plugin requires Bible Markdown documents in a specific format. You can download the sample documents here:
+
+- [Download Bible Documents (ZIP)](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip)
+
+> 💡 **Tip**: If you need a different Bible version, you can modify the downloaded documents according to the format requirements below, or create your own documents following the template.
+
 ## Document Format Requirements
 
 ### File Naming

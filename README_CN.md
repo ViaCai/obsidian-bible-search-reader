@@ -61,6 +61,14 @@
 2. 设置**旧约圣经目录**：旧约 Markdown 文件所在的文件夹路径（如：`圣经/旧约`）
 3. 设置**新约圣经目录**：新约 Markdown 文件所在的文件夹路径（如：`圣经/新约`）
 
+## 圣经文档下载
+
+本插件需要特定格式的圣经 Markdown 文档。你可以在这里下载示例文档：
+
+- [下载圣经文档（ZIP）](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip)
+
+> 💡 **提示**：如果你需要其他版本的圣经，可以按照下方的格式要求修改下载的文档，或根据模板自行创建。
+
 ## 文档格式要求
 
 ### 文件命名
@@ -134,6 +142,14 @@ author:
 2. 插件启动时会自动加载圣经数据，首次加载可能需要一些时间
 3. 修改圣经文档后，需要重新打开检索视图或重启 Obsidian 以更新数据
 4. 移动端和桌面端均支持
+
+## ☕ 支持
+
+如果觉得这个插件对你有帮助，可以给予支持，以便继续开发。
+
+> **加 6:6** — 只是那在话语上受教的，当与施教的人共同分享一切的美物。
+
+<img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="微信收款码" width="240" />
 
 ## ☕ 支持
 
