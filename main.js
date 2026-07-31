@@ -346,9 +346,15 @@ class BibleSearchEngine {
             if (range === 'multi' && bookIds && bookIds.length > 0 && !bookIds.includes(item.bookId)) continue;
 
             let matched = false;
+            let refIndex = -1; // 记录匹配的是第几个引用，用于按输入顺序排序
+
             if (refs.length > 0) {
-                for (const ref of refs) {
-                    if (this.matchVerseRef(item, ref)) { matched = true; break; }
+                for (let i = 0; i < refs.length; i++) {
+                    if (this.matchVerseRef(item, refs[i])) {
+                        matched = true;
+                        refIndex = i;
+                        break;
+                    }
                 }
             }
             if (keywords.length > 0) {
@@ -377,9 +383,20 @@ class BibleSearchEngine {
                 const key = item.bookId + '-' + item.chapter + '-' + item.verse + '-' + item.type + '-' + item.content;
                 if (!seen.has(key)) {
                     seen.add(key);
-                    results.push({ item: item, selected: false, order: 0, sideBySide: false });
+                    results.push({ item: item, selected: false, order: 0, sideBySide: false, _refIndex: refIndex });
                 }
             }
+        }
+
+        // 经文引用检索：按输入顺序排序（_refIndex 从小到大，相同则保持原文顺序）
+        if (refs.length > 0) {
+            results.sort((a, b) => {
+                const aIdx = a._refIndex;
+                const bIdx = b._refIndex;
+                if (aIdx !== -1 && bIdx !== -1 && aIdx !== bIdx) return aIdx - bIdx;
+                // 相同 refIndex 或纯关键词匹配时，按原文 lineIndex 排序
+                return a.item.lineIndex - b.item.lineIndex;
+            });
         }
 
         // OR_ordered 模式：按关键词顺序排序结果
@@ -397,6 +414,9 @@ class BibleSearchEngine {
                 return 0;
             });
         }
+
+        // 清理内部排序字段
+        for (const r of results) { delete r._refIndex; }
 
         return results;
     }
@@ -1298,7 +1318,13 @@ class BibleSearchView extends ItemView {
             if (item.type === 'verse') refText = item.bookShortName + item.chapter + ':' + item.verse;
             else if (item.type === 'theme') refText = item.bookFullName + ' 主题';
             else refText = item.bookFullName + ' 纲目';
-            cardHeader.createEl('span', { cls: 'bible-result-ref', text: refText });
+            const refEl = cardHeader.createEl('span', { cls: 'bible-result-ref', text: refText });
+            refEl.style.cursor = 'pointer';
+            refEl.title = '点击跳转到经文位置';
+            refEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.openVerseLocation(item);
+            });
 
             const contentEl = card.createDiv({ cls: 'bible-result-text' });
             let displayText = item.content;
@@ -1844,6 +1870,114 @@ class BibleSearchView extends ItemView {
         const contentList = this.readerContent.querySelector('.bible-reader-content-list');
         if (contentList) contentList.style.fontSize = this.readerFontSize + 'px';
     }
+    async openVerseLocation(item) {
+        const testament = item.testament;
+        const folderPath = testament === 'old' ? this.plugin.settings.oldTestamentPath : this.plugin.settings.newTestamentPath;
+        const folder = this.app.vault.getAbstractFileByPath(folderPath);
+        if (!folder || !(folder instanceof TFolder)) {
+            new Notice('未找到圣经目录: ' + folderPath);
+            return;
+        }
+
+        // 通过书卷 ID 精确匹配文件
+        let targetFile = null;
+        for (const file of folder.children) {
+            if (file instanceof TFile && file.extension === 'md') {
+                const idMatch = file.basename.match(/^(\d+)/);
+                if (idMatch && parseInt(idMatch[1]) === item.bookId) {
+                    targetFile = file;
+                    break;
+                }
+            }
+        }
+        if (!targetFile) {
+            new Notice('未找到书卷文件: ' + item.bookFullName);
+            return;
+        }
+
+        // 先读取文件内容，找到目标行号
+        const fileContent = await this.app.vault.read(targetFile);
+        const lines = fileContent.split('\n');
+        let targetLine = -1;
+
+        const possibleShortNames = [item.bookShortName];
+        if (item.bookShortName === '约贰') possibleShortNames.push('约二');
+        if (item.bookShortName === '约叁') possibleShortNames.push('约三');
+
+        // 搜索目标行
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (item.type === 'verse') {
+                for (const sn of possibleShortNames) {
+                    if (line.startsWith(sn + item.chapter + ':' + item.verse + ' ') ||
+                        line.startsWith(sn + item.chapter + '：' + item.verse + ' ')) {
+                        targetLine = i;
+                        break;
+                    }
+                }
+            } else if (item.type === 'theme' && line.includes(item.content)) {
+                targetLine = i; break;
+            } else if (item.type === 'outline') {
+                const outlineContent = item.content.replace(/^>\s*/, '');
+                if (line.includes(outlineContent)) { targetLine = i; break; }
+            }
+            if (targetLine !== -1) break;
+        }
+
+        // 回退到章节标题
+        if (targetLine === -1 && item.type === 'verse') {
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (/^#+\s/.test(line) && line.includes('第' + item.chapter + '章')) {
+                    targetLine = i; break;
+                }
+            }
+        }
+
+        if (targetLine < 0) {
+            new Notice('未找到: ' + item.bookShortName + item.chapter + ':' + item.verse);
+            return;
+        }
+
+        // 复用已有的圣经标签页
+        let leaf = null;
+        for (const l of this.app.workspace.getLeavesOfType('markdown')) {
+            if (l.view && l.view.file) {
+                const p = l.view.file.path;
+                if (p.startsWith(this.plugin.settings.oldTestamentPath + '/') ||
+                    p.startsWith(this.plugin.settings.newTestamentPath + '/')) {
+                    leaf = l; break;
+                }
+            }
+        }
+        if (!leaf) leaf = this.app.workspace.getLeaf('tab');
+
+        // 打开文件并激活标签页，同时定位到目标行
+        await leaf.openFile(targetFile, {
+            active: true,
+            eState: { line: targetLine, ch: 0 }
+        });
+
+        // 激活标签页（确保焦点切换）
+        this.app.workspace.setActiveLeaf(leaf, { focus: true });
+
+        // 等待编辑器就绪后设置选区高亮
+        for (let i = 0; i < 30; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            if (leaf.view && leaf.view.editor && leaf.view.file && leaf.view.file.path === targetFile.path) {
+                const editor = leaf.view.editor;
+                if (targetLine < editor.lineCount()) {
+                    const lineText = editor.getLine(targetLine);
+                    editor.setSelection(
+                        { line: targetLine, ch: 0 },
+                        { line: targetLine, ch: lineText.length }
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
 }
 
 // ==================== 插件主类 ====================

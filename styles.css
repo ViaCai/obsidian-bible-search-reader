@@ -959,3 +959,10 @@
 .bible-reader-content-list {
     padding-bottom: 4px;
 }
+
+/* ===== 跳转高亮 ===== */
+.bible-jump-highlight {
+    background: rgba(78, 205, 196, 0.2) !important;
+    border-left: 3px solid var(--bible-accent) !important;
+    transition: background 0.3s ease;
+}
