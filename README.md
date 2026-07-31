@@ -15,12 +15,6 @@
 
 # 中文文档
 
-# 圣经检索与阅读 (Bible Search and Reader)
-
-![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
-
-> Obsidian 插件，用于本地圣经 Markdown 文档的检索、阅读与投影。
-
 ## 功能特性
 
 ### 圣经搜索
@@ -198,8 +192,6 @@ author:
 
 <img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="微信收款码" width="240" />
 
-## ☕ 支持
-
 ## 许可证
 
 MIT License
@@ -207,12 +199,6 @@ MIT License
 ---
 
 # English Documentation
-
-# Bible Search and Reader
-
-![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
-
-> An Obsidian plugin for local Bible Markdown document search, reading, and projection.
 
 ## Features
 
