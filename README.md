@@ -1,6 +1,6 @@
 # 圣经检索与阅读 (Bible Search and Reader)
 
-![Version](https://img.shields.io/badge/version-1.0.3-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 > Obsidian 插件，用于本地圣经 Markdown 文档的检索、阅读与投影。
 
@@ -17,7 +17,7 @@
 
 # 圣经检索与阅读 (Bible Search and Reader)
 
-![Version](https://img.shields.io/badge/version-1.0.3-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 > Obsidian 插件，用于本地圣经 Markdown 文档的检索、阅读与投影。
 
@@ -210,7 +210,7 @@ MIT License
 
 # Bible Search and Reader
 
-![Version](https://img.shields.io/badge/version-1.0.3-blue) ![License](https://img.shields.io/badge/license-MIT-green)
+![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
 > An Obsidian plugin for local Bible Markdown document search, reading, and projection.
 
