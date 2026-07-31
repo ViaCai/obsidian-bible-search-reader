@@ -4,6 +4,22 @@
 
 ## 中文
 
+## [1.0.4] - 2026-08-01
+
+### 修复
+- **经文解析引擎修复**：修复了 14 个书卷（撒上、撒下、王上、王下、代上、代下、林前、林后、帖前、帖后、提前、提后、彼前、彼后）因正则表达式字符类误用导致的经文完全无法解析的问题。
+- **书卷识别精确匹配**：修复了不带序号前缀的文件名回退匹配时，因简称前缀冲突导致的识别错误（如 `约翰一书.md` 被误识别为 `约翰福音`，`撒母耳记下.md` 被误识别为 `撒母耳记上`）。现在按简称长度降序匹配，优先匹配最长前缀。
+- **阅读模式混合投影**：修复了「圣经阅读」标签页中「混合投影」按钮点击无响应的问题。
+- **搜索结果高亮区域点击**：修复了点击搜索结果中高亮的关键词时无法选中/取消选中卡片的问题。
+- **纲目误过滤**：修复了纲目内容中若包含「主题」二字会被错误跳过的问题，现在使用精确正则区分主题和纲目。
+- **选择器注入风险**：阅读界面使用行号索引定位卡片，避免将经文内容拼入 CSS 选择器导致的潜在语法错误。
+
+### 优化
+- 删除未使用的 `isVerseReference` 方法和 `currentChapterVerses` 变量。
+- 清理 `renderChapterContent` 中的冗余空循环代码。
+
+---
+
 ## [1.0.3] - 2026-07-31
 
 ### 新增
@@ -60,6 +76,22 @@
 ---
 
 ## English
+
+## [1.0.4] - 2026-08-01
+
+### Fixed
+- **Verse parsing engine fix**: Fixed an issue where 14 books (1Sam, 2Sam, 1Ki, 2Ki, 1Ch, 2Ch, 1Co, 2Co, 1Th, 2Th, 1Ti, 2Ti, 1Pe, 2Pe) had all verses completely skipped due to incorrect regex character class usage.
+- **Accurate book name matching**: Fixed fallback filename matching errors caused by short-name prefix conflicts (e.g., `1John.md` misidentified as `John`, `2Samuel.md` as `1Samuel`). Now matches by descending short-name length to prioritize the longest prefix.
+- **Reader mixed projection**: Fixed the unresponsive "Mixed Projection" button in the Bible Reader tab.
+- **Search result highlight clickability**: Fixed an issue where clicking highlighted keywords in search results would not toggle card selection.
+- **Outline mis-filtering**: Fixed outlines containing the word "theme" being incorrectly skipped. Now uses a precise regex to distinguish themes from outlines.
+- **Selector injection risk**: Reader view now uses line-index attributes for card positioning instead of embedding verse content into CSS selectors.
+
+### Improved
+- Removed unused `isVerseReference` method and `currentChapterVerses` variable.
+- Cleaned up redundant empty loop in `renderChapterContent`.
+
+---
 
 ## [1.0.3] - 2026-07-31
 

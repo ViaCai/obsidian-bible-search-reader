@@ -80,7 +80,11 @@ for (const book of BIBLE_BOOKS) {
 // 别名映射（文档中使用约二/约三，但标准简称是约贰/约叁）
 BOOK_MAP['约二'] = BOOK_MAP['约贰'];
 BOOK_MAP['约三'] = BOOK_MAP['约叁'];
-const BOOK_SHORT_NAMES = BIBLE_BOOKS.map(b => b.shortName).sort((a, b) => b.length - a.length);
+const BOOK_SHORT_NAMES = BIBLE_BOOKS.map(b => b.shortName);
+// 加入别名（文档中使用约二/约三，但标准简称是约贰/约叁）
+if (BOOK_MAP['约二'] && !BOOK_SHORT_NAMES.includes('约二')) BOOK_SHORT_NAMES.push('约二');
+if (BOOK_MAP['约三'] && !BOOK_SHORT_NAMES.includes('约三')) BOOK_SHORT_NAMES.push('约三');
+BOOK_SHORT_NAMES.sort((a, b) => b.length - a.length);
 
 // ==================== 工具函数 ====================
 function chineseToNumber(s) {
@@ -196,8 +200,19 @@ class BibleParser {
         }
 
         if (!bookInfo) {
+            // 先精确匹配 fullName
             for (const book of BIBLE_BOOKS) {
-                if (fileName.includes(book.fullName) || fileName.includes(book.shortName)) {
+                if (fileName.includes(book.fullName)) {
+                    bookInfo = book;
+                    break;
+                }
+            }
+        }
+        if (!bookInfo) {
+            // 再按 shortName 长度降序匹配，避免"约"先匹配到约翰福音，"撒"先匹配到撒母耳记上
+            const sortedByLength = [...BIBLE_BOOKS].sort((a, b) => b.shortName.length - a.shortName.length);
+            for (const book of sortedByLength) {
+                if (fileName.includes(book.shortName)) {
                     bookInfo = book;
                     break;
                 }
@@ -230,18 +245,22 @@ class BibleParser {
                 continue;
             }
 
-            if (trimmed.startsWith('>') && !trimmed.includes('主题')) {
-                const outlineContent = trimmed.replace(/^>\s*/, '').trim();
-                if (outlineContent) {
-                    items.push({
-                        type: 'outline', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
-                        bookFullName: bookInfo.fullName, testament: bookInfo.testament,
-                        chapter: currentChapter, verse: 0, lineIndex: lineIndex,
-                        content: outlineContent, rawLine: trimmed
-                    });
+            if (trimmed.startsWith('>')) {
+                // 精确区分主题和纲目：主题格式为 > **主题：...**
+                const isTheme = /^>\s*\*\*主题[：:].+\*\*\s*$/.test(trimmed);
+                if (!isTheme) {
+                    const outlineContent = trimmed.replace(/^>\s*/, '').trim();
+                    if (outlineContent) {
+                        items.push({
+                            type: 'outline', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
+                            bookFullName: bookInfo.fullName, testament: bookInfo.testament,
+                            chapter: currentChapter, verse: 0, lineIndex: lineIndex,
+                            content: outlineContent, rawLine: trimmed
+                        });
+                    }
+                    lineIndex++;
+                    continue;
                 }
-                lineIndex++;
-                continue;
             }
 
             const chapterMatch = trimmed.match(/^#+\s*(?:.*第)?([\d一二三四五六七八九十百零]+)章?.*$/);
@@ -254,63 +273,32 @@ class BibleParser {
                 continue;
             }
 
-            // 特殊处理：文档中约翰二书/三书使用约二/约三
-            const verseMatchJohn23 = trimmed.match(/^(约[二三])(\d+)[：:](\d+)\s*(.*)$/);
-            if (verseMatchJohn23) {
-                const mappedName = verseMatchJohn23[1] === '约二' ? '约贰' : '约叁';
-                const chapter = parseInt(verseMatchJohn23[2]);
-                const verse = parseInt(verseMatchJohn23[3]);
-                const verseContent = verseMatchJohn23[4].trim();
-                const matchedBook = BOOK_MAP[mappedName];
-                if (matchedBook && matchedBook.id === bookInfo.id) {
-                    currentChapter = chapter;
-                    items.push({
-                        type: 'verse', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
-                        bookFullName: bookInfo.fullName, testament: bookInfo.testament,
-                        chapter: chapter, verse: verse, lineIndex: lineIndex,
-                        content: verseContent, rawLine: trimmed
-                    });
+            // 统一经文解析：按书卷简称长度降序匹配，确保"约壹"优先于"约"
+            let verseMatched = false;
+            for (const sn of BOOK_SHORT_NAMES) {
+                if (trimmed.startsWith(sn)) {
+                    const after = trimmed.slice(sn.length);
+                    const m = after.match(/^(\d+)[：:](\d+)\s*(.*)$/);
+                    if (m) {
+                        const chapter = parseInt(m[1]);
+                        const verse = parseInt(m[2]);
+                        const verseContent = m[3].trim();
+                        const matchedBook = BOOK_MAP[sn];
+                        if (matchedBook && matchedBook.id === bookInfo.id) {
+                            currentChapter = chapter;
+                            items.push({
+                                type: 'verse', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
+                                bookFullName: bookInfo.fullName, testament: bookInfo.testament,
+                                chapter: chapter, verse: verse, lineIndex: lineIndex,
+                                content: verseContent, rawLine: trimmed
+                            });
+                        }
+                        verseMatched = true;
+                        break;
+                    }
                 }
-                lineIndex++;
-                continue;
             }
-
-            const verseMatch2 = trimmed.match(/^(约[壹贰叁]|[撒上下王代林前后帖前后提前后彼前后])(\d+)[：:](\d+)\s*(.*)$/);
-            if (verseMatch2) {
-                const shortName = verseMatch2[1];
-                const chapter = parseInt(verseMatch2[2]);
-                const verse = parseInt(verseMatch2[3]);
-                const verseContent = verseMatch2[4].trim();
-                const matchedBook = BOOK_MAP[shortName];
-                if (matchedBook && matchedBook.id === bookInfo.id) {
-                    currentChapter = chapter;
-                    items.push({
-                        type: 'verse', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
-                        bookFullName: bookInfo.fullName, testament: bookInfo.testament,
-                        chapter: chapter, verse: verse, lineIndex: lineIndex,
-                        content: verseContent, rawLine: trimmed
-                    });
-                }
-                lineIndex++;
-                continue;
-            }
-
-            const verseMatch = trimmed.match(/^(约[壹贰叁]|[创出利民申书士得撒上下王代拉尼斯伯诗箴传歌赛耶哀结但何珥摩俄拿弥鸿哈番该亚玛太可路约徒罗林前后加弗腓西帖前后提前后多门来雅彼前后犹启])(\d+)[：:](\d+)\s*(.*)$/);
-            if (verseMatch) {
-                const shortName = verseMatch[1];
-                const chapter = parseInt(verseMatch[2]);
-                const verse = parseInt(verseMatch[3]);
-                const verseContent = verseMatch[4].trim();
-                const matchedBook = BOOK_MAP[shortName];
-                if (matchedBook && matchedBook.id === bookInfo.id) {
-                    currentChapter = chapter;
-                    items.push({
-                        type: 'verse', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
-                        bookFullName: bookInfo.fullName, testament: bookInfo.testament,
-                        chapter: chapter, verse: verse, lineIndex: lineIndex,
-                        content: verseContent, rawLine: trimmed
-                    });
-                }
+            if (verseMatched) {
                 lineIndex++;
                 continue;
             }
@@ -641,15 +629,6 @@ class BibleSearchEngine {
         return ranges;
     }
 
-    isVerseReference(part) {
-        for (const shortName of BOOK_SHORT_NAMES) {
-            if (part.startsWith(shortName)) {
-                const after = part.slice(shortName.length);
-                if (/^[\d一二三四五六七八九十百零]+/.test(after)) return true;
-            }
-        }
-        return false;
-    }
 
     matchVerseRef(item, ref) {
         if (item.type !== 'verse') return false;
@@ -930,7 +909,7 @@ class BibleSearchView extends ItemView {
         this.readerBook = null;
         this.readerChapter = 1;
         this.readerFontSize = 15;
-        this.currentChapterVerses = [];
+
         this.readerResults = [];
         this.readerSelectCounter = 0;
         this.selectedBookIds = new Set();
@@ -1357,7 +1336,8 @@ class BibleSearchView extends ItemView {
 
             checkbox.addEventListener('click', () => this.toggleSelection(globalIdx));
             card.addEventListener('click', (e) => {
-                if (e.target === card || e.target === contentEl) this.toggleSelection(globalIdx);
+                if (e.target.closest('.bible-result-checkbox') || e.target.closest('.bible-side-tag') || e.target.closest('.bible-result-ref')) return;
+                this.toggleSelection(globalIdx);
             });
         }
     }
@@ -1525,14 +1505,6 @@ class BibleSearchView extends ItemView {
         // 切换章节时清空上一章的选中状态
         this.readerResults = [];
         this.readerSelectCounter = 0;
-        // 同步 readerSelectCounter，确保当前章的选中数字从1开始显示
-        this.readerSelectCounter = 0;
-        for (const r of this.readerResults) {
-            if (r.selected) {
-                this.readerSelectCounter++;
-                r.order = this.readerSelectCounter;
-            }
-        }
         const book = this.readerBook;
         const chapter = this.readerChapter;
         if (!book) { this.readerState = 'books'; this.renderReader(); return; }
@@ -1744,10 +1716,25 @@ class BibleSearchView extends ItemView {
             const overlay = new BibleProjectionOverlay(this.app, selected, 'parallel');
             overlay.open();
         });
+
+        // 混合投影（当前章选中的内容）
+        mixedProjBtn.addEventListener('click', () => {
+            const allItems = [...themeItems, ...items];
+            const selected = [];
+            for (const item of allItems) {
+                const r = this.readerResults.find(r =>
+                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
+                );
+                if (r) selected.push(r);
+            }
+            selected.sort((a, b) => a.order - b.order);
+            if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
+            const overlay = new BibleProjectionOverlay(this.app, selected, 'mixed');
+            overlay.open();
+        });
     }
 
     renderReaderItemCard(container, item) {
-        const key = item.type + '-' + item.bookId + '-' + item.chapter + '-' + item.verse + '-' + item.content;
         const existingIdx = this.readerResults.findIndex(r =>
             r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
         );
@@ -1755,7 +1742,7 @@ class BibleSearchView extends ItemView {
         const result = existingIdx !== -1 ? this.readerResults[existingIdx] : null;
 
         const card = container.createDiv({ cls: 'bible-reader-verse-card' + (isSelected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : '') });
-        card.setAttribute('data-item-key', key);
+        card.setAttribute('data-line-index', String(item.lineIndex));
 
         if (item.type === 'outline') {
             // 纲目：checkbox 与内容放在同一行，不单独显示 header
@@ -1802,8 +1789,7 @@ class BibleSearchView extends ItemView {
     }
 
     refreshReaderItemCard(item) {
-        const key = item.type + '-' + item.bookId + '-' + item.chapter + '-' + item.verse + '-' + item.content;
-        const card = this.readerPanel.querySelector('.bible-reader-verse-card[data-item-key="' + key + '"]');
+        const card = this.readerContent.querySelector('.bible-reader-verse-card[data-line-index="' + item.lineIndex + '"]');
         if (!card) return;
 
         const existingIdx = this.readerResults.findIndex(r =>
