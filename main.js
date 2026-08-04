@@ -264,7 +264,7 @@ class BibleParser {
             }
 
             const chapterMatch = trimmed.match(/^#+\s*(?:.*第)?([\d一二三四五六七八九十百零]+)章?.*$/);
-            if (chapterMatch && !trimmed.includes(':') && trimmed.length < 50) {
+            if (chapterMatch && trimmed.length < 50) {
                 const ch = parseNumber(chapterMatch[1]);
                 if (!isNaN(ch) && ch > 0 && ch <= 200) {
                     currentChapter = ch;
@@ -640,14 +640,16 @@ class BibleSearchEngine {
     }
 }
 class BibleProjectionOverlay {
-    constructor(app, results, mode) {
+    constructor(app, results, mode, showSource) {
         this.app = app;
         this.results = results.filter(r => r.selected).sort((a, b) => a.order - b.order);
         this.mode = mode;
+        this.showSource = showSource !== false;
         this.currentSlide = 0;
         this.slides = [];
         this.fontSize = 48;
         this.isDark = true;
+        this.isCentered = false;
         this.touchStartX = 0;
         this.touchStartY = 0;
         this.buildSlides();
@@ -690,6 +692,9 @@ class BibleProjectionOverlay {
         toolbarCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '⟲', attr: { 'data-action': 'font-reset' } });
 
         const toolbarRight = toolbar.createDiv({ cls: 'bible-proj-toolbar-right' });
+        if (this.mode !== 'focus') {
+            toolbarRight.createEl('button', { cls: 'bible-proj-tool-btn', text: '⬜', attr: { 'data-action': 'toggle-centered', title: '切换居中' } });
+        }
         toolbarRight.createEl('button', { cls: 'bible-proj-tool-btn', text: '🌙', attr: { 'data-action': 'toggle-theme' } });
         toolbarRight.createEl('button', { cls: 'bible-proj-tool-btn', text: '✕', attr: { 'data-action': 'close' } });
         this.overlay.appendChild(toolbar);
@@ -724,6 +729,7 @@ class BibleProjectionOverlay {
             else if (action === 'font-larger') { this.fontSize += 4; this.updateFontSize(); }
             else if (action === 'font-smaller') { this.fontSize = Math.max(16, this.fontSize - 4); this.updateFontSize(); }
             else if (action === 'font-reset') { this.fontSize = 48; this.updateFontSize(); }
+            else if (action === 'toggle-centered') { this.toggleCentered(); }
             else if (action === 'toggle-theme') { this.toggleTheme(); }
         });
 
@@ -792,20 +798,56 @@ class BibleProjectionOverlay {
 
         if (this.mode === 'focus') {
             const item = slide.items[0];
-            const refDiv = wrapper.createEl('div', { cls: 'bible-proj-ref bible-proj-focus-ref', text: this.getItemRef(item) });
-            refDiv.style.marginBottom = '20px';
+            // 阅读模式（showSource=false）下，theme/outline 不显示出处
+            const shouldShowRef = this.showSource || item.type === 'verse';
+            if (shouldShowRef) {
+                const refDiv = wrapper.createEl('div', { cls: 'bible-proj-ref bible-proj-focus-ref', text: this.getItemRef(item) });
+                refDiv.style.marginBottom = '20px';
+                if (item.type === 'theme') {
+                    refDiv.classList.add('bible-proj-focus-theme-ref');
+                } else if (item.type === 'outline') {
+                    refDiv.classList.add('bible-proj-focus-outline-ref');
+                }
+            }
             const textDiv = wrapper.createEl('div', { cls: 'bible-proj-text bible-proj-focus-text', text: this.getItemContent(item) });
             textDiv.style.lineHeight = '1.8';
+            if (item.type === 'theme') {
+                textDiv.classList.add('bible-proj-focus-theme');
+            } else if (item.type === 'outline') {
+                textDiv.classList.add('bible-proj-focus-outline');
+            }
         } else {
-            wrapper.style.textAlign = 'left';
+            wrapper.style.textAlign = this.isCentered ? 'center' : 'left';
             for (const item of slide.items) {
                 const itemEl = document.createElement('div');
-                itemEl.style.cssText = 'margin-bottom:24px;padding:16px;background:rgba(255,255,255,0.05);border-radius:8px;';
-                const pRef = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-parallel-ref', text: this.getItemRef(item) });
-                pRef.style.marginBottom = '8px';
-                pRef.style.fontWeight = '600';
+                // 根据类型设置不同的样式：经文保留背景框，主题和纲目去掉背景框
+                if (item.type === 'verse') {
+                    itemEl.classList.add('bible-proj-verse-box');
+                } else if (item.type === 'theme') {
+                    itemEl.classList.add('bible-proj-theme-box');
+                    itemEl.classList.add('bible-proj-parallel-theme');
+                } else if (item.type === 'outline') {
+                    itemEl.classList.add('bible-proj-outline-box');
+                    itemEl.classList.add('bible-proj-parallel-outline');
+                }
+                const shouldShowRef = this.showSource || item.type === 'verse';
+                if (shouldShowRef) {
+                    const pRef = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-parallel-ref', text: this.getItemRef(item) });
+                    pRef.style.marginBottom = '8px';
+                    pRef.style.fontWeight = '600';
+                    if (item.type === 'theme') {
+                        pRef.classList.add('bible-proj-parallel-theme-ref');
+                    } else if (item.type === 'outline') {
+                        pRef.classList.add('bible-proj-parallel-outline-ref');
+                    }
+                }
                 const pText = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-parallel-text', text: this.getItemContent(item) });
                 pText.style.lineHeight = '1.7';
+                if (item.type === 'theme') {
+                    pText.classList.add('bible-proj-parallel-theme-text');
+                } else if (item.type === 'outline') {
+                    pText.classList.add('bible-proj-parallel-outline-text');
+                }
                 wrapper.appendChild(itemEl);
             }
         }
@@ -821,8 +863,21 @@ class BibleProjectionOverlay {
         this.overlay.querySelectorAll('.bible-proj-focus-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; el.style.color = this.isDark ? '#a0a0a0' : '#666'; });
         this.overlay.querySelectorAll('.bible-proj-parallel-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-parallel-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.55) + 'px'; el.style.color = this.isDark ? '#a0a0a0' : '#666'; });
+        // 主题字体大小（比经文大15%）
+        this.overlay.querySelectorAll('.bible-proj-focus-theme').forEach(el => { el.style.fontSize = (this.fontSize * 1.15) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-focus-theme-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-focus-outline').forEach(el => { el.style.fontSize = (this.fontSize * 0.95) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-focus-outline-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-parallel-theme-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85 * 1.15) + 'px'; });
         const wrapper = this.overlay.querySelector('.bible-proj-slide-wrapper');
         if (wrapper) wrapper.style.maxWidth = this.getWrapperMaxWidth() + 'px';
+    }
+
+    toggleCentered() {
+        this.isCentered = !this.isCentered;
+        const btn = this.overlay.querySelector('[data-action="toggle-centered"]');
+        if (btn) btn.textContent = this.isCentered ? '⬛' : '⬜';
+        this.renderSlide();
     }
 
     toggleTheme() {
@@ -830,9 +885,11 @@ class BibleProjectionOverlay {
         const btn = this.overlay.querySelector('[data-action="toggle-theme"]');
         if (btn) btn.textContent = this.isDark ? '🌙' : '☀️';
         if (this.isDark) {
+            this.overlay.classList.remove('light-mode');
             this.overlay.style.background = '#1a1a2e';
             this.overlay.style.color = '#fff';
         } else {
+            this.overlay.classList.add('light-mode');
             this.overlay.style.background = '#f5f5f5';
             this.overlay.style.color = '#333';
         }
@@ -859,9 +916,7 @@ class BibleProjectionOverlay {
     }
 
     getWrapperMaxWidth() {
-        const baseWidth = 900;
-        const extra = Math.max(0, (this.fontSize - 48) * 18);
-        return Math.min(window.innerWidth * 0.9, baseWidth + extra);
+        return window.innerWidth * 0.9;
     }
 
     getModeName() {
@@ -959,9 +1014,14 @@ class BibleSearchView extends ItemView {
         // 检索范围
         const rangeSection = fixedTop.createDiv({ cls: 'bible-section' });
         const rangeHeader = rangeSection.createDiv({ cls: 'bible-section-header' });
-        rangeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
+        const rangeIcon = rangeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
         rangeHeader.createEl('span', { text: '检索范围' });
         const rangeBody = rangeSection.createDiv({ cls: 'bible-section-body' });
+        rangeHeader.addEventListener('click', () => {
+            const isCollapsed = rangeBody.style.display === 'none';
+            rangeBody.style.display = isCollapsed ? 'block' : 'none';
+            rangeIcon.textContent = isCollapsed ? '▼' : '▶';
+        });
         this.rangeRadios = {};
         const rangeOptions = [
             { value: 'all', label: '全部圣经' },
@@ -1045,9 +1105,14 @@ class BibleSearchView extends ItemView {
         // 全局操作
         const actionSection = fixedTop.createDiv({ cls: 'bible-section bible-action-section' });
         const actionHeader = actionSection.createDiv({ cls: 'bible-section-header' });
-        actionHeader.createEl('span', { cls: 'bible-section-icon', text: '⚡' });
+        const actionIcon = actionHeader.createEl('span', { cls: 'bible-section-icon', text: '⚡' });
         actionHeader.createEl('span', { text: '全局操作' });
         const actionBody = actionSection.createDiv({ cls: 'bible-action-grid' });
+        actionHeader.addEventListener('click', () => {
+            const isCollapsed = actionBody.style.display === 'none';
+            actionBody.style.display = isCollapsed ? 'grid' : 'none';
+            actionIcon.textContent = isCollapsed ? '⚡' : '⚡';
+        });
         const selectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局全选' });
         const deselectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '取消全选' });
         const focusBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '逐节投影' });
@@ -1058,9 +1123,14 @@ class BibleSearchView extends ItemView {
         // 检索种类
         const typeSection = fixedTop.createDiv({ cls: 'bible-section' });
         const typeHeader = typeSection.createDiv({ cls: 'bible-section-header' });
-        typeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
+        const typeIcon = typeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
         typeHeader.createEl('span', { text: '检索种类' });
         const typeBody = typeSection.createDiv({ cls: 'bible-type-grid' });
+        typeHeader.addEventListener('click', () => {
+            const isCollapsed = typeBody.style.display === 'none';
+            typeBody.style.display = isCollapsed ? 'flex' : 'none';
+            typeIcon.textContent = isCollapsed ? '▼' : '▶';
+        });
         for (const type of ['theme', 'outline', 'verse']) {
             const label = typeBody.createEl('label', { cls: 'bible-checkbox-label' });
             const cb = label.createEl('input', { type: 'checkbox' });
@@ -1080,6 +1150,7 @@ class BibleSearchView extends ItemView {
         // 可滚动结果区域
         this.searchScrollArea = this.searchPanel.createDiv({ cls: 'bible-search-scroll-area' });
         this.resultsContainer = this.searchScrollArea.createDiv({ cls: 'bible-results-list' });
+        this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容后点击查询' });
 
         // 事件
         searchBtn.addEventListener('click', () => this.performSearch());
@@ -1347,11 +1418,6 @@ class BibleSearchView extends ItemView {
             element.setText(text);
             return;
         }
-        // 构建不区分大小写的关键词匹配
-        const patterns = keywords.filter(k => k).map(kw => {
-            const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            return { regex: new RegExp('(' + escaped + ')', 'gi'), kw: kw };
-        });
         // 找到所有匹配位置
         const matches = [];
         for (const p of patterns) {
@@ -1452,7 +1518,7 @@ class BibleSearchView extends ItemView {
     openProjection(mode) {
         const selected = this.results.filter(r => r.selected);
         if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-        const overlay = new BibleProjectionOverlay(this.app, this.results, mode);
+        const overlay = new BibleProjectionOverlay(this.app, this.results, mode, true);
         overlay.open();
     }
 
@@ -1465,8 +1531,6 @@ class BibleSearchView extends ItemView {
     }
 
     renderBookList() {
-        this.readerContent.empty();
-        this.readerFixedTop.empty();
         this.readerContent.createEl('h4', { cls: 'bible-reader-label', text: '旧约' });
         const oldGrid = this.readerContent.createDiv({ cls: 'bible-reader-grid' });
         for (const book of BIBLE_BOOKS.filter(b => b.testament === 'old')) {
@@ -1484,8 +1548,6 @@ class BibleSearchView extends ItemView {
     }
 
     renderChapterList() {
-        this.readerContent.empty();
-        this.readerFixedTop.empty();
         const book = this.readerBook;
         if (!book) { this.readerState = 'books'; this.renderReader(); return; }
         const nav = this.readerContent.createDiv({ cls: 'bible-reader-nav-row' });
@@ -1602,9 +1664,9 @@ class BibleSearchView extends ItemView {
             this.renderReaderItemCard(contentEl, item);
         }
 
-        // 全选（纲目+经文，不包含主题）
+        // 全选：第一章包含主题，其他章节不包含主题
         selectAllBtn.addEventListener('click', () => {
-            const allItems = [...items];
+            const allItems = this.readerChapter === 1 ? [...themeItems, ...items] : [...items];
             for (const item of allItems) {
                 const existingIdx = this.readerResults.findIndex(r =>
                     r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
@@ -1697,7 +1759,7 @@ class BibleSearchView extends ItemView {
             }
             selected.sort((a, b) => a.order - b.order);
             if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-            const overlay = new BibleProjectionOverlay(this.app, selected, 'focus');
+            const overlay = new BibleProjectionOverlay(this.app, selected, 'focus', false);
             overlay.open();
         });
 
@@ -1713,7 +1775,7 @@ class BibleSearchView extends ItemView {
             }
             selected.sort((a, b) => a.order - b.order);
             if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-            const overlay = new BibleProjectionOverlay(this.app, selected, 'parallel');
+            const overlay = new BibleProjectionOverlay(this.app, selected, 'parallel', false);
             overlay.open();
         });
 
@@ -1729,7 +1791,7 @@ class BibleSearchView extends ItemView {
             }
             selected.sort((a, b) => a.order - b.order);
             if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-            const overlay = new BibleProjectionOverlay(this.app, selected, 'mixed');
+            const overlay = new BibleProjectionOverlay(this.app, selected, 'mixed', false);
             overlay.open();
         });
     }
@@ -1743,6 +1805,9 @@ class BibleSearchView extends ItemView {
 
         const card = container.createDiv({ cls: 'bible-reader-verse-card' + (isSelected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : '') });
         card.setAttribute('data-line-index', String(item.lineIndex));
+        if (item.type === 'verse') {
+            card.style.borderBottom = '1px solid var(--background-modifier-border)';
+        }
 
         if (item.type === 'outline') {
             // 纲目：checkbox 与内容放在同一行，不单独显示 header
@@ -1789,7 +1854,7 @@ class BibleSearchView extends ItemView {
     }
 
     refreshReaderItemCard(item) {
-        const card = this.readerContent.querySelector('.bible-reader-verse-card[data-line-index="' + item.lineIndex + '"]');
+        const card = this.readerPanel.querySelector('.bible-reader-verse-card[data-line-index="' + item.lineIndex + '"]');
         if (!card) return;
 
         const existingIdx = this.readerResults.findIndex(r =>
@@ -1867,6 +1932,8 @@ class BibleSearchView extends ItemView {
     updateReaderFontSize() {
         const contentList = this.readerContent.querySelector('.bible-reader-content-list');
         if (contentList) contentList.style.fontSize = this.readerFontSize + 'px';
+        const themeEl = this.readerFixedTop.querySelector('.bible-reader-book-theme');
+        if (themeEl) themeEl.style.fontSize = this.readerFontSize + 'px';
     }
     async openVerseLocation(item) {
         const testament = item.testament;
@@ -1937,14 +2004,21 @@ class BibleSearchView extends ItemView {
             return;
         }
 
-        // 复用已有的圣经标签页
+        // 复用已有的圣经标签页：先精确匹配目标文件，再回退到目录匹配
         let leaf = null;
         for (const l of this.app.workspace.getLeavesOfType('markdown')) {
-            if (l.view && l.view.file) {
-                const p = l.view.file.path;
-                if (p.startsWith(this.plugin.settings.oldTestamentPath + '/') ||
-                    p.startsWith(this.plugin.settings.newTestamentPath + '/')) {
-                    leaf = l; break;
+            if (l.view && l.view.file && l.view.file.path === targetFile.path) {
+                leaf = l; break;
+            }
+        }
+        if (!leaf) {
+            for (const l of this.app.workspace.getLeavesOfType('markdown')) {
+                if (l.view && l.view.file) {
+                    const p = l.view.file.path;
+                    if (p.startsWith(this.plugin.settings.oldTestamentPath + '/') ||
+                        p.startsWith(this.plugin.settings.newTestamentPath + '/')) {
+                        leaf = l; break;
+                    }
                 }
             }
         }
@@ -1994,9 +2068,9 @@ class BibleSearchPlugin extends Plugin {
 
         await this.loadBibleData();
 
-        this.app.workspace.onLayoutReady(() => {
+        this.registerEvent(this.app.workspace.onLayoutReady(() => {
             this.activateSearchView();
-        });
+        }));
     }
 
     onunload() {}

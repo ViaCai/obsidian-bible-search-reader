@@ -4,6 +4,33 @@
 
 ## 中文
 
+## [1.0.5] - 2026-08-03
+
+### 新增
+- **并列/混合投影居中选项**：增加居中投影开关，勾选后每段内容居中显示。
+- **圣经阅读经文分割线**：经文卡片之间增加视觉分割线，提升阅读体验。
+
+### 修复
+- **投影模式显示区域**：内容显示区域调整为窗口的 90%，解决窗口利用率低的问题。
+- **圣经阅读主题勾选**：修复主题无法显示勾选状态及特定条件下无法勾选的问题。
+- **投影模式样式区分**：主题、纲目、经文在投影模式下拥有独立的视觉样式，并移除纲目和主题的背景框。
+- **投影主题字体大小**：修复主题字体过小且无法随字体调整的问题，主题字体现在比经文大 15%。
+- **逐节投影居中选项**：移除逐节投影中的居中切换按钮（逐节投影本身即为居中显示）。
+- **投影浅色主题样式失效**：修复切换浅色主题后，工具栏和按钮样式未正确切换的问题，现在通过 `light-mode` CSS 类统一管理浅色样式。
+- **章节标题解析过于严格**：移除章节标题解析中 `!trimmed.includes(':')` 的限制，避免跳过如 `## 第1章：神的创造` 这类合法章节标题。
+- **折叠区块功能缺失**：为「检索范围 / 全局操作 / 检索种类」三个折叠区块绑定点击事件，用户可自由展开/收起。
+- **搜索视图空状态缺失**：搜索视图首次打开时添加「请输入检索内容后点击查询」引导提示。
+- **标签页复用逻辑不精确**：跳转经文时改为「先精确匹配目标文件路径 → 再回退到目录匹配」，避免在错误的已打开书卷中定位经文。
+
+### 优化
+- **投影纲目出处显示**：并列/混合投影中，纲目不再显示书卷出处，直接展示内容。
+- **圣经阅读全选逻辑**：第一章全选时包含书卷主题，从第二章开始全选不再选中主题。
+- **阅读/检索投影出处区分**：圣经阅读模式下投影纲目不显示出处（同卷书），圣经检索模式下投影纲目显示出处（跨书卷）。
+- **投影样式改用 CSS 类**：并列/混合投影中经文/主题/纲目的背景框和边框从 inline style 改为 CSS 类，支持浅色模式自动适配。
+- **书卷主题字体联动**：阅读界面字体大小调节时，书卷主题区域同步联动。
+- **事件注册规范化**：`onLayoutReady` 使用 `registerEvent()` 包装，确保插件卸载时自动清理。
+- **代码清理**：移除 `highlightKeywords` 中的未使用变量，清理 `renderBookList` / `renderChapterList` 中的冗余 `empty()` 调用。
+
 ## [1.0.4] - 2026-08-01
 
 ### 修复
@@ -76,6 +103,33 @@
 ---
 
 ## English
+
+## [1.0.5] - 2026-08-03
+
+### Added
+- **Parallel/mixed projection centering option**: added centering toggle; content is centered when enabled.
+- **Bible reader verse dividers**: added visual separators between verse cards for better readability.
+
+### Fixed
+- **Projection display area**: content area now scales to 90% of window size, improving space utilization.
+- **Reader theme selection**: fixed theme checkbox state not showing and themes being unselectable under certain conditions.
+- **Projection mode visual distinction**: themes, outlines, and verses now have distinct styles in projection mode; removed background boxes for themes and outlines.
+- **Projection theme font size**: fixed theme font being too small and not responding to font size adjustments; theme font is now 15% larger than verse text.
+- **Focus mode centering toggle**: removed centering toggle button from focus mode (focus mode is inherently centered).
+- **Light theme CSS class toggle**: fixed toolbar and button styles not updating when switching to light theme; now managed via the `light-mode` CSS class.
+- **Overly strict chapter title parsing**: removed the `!trimmed.includes(':')` restriction to avoid skipping valid chapter titles like `## 第1章：神的创造`.
+- **Missing collapsible sections**: added click handlers to the "Search Scope", "Global Actions", and "Search Types" sections so users can expand/collapse them.
+- **Missing empty state in search view**: added a "Enter search query and click Search" placeholder when the search view first opens.
+- **Imprecise tab reuse logic**: changed verse jump tab reuse to "exact file path match first → fallback to folder match", preventing incorrect verse positioning in a previously opened book.
+
+### Improved
+- **Projection outline source display**: outlines in parallel/mixed projection no longer show book references, displaying content directly.
+- **Reader select-all logic**: select-all in chapter 1 includes book themes; from chapter 2 onward, themes are not selected.
+- **Reader vs. search projection source distinction**: outlines in reader projection omit source (same book), while search projection retains source (cross-book).
+- **Projection styles moved to CSS classes**: verse/theme/outline background boxes and borders in parallel/mixed projection moved from inline styles to CSS classes, enabling automatic light-mode adaptation.
+- **Book theme font size linkage**: the book theme area in the reader now syncs with font size adjustments.
+- **Event registration规范化**: `onLayoutReady` now wrapped with `registerEvent()` to ensure automatic cleanup on plugin unload.
+- **Code cleanup**: removed unused variables in `highlightKeywords`, and redundant `empty()` calls in `renderBookList` / `renderChapterList`.
 
 ## [1.0.4] - 2026-08-01
 

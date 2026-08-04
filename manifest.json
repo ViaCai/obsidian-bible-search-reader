@@ -1,7 +1,7 @@
 {
   "id": "bible-search-reader",
   "name": "Bible Search and Reader",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "minAppVersion": "0.15.0",
   "description": "Local Bible Markdown document search and reading plugin, supporting theme/outline/verse search with focus/parallel/mixed projection modes.",
   "author": "ViaCai",

@@ -757,6 +757,71 @@
     color: #666;
 }
 
+/* ===== 投影模式类型区分样式 ===== */
+/* Focus 模式 - 主题 */
+.bible-proj-focus-theme {
+    font-weight: 500;
+    color: #ffd700;
+    letter-spacing: 0.5px;
+}
+.bible-proj-focus-theme-ref {
+    color: #e0c060 !important;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-focus-theme {
+    color: #b8860b;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-focus-theme-ref {
+    color: #8b6914 !important;
+}
+
+/* Focus 模式 - 纲目 */
+.bible-proj-focus-outline {
+    font-style: italic;
+    color: #a0c4ff;
+    opacity: 0.9;
+}
+.bible-proj-focus-outline-ref {
+    color: #7aa0d0 !important;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-focus-outline {
+    color: #4a6fa5;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-focus-outline-ref {
+    color: #3a5f95 !important;
+}
+
+/* Parallel/Mixed 模式 - 主题 */
+.bible-proj-parallel-theme-text {
+    font-weight: 500;
+    color: #ffd700;
+    letter-spacing: 0.3px;
+}
+.bible-proj-parallel-theme-ref {
+    color: #e0c060 !important;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-parallel-theme-text {
+    color: #b8860b;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-parallel-theme-ref {
+    color: #8b6914 !important;
+}
+
+/* Parallel/Mixed 模式 - 纲目 */
+.bible-proj-parallel-outline-text {
+    font-style: italic;
+    color: #a0c4ff;
+    opacity: 0.9;
+}
+.bible-proj-parallel-outline-ref {
+    color: #7aa0d0 !important;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-parallel-outline-text {
+    color: #4a6fa5;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-parallel-outline-ref {
+    color: #3a5f95 !important;
+}
+
 
 /* ===== 阅读界面经文卡片（带候选框） ===== */
 .bible-reader-verse-card {
@@ -966,3 +1031,14 @@
     border-left: 3px solid var(--bible-accent) !important;
     transition: background 0.3s ease;
 }
+
+
+/* ===== 投影模式内容卡片（替代原 inline style） ===== */
+.bible-proj-verse-box { margin-bottom:24px; padding:16px; background:rgba(255,255,255,0.05); border-radius:8px; }
+.bible-proj-theme-box { margin-bottom:24px; padding:16px 0; border-radius:0; border-bottom:1px solid rgba(255,255,255,0.15); }
+.bible-proj-outline-box { margin-bottom:24px; padding:12px 0 12px 16px; border-radius:0; border-left:3px solid rgba(255,255,255,0.2); }
+
+/* 浅色模式适配 */
+.bible-projection-fullscreen.light-mode .bible-proj-verse-box { background:rgba(0,0,0,0.03); }
+.bible-projection-fullscreen.light-mode .bible-proj-theme-box { border-bottom-color:rgba(0,0,0,0.1); }
+.bible-projection-fullscreen.light-mode .bible-proj-outline-box { border-left-color:rgba(0,0,0,0.15); }
