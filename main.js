@@ -396,8 +396,8 @@ class UpdateModal extends Modal {
 }
 
 // ==================== 设置标签页 ====================
-const BIBLE_DATA_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-data.json';
-const BIBLE_DOCUMENTS_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip';
+const BIBLE_DATA_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-data.json';
+const BIBLE_DOCUMENTS_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-documents.zip';
 
 class BibleSettingTab extends PluginSettingTab {
     constructor(app, plugin) {

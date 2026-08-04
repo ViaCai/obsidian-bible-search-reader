@@ -74,6 +74,42 @@ author:
 | 经文 | `简称章:节 内容` | `加1:1 作使徒的保罗...` |
 | 章标题 | `# 书卷名第X章` | `# 加拉太书第1章` |
 
+## 自定义圣经版本
+
+插件默认提供和合本圣经数据，你也可以使用其他中文圣经版本（如恢复本、新译本等），只需按以下步骤操作。
+
+### 1. 准备外置文档
+
+按照「文档格式」整理你的圣经文档，确保：
+- 文件命名规范：`序号. 书卷名.md`
+- 内容格式正确：主题、纲目、经文、章标题
+- 旧约和新约分别放在两个文件夹中
+
+### 2. 外置数据转内置数据
+
+如果你希望将外置文档打包成内置的 `bible-data.json`（推荐，开箱即用）：
+
+1. **下载工具**：从 Release 下载 [`build-bible-data.html`](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/build-bible-data.html)
+2. **打开工具**：用浏览器直接打开该 HTML 文件（无需联网，纯本地运行）
+3. **选择文件夹**：
+   - 点击「选择旧约文件夹」，选中你的旧约文档所在文件夹
+   - 点击「选择新约文件夹」，选中你的新约文档所在文件夹
+4. **生成数据**：点击「生成 bible-data.json」，浏览器会自动下载生成的文件
+5. **放置文件**：将下载的 `bible-data.json` 放到插件目录（`.obsidian/plugins/bible-search-reader/`）下
+6. **切换模式**：在插件设置中选择「使用内置数据」，即可使用你的自定义版本
+
+> 💡 **提示**：生成工具会校验文档格式，如果某卷书解析失败，会在页面中显示错误信息，方便你定位问题。
+
+### 3. 直接使用外置数据
+
+如果你不想打包成内置数据，也可以直接使用外置文档：
+1. 将整理好的圣经文件夹放入 Vault
+2. 在插件设置中关闭「使用内置数据」
+3. 分别设置「旧约圣经目录」和「新约圣经目录」的路径
+4. 插件会自动解析外置文档
+
+---
+
 ## 使用指南
 
 ### 搜索
@@ -160,7 +196,7 @@ MIT License
 ## Quick Start
 
 1. **Install the plugin**: Search for "Bible Search and Reader" in the Obsidian Community Plugins marketplace, or manually download and extract to `.obsidian/plugins/bible-search-reader/`
-2. **Prepare Bible documents**: Download the [sample Chinese Bible documents (ZIP)](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip) and extract them into your vault
+2. **Prepare Bible documents**: Download the [sample Chinese Bible documents (ZIP)](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-documents.zip) and extract them into your vault
 3. **Configure directories**: Obsidian Settings → Community Plugins → Bible Search and Reader → set the **Old Testament Path** and **New Testament Path**
 
    > 📁 **Path format**: In the Obsidian file explorer, right-click the target folder → "Copy path" → "From vault folder", then paste it into the plugin settings.
@@ -196,6 +232,42 @@ author:
 | Outline | `> outline content` (starts with `>`, no "主题") | `> 壹　神的创造　一1～二3` |
 | Verse | `ShortNameChapter:Verse content` | `加1:1 作使徒的保罗...` |
 | Chapter title | `# BookName第X章` | `# 加拉太书第1章` |
+
+## Custom Bible Version
+
+The plugin ships with the Chinese Union Version by default. You can also use other Chinese Bible versions (e.g., Recovery Version, CNV, etc.) by following the steps below.
+
+### 1. Prepare External Documents
+
+Organize your Bible documents following the "Document Format" rules above. Make sure:
+- File naming follows the convention: `Number. BookName.md`
+- Content format is correct: theme, outline, verse, chapter title
+- Old and New Testament files are placed in separate folders
+
+### 2. Convert External Data to Built-in Data
+
+If you want to package your external documents into a built-in `bible-data.json` (recommended, works out of the box):
+
+1. **Download the tool**: Download [`build-bible-data.html`](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/build-bible-data.html) from the Release page
+2. **Open the tool**: Open the HTML file directly in your browser (runs entirely offline, no internet required)
+3. **Select folders**:
+   - Click "Select Old Testament folder" and choose your OT document folder
+   - Click "Select New Testament folder" and choose your NT document folder
+4. **Generate data**: Click "Generate bible-data.json" and the browser will download the generated file
+5. **Place the file**: Move the downloaded `bible-data.json` into the plugin directory (`.obsidian/plugins/bible-search-reader/`)
+6. **Switch mode**: In plugin settings, enable "Use built-in data" to use your custom version
+
+> 💡 **Tip**: The generator validates document format during parsing. If a book fails to parse, an error message will be displayed on the page to help you locate the issue.
+
+### 3. Use External Data Directly
+
+If you prefer not to package into built-in data, you can use external documents directly:
+1. Place your Bible folders into the Vault
+2. In plugin settings, disable "Use built-in data"
+3. Set the "Old Testament Path" and "New Testament Path" accordingly
+4. The plugin will automatically parse the external documents
+
+---
 
 ## Usage Guide
 
