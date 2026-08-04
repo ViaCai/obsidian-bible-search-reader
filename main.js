@@ -145,15 +145,9 @@ class FirstRunModal extends Modal {
         builtinCard.style.cursor = 'pointer';
         builtinCard.style.transition = 'all 0.2s';
         builtinCard.createEl('h3', { text: '📦 内置数据模式' });
-        builtinCard.createEl('p', { text: '需要下载 14MB 文件，文件较大，对网络要求较高，仓库不会有额外的文件增加，也不需要设置圣经所在的目录。', cls: 'setting-item-description' });
-        const builtinList = builtinCard.createEl('ul');
-        builtinList.style.fontSize = '12px';
-        builtinList.style.color = 'var(--text-muted)';
-        builtinList.style.marginTop = '8px';
-        builtinList.style.paddingLeft = '16px';
-        builtinList.createEl('li', { text: '✅ 仓库无额外文件增加' });
-        builtinList.createEl('li', { text: '✅ 无需设置圣经目录' });
-        builtinList.createEl('li', { text: '⚠️ 文件较大（约 14MB），对网络要求较高' });
+        builtinCard.createEl('p', { text: '1. 需要下载14MB文件，文件较大，对网络要求较高。', cls: 'setting-item-description' });
+        builtinCard.createEl('p', { text: '2. 仓库不会增加额外的文件夹和文件。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
+        builtinCard.createEl('p', { text: '3. 不需要设置圣经目录。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
 
         const externalCard = cards.createDiv({ cls: 'bible-mode-card' });
         externalCard.dataset.mode = 'external';
@@ -164,16 +158,9 @@ class FirstRunModal extends Modal {
         externalCard.style.cursor = 'pointer';
         externalCard.style.transition = 'all 0.2s';
         externalCard.createEl('h3', { text: '📁 外置数据模式' });
-        externalCard.createEl('p', { text: '需要下载 1.4MB 文件，文件较小，对网络要求较低，下载好后会自动解压，在仓库里生成对应的文件夹和 66 个圣经文档，作为数据源，并且会自动填写默认的圣经目录。若圣经文档被移动，则需要手动修改插件设置里的圣经目录。', cls: 'setting-item-description' });
-        const externalList = externalCard.createEl('ul');
-        externalList.style.fontSize = '12px';
-        externalList.style.color = 'var(--text-muted)';
-        externalList.style.marginTop = '8px';
-        externalList.style.paddingLeft = '16px';
-        externalList.createEl('li', { text: '✅ 文件较小（约 1.4MB），对网络要求较低' });
-        externalList.createEl('li', { text: '✅ 下载后自动解压并配置目录' });
-        externalList.createEl('li', { text: '✅ 可替换为其他圣经版本' });
-        externalList.createEl('li', { text: '⚠️ 仓库会多出圣经文件夹和 66 个文档' });
+        externalCard.createEl('p', { text: '1. 需要下载1.4MB文件，文件较小，网络要求较低。', cls: 'setting-item-description' });
+        externalCard.createEl('p', { text: '2. 下载后会自动解压到仓库并配置默认目录，会在仓库新建圣经文档，内含66个圣经文档。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
+        externalCard.createEl('p', { text: '3. 若圣经文档被移动，则需要手动修改插件设置里的圣经目录。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
 
         const selectCard = (mode) => {
             this.selectedMode = mode;
