@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, TFile, TFolder, ItemView, WorkspaceLeaf, Notice } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, TFile, TFolder, ItemView, WorkspaceLeaf, Notice, Platform, requestUrl, Modal } = require('obsidian');
 
 // ==================== 圣经书卷数据 ====================
 const BIBLE_BOOKS = [
@@ -112,7 +112,299 @@ function parseNumber(s) {
     return NaN;
 }
 
+// ==================== 首次运行引导模态框 ====================
+class FirstRunModal extends Modal {
+    constructor(app, plugin) {
+        super(app);
+        this.plugin = plugin;
+        this.selectedMode = null;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.style.padding = '24px';
+        contentEl.style.maxWidth = '640px';
+
+        const header = contentEl.createDiv({ cls: 'bible-first-run-header' });
+        header.style.textAlign = 'center';
+        header.style.marginBottom = '20px';
+        header.createEl('h2', { text: '📖 欢迎使用圣经检索与阅读插件' });
+        header.createEl('p', { text: '首次使用，请选择圣经数据来源', cls: 'setting-item-description' });
+
+        const cards = contentEl.createDiv({ cls: 'bible-first-run-cards' });
+        cards.style.display = 'flex';
+        cards.style.gap = '16px';
+        cards.style.marginBottom = '20px';
+
+        const builtinCard = cards.createDiv({ cls: 'bible-mode-card' });
+        builtinCard.dataset.mode = 'builtin';
+        builtinCard.style.flex = '1';
+        builtinCard.style.padding = '16px';
+        builtinCard.style.border = '2px solid var(--background-modifier-border)';
+        builtinCard.style.borderRadius = '8px';
+        builtinCard.style.cursor = 'pointer';
+        builtinCard.style.transition = 'all 0.2s';
+        builtinCard.createEl('h3', { text: '📦 内置数据模式' });
+        builtinCard.createEl('p', { text: '需要下载 14MB 文件，文件较大，对网络要求较高，仓库不会有额外的文件增加，也不需要设置圣经所在的目录。', cls: 'setting-item-description' });
+        const builtinList = builtinCard.createEl('ul');
+        builtinList.style.fontSize = '12px';
+        builtinList.style.color = 'var(--text-muted)';
+        builtinList.style.marginTop = '8px';
+        builtinList.style.paddingLeft = '16px';
+        builtinList.createEl('li', { text: '✅ 仓库无额外文件增加' });
+        builtinList.createEl('li', { text: '✅ 无需设置圣经目录' });
+        builtinList.createEl('li', { text: '⚠️ 文件较大（约 14MB），对网络要求较高' });
+
+        const externalCard = cards.createDiv({ cls: 'bible-mode-card' });
+        externalCard.dataset.mode = 'external';
+        externalCard.style.flex = '1';
+        externalCard.style.padding = '16px';
+        externalCard.style.border = '2px solid var(--background-modifier-border)';
+        externalCard.style.borderRadius = '8px';
+        externalCard.style.cursor = 'pointer';
+        externalCard.style.transition = 'all 0.2s';
+        externalCard.createEl('h3', { text: '📁 外置数据模式' });
+        externalCard.createEl('p', { text: '需要下载 1.4MB 文件，文件较小，对网络要求较低，下载好后会自动解压，在仓库里生成对应的文件夹和 66 个圣经文档，作为数据源，并且会自动填写默认的圣经目录。若圣经文档被移动，则需要手动修改插件设置里的圣经目录。', cls: 'setting-item-description' });
+        const externalList = externalCard.createEl('ul');
+        externalList.style.fontSize = '12px';
+        externalList.style.color = 'var(--text-muted)';
+        externalList.style.marginTop = '8px';
+        externalList.style.paddingLeft = '16px';
+        externalList.createEl('li', { text: '✅ 文件较小（约 1.4MB），对网络要求较低' });
+        externalList.createEl('li', { text: '✅ 下载后自动解压并配置目录' });
+        externalList.createEl('li', { text: '✅ 可替换为其他圣经版本' });
+        externalList.createEl('li', { text: '⚠️ 仓库会多出圣经文件夹和 66 个文档' });
+
+        const selectCard = (mode) => {
+            this.selectedMode = mode;
+            builtinCard.style.borderColor = mode === 'builtin' ? 'var(--bible-accent)' : 'var(--background-modifier-border)';
+            builtinCard.style.background = mode === 'builtin' ? 'rgba(78,205,196,0.08)' : '';
+            externalCard.style.borderColor = mode === 'external' ? 'var(--bible-accent)' : 'var(--background-modifier-border)';
+            externalCard.style.background = mode === 'external' ? 'rgba(78,205,196,0.08)' : '';
+            confirmBtn.disabled = false;
+        };
+        builtinCard.addEventListener('click', () => selectCard('builtin'));
+        externalCard.addEventListener('click', () => selectCard('external'));
+
+        const btnWrap = contentEl.createDiv();
+        btnWrap.style.textAlign = 'center';
+        const confirmBtn = btnWrap.createEl('button', { cls: 'mod-cta', text: '确认选择' });
+        confirmBtn.disabled = true;
+        confirmBtn.style.marginRight = '8px';
+        const cancelBtn = btnWrap.createEl('button', { text: '稍后再说' });
+        cancelBtn.addEventListener('click', () => this.close());
+
+        confirmBtn.addEventListener('click', async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.setText('检查数据中...');
+
+            // 先设置数据源模式
+            this.plugin.settings.dataSource = this.selectedMode;
+            await this.plugin.saveSettings();
+
+            // 检查是否已有数据
+            let hasData = false;
+            if (this.selectedMode === 'builtin') {
+                const info = await this.plugin.getBuiltinDataInfo();
+                hasData = info.available;
+            } else {
+                const oldFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.oldTestamentPath);
+                const newFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.newTestamentPath);
+                hasData = !!(oldFolder && newFolder);
+            }
+
+            if (hasData) {
+                // 已有数据，直接打开
+                this.plugin.settings.hasSetup = true;
+                await this.plugin.saveSettings();
+                await this.plugin.loadBibleData();
+                this.plugin.activateSearchView();
+                this.close();
+                return;
+            }
+
+            // 无数据，询问用户
+            confirmBtn.style.display = 'none';
+            cancelBtn.style.display = 'none';
+
+            const askWrap = contentEl.createDiv();
+            askWrap.style.textAlign = 'center';
+            askWrap.style.marginTop = '16px';
+            askWrap.createEl('p', { text: '未找到对应的圣经数据，您是否需要下载？', cls: 'setting-item-description', attr: { style: 'margin-bottom:12px;' } });
+
+            const haveDataBtn = askWrap.createEl('button', { cls: 'mod-cta', text: '我已有数据，不需下载' });
+            haveDataBtn.style.marginRight = '8px';
+            const downloadBtn = askWrap.createEl('button', { cls: 'mod-cta', text: '我没有数据，请帮我下载' });
+
+            haveDataBtn.addEventListener('click', async () => {
+                haveDataBtn.disabled = true;
+                downloadBtn.disabled = true;
+                haveDataBtn.setText('检查中...');
+
+                // 再次检查数据
+                let found = false;
+                if (this.selectedMode === 'builtin') {
+                    const info = await this.plugin.getBuiltinDataInfo();
+                    found = info.available;
+                } else {
+                    const oldFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.oldTestamentPath);
+                    const newFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.newTestamentPath);
+                    found = !!(oldFolder && newFolder);
+                }
+
+                if (found) {
+                    this.plugin.settings.hasSetup = true;
+                    await this.plugin.saveSettings();
+                    await this.plugin.loadBibleData();
+                    this.plugin.activateSearchView();
+                    this.close();
+                } else {
+                    askWrap.empty();
+                    askWrap.createEl('p', { text: '仍未找到圣经数据，是否需要下载？', cls: 'setting-item-description', attr: { style: 'margin-bottom:12px;color:var(--text-error);' } });
+                    const yesBtn = askWrap.createEl('button', { cls: 'mod-cta', text: '是，帮我下载' });
+                    yesBtn.style.marginRight = '8px';
+                    const noBtn = askWrap.createEl('button', { text: '否，稍后处理' });
+
+                    yesBtn.addEventListener('click', async () => {
+                        yesBtn.disabled = true;
+                        noBtn.disabled = true;
+                        yesBtn.setText('下载中...');
+                        try {
+                            if (this.selectedMode === 'builtin') {
+                                await this.plugin.downloadBuiltinData();
+                            } else {
+                                await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
+                            }
+                            this.plugin.settings.hasSetup = true;
+                            await this.plugin.saveSettings();
+                            await this.plugin.loadBibleData();
+                            this.plugin.activateSearchView();
+                            this.close();
+                        } catch (e) {
+                            new Notice('下载失败：' + e.message);
+                            yesBtn.disabled = false;
+                            yesBtn.setText('是，帮我下载');
+                        }
+                    });
+
+                    noBtn.addEventListener('click', async () => {
+                        this.plugin.settings.hasSetup = true;
+                        await this.plugin.saveSettings();
+                        await this.plugin.loadBibleData();
+                        this.plugin.activateSearchView();
+                        this.close();
+                        new Notice('未找到圣经数据，请到设置里配置正确后，才能使用。', 5000);
+                    });
+                }
+            });
+
+            downloadBtn.addEventListener('click', async () => {
+                haveDataBtn.disabled = true;
+                downloadBtn.disabled = true;
+                downloadBtn.setText('下载中...');
+                try {
+                    if (this.selectedMode === 'builtin') {
+                        await this.plugin.downloadBuiltinData();
+                    } else {
+                        await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
+                    }
+                    this.plugin.settings.hasSetup = true;
+                    await this.plugin.saveSettings();
+                    await this.plugin.loadBibleData();
+                    this.plugin.activateSearchView();
+                    this.close();
+                } catch (e) {
+                    new Notice('下载失败：' + e.message);
+                    downloadBtn.disabled = false;
+                    downloadBtn.setText('我没有数据，请帮我下载');
+                }
+            });
+        });
+    }
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// ==================== 更新日志模态框 ====================
+const CHANGELOG_CONTENT = {
+    '2.0.0': `
+## [2.0.0] - 2026-08-04
+
+### 新增
+- **内置数据源支持**：插件自带圣经数据，安装后开箱即用，无需额外配置。
+- **数据源切换**：设置中可选择「使用内置数据」或「使用外置数据」。
+- **首次运行引导**：首次启用时自动弹出引导窗口，帮助选择数据源模式并自动下载。
+- **一键下载内置数据**：提供「下载 bible-data.json」按钮，自动下载到插件目录。
+- **一键下载外置文档**：提供「下载并解压」按钮，自动下载 ZIP 并解压到 Vault，同时配置路径。
+- **下载进度显示**：实时显示文件大小和下载速度。
+- **自动检测更新**：启动时自动检测新版本并弹出提示。
+- **手动检查更新**：设置中提供「检查更新」按钮。
+- **自动更新安装**：一键下载并安装 main.js + manifest.json + styles.css。
+- **更新日志弹窗**：更新成功后显示版本更新内容。
+
+### 改进
+- **设置界面重构**：新增数据源选择区域，动态显示不同选项及模式说明。
+- **内置数据状态显示**：实时显示内置数据的卷数、条数等信息。
+- **兼容旧版本**：自动检测旧版配置，默认切换到外置数据模式。
+- **跨平台下载解压**：支持 Windows（PowerShell）和 macOS/Linux（unzip）。
+- **禁用插件清理**：禁用插件时自动关闭所有视图和投影窗口。
+
+### 修复
+- **内置数据读取**：修复 manifest.dir 不可靠问题，增加多路径 fallback。
+- **搜索结果显示异常**：修复 highlightKeywords 未定义变量问题。
+- **下载报错**：修复 Platform is not defined 错误。
+`
+};
+
+class UpdateModal extends Modal {
+    constructor(app, version, content) {
+        super(app);
+        this.version = version;
+        this.content = content || CHANGELOG_CONTENT[this.version] || '';
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.style.padding = '24px';
+        contentEl.style.maxWidth = '600px';
+
+        contentEl.createEl('h2', { text: '🎉 Bible Search and Reader 已更新至 v' + this.version });
+        const body = contentEl.createDiv();
+        body.style.marginTop = '16px';
+        body.style.lineHeight = '1.8';
+        body.style.fontSize = '14px';
+
+        const lines = this.content.trim().split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('## ')) {
+                body.createEl('h3', { text: trimmed.replace('## ', '') });
+            } else if (trimmed.startsWith('### ')) {
+                body.createEl('h4', { text: trimmed.replace('### ', ''), attr: { style: 'color:var(--bible-accent);margin-top:12px;' } });
+            } else if (trimmed.startsWith('- ')) {
+                body.createEl('div', { text: '• ' + trimmed.replace('- ', ''), attr: { style: 'margin-left:12px;margin-bottom:4px;' } });
+            } else if (trimmed) {
+                body.createEl('div', { text: trimmed });
+            }
+        }
+
+        const btnWrap = contentEl.createDiv();
+        btnWrap.style.textAlign = 'center';
+        btnWrap.style.marginTop = '20px';
+        const okBtn = btnWrap.createEl('button', { cls: 'mod-cta', text: '知道了' });
+        okBtn.addEventListener('click', () => this.close());
+    }
+    onClose() {
+        this.contentEl.empty();
+    }
+}
+
 // ==================== 设置标签页 ====================
+const BIBLE_DATA_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-data.json';
+const BIBLE_DOCUMENTS_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip';
+
 class BibleSettingTab extends PluginSettingTab {
     constructor(app, plugin) {
         super(app, plugin);
@@ -122,49 +414,228 @@ class BibleSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
         containerEl.createEl('h2', { text: '圣经检索与阅读设置' });
+
+        containerEl.createEl('h3', { text: '数据源', cls: 'setting-item-name' });
+        containerEl.createEl('div', { cls: 'setting-item-description', text: '选择圣经数据的来源方式' });
+
+        const modeDesc = containerEl.createEl('div', { cls: 'setting-item' });
+        modeDesc.style.padding = '12px 18px';
+        modeDesc.style.background = 'var(--background-secondary)';
+        modeDesc.style.borderRadius = '6px';
+        modeDesc.style.marginBottom = '12px';
+        modeDesc.style.fontSize = '13px';
+        modeDesc.style.lineHeight = '1.8';
+        modeDesc.style.color = 'var(--text-muted)';
+        if (this.plugin.settings.dataSource === 'builtin') {
+            modeDesc.setText('内置数据：需要下载 14MB 文件，文件较大，对网络要求较高，仓库不会有额外的文件增加，也不需要设置圣经所在的目录。');
+        } else {
+            modeDesc.setText('外置数据：需要下载 1.4MB 文件，文件较小，对网络要求较低，下载好后会自动解压，在仓库里生成对应的文件夹和 66 个圣经文档，作为数据源，并且会自动填写默认的圣经目录。若圣经文档被移动，则需要手动修改插件设置里的圣经目录。');
+        }
+
         new Setting(containerEl)
-            .setName('旧约圣经目录')
-            .setDesc('旧约圣经 Markdown 文档所在的文件夹路径')
-            .addText(text => text
-                .setPlaceholder('圣经/旧约')
-                .setValue(this.plugin.settings.oldTestamentPath)
+            .setName('使用内置数据（推荐）')
+            .setDesc('开启后使用内置 bible-data.json，关闭则使用外置 Markdown 文档。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.dataSource === 'builtin')
                 .onChange(async (value) => {
-                    this.plugin.settings.oldTestamentPath = value;
+                    this.plugin.settings.dataSource = value ? 'builtin' : 'external';
                     await this.plugin.saveSettings();
+                    this.display();
                     await this.plugin.loadBibleData();
                 }));
+
+        if (this.plugin.settings.dataSource === 'builtin') {
+            const builtinStatus = containerEl.createEl('div', { cls: 'setting-item' });
+            builtinStatus.style.padding = '12px 18px';
+            builtinStatus.style.background = 'var(--background-secondary)';
+            builtinStatus.style.borderRadius = '6px';
+            builtinStatus.style.marginBottom = '16px';
+            const statusLabel = builtinStatus.createEl('div', { cls: 'setting-item-name', text: '内置数据状态' });
+            statusLabel.style.marginBottom = '6px';
+            const statusText = builtinStatus.createEl('div', { cls: 'setting-item-description' });
+            statusText.style.whiteSpace = 'pre-wrap';
+            statusText.style.lineHeight = '1.6';
+            this.plugin.getBuiltinDataInfo().then(builtinInfo => {
+                if (builtinInfo.available) {
+                    statusText.setText('✅ 内置数据就绪：共 ' + builtinInfo.bookCount + ' 卷，' + builtinInfo.itemCount + ' 条数据');
+                    statusText.style.color = 'var(--interactive-success)';
+                } else {
+                    let msg = '❌ 未找到内置数据文件（bible-data.json）。\n请将它放在插件目录下，或点击下方按钮下载。';
+                    if (builtinInfo.error) msg += '\n错误信息: ' + builtinInfo.error;
+                    statusText.setText(msg);
+                    statusText.style.color = 'var(--text-error)';
+                }
+            });
+
+            new Setting(containerEl)
+                .setName('下载内置数据')
+                .setDesc('从 GitHub 下载 bible-data.json（约 14MB）到插件目录。')
+                .addButton(button => {
+                    const btn = button.setButtonText('⬇️ 下载 bible-data.json').setCta();
+                    btn.onClick(async () => {
+                        btn.buttonEl.setAttribute('disabled', 'true');
+                        btn.setButtonText('下载中...');
+                        try {
+                            await this.plugin.downloadBuiltinData();
+                            new Notice('内置数据下载完成！');
+                        } catch (e) {
+                            new Notice('下载失败：' + e.message);
+                        }
+                        btn.buttonEl.removeAttribute('disabled');
+                        btn.setButtonText('⬇️ 下载 bible-data.json');
+                        this.display();
+                        await this.plugin.loadBibleData();
+                    });
+                });
+        } else {
+            new Setting(containerEl)
+                .setName('旧约圣经目录')
+                .setDesc('旧约圣经 Markdown 文档所在的文件夹路径（如：圣经/旧约）')
+                .addText(text => text
+                    .setPlaceholder('圣经/旧约')
+                    .setValue(this.plugin.settings.oldTestamentPath)
+                    .onChange(async (value) => {
+                        this.plugin.settings.oldTestamentPath = value;
+                        await this.plugin.saveSettings();
+                        await this.plugin.loadBibleData();
+                    }));
+            new Setting(containerEl)
+                .setName('新约圣经目录')
+                .setDesc('新约圣经 Markdown 文档所在的文件夹路径（如：圣经/新约）')
+                .addText(text => text
+                    .setPlaceholder('圣经/新约')
+                    .setValue(this.plugin.settings.newTestamentPath)
+                    .onChange(async (value) => {
+                        this.plugin.settings.newTestamentPath = value;
+                        await this.plugin.saveSettings();
+                        await this.plugin.loadBibleData();
+                    }));
+
+            new Setting(containerEl)
+                .setName('下载圣经/模板文档')
+                .setDesc('自动从 GitHub 下载圣经文档并解压到 vault 根目录，同时自动配置路径。')
+                .addButton(button => {
+                    const btn = button.setButtonText('⬇️ 下载并解压').setCta();
+                    btn.onClick(async () => {
+                        btn.buttonEl.setAttribute('disabled', 'true');
+                        btn.setButtonText('下载中...');
+                        try {
+                            await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
+                            new Notice('圣经文档下载并解压成功，路径已自动配置');
+                        } catch (e) {
+                            new Notice('下载失败：' + e.message);
+                            console.error('[Bible] 下载失败:', e);
+                        }
+                        btn.buttonEl.removeAttribute('disabled');
+                        btn.setButtonText('⬇️ 下载并解压');
+                        this.display();
+                    });
+                });
+        }
+
+        containerEl.createEl('h3', { text: '更新', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
         new Setting(containerEl)
-            .setName('新约圣经目录')
-            .setDesc('新约圣经 Markdown 文档所在的文件夹路径')
-            .addText(text => text
-                .setPlaceholder('圣经/新约')
-                .setValue(this.plugin.settings.newTestamentPath)
+            .setName('自动检测更新')
+            .setDesc('启动时自动检测是否有新版本，并在右上角弹出更新提示。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.autoCheckUpdate)
                 .onChange(async (value) => {
-                    this.plugin.settings.newTestamentPath = value;
+                    this.plugin.settings.autoCheckUpdate = value;
                     await this.plugin.saveSettings();
-                    await this.plugin.loadBibleData();
+                }));
+
+        new Setting(containerEl)
+            .setName('立即检查更新')
+            .setDesc('手动检查是否有新版本可用。')
+            .addButton(button => button
+                .setButtonText('🔍 检查更新')
+                .onClick(async () => {
+                    button.setDisabled(true);
+                    button.setButtonText('检查中...');
+                    await this.plugin.checkForUpdate(true);
+                    button.setDisabled(false);
+                    button.setButtonText('🔍 检查更新');
                 }));
     }
 }
 
 // ==================== 圣经解析器（带原文顺序索引）====================
 class BibleParser {
-    constructor(app, settings) {
+    constructor(app, settings, pluginDir) {
         this.app = app;
         this.settings = settings;
+        this.pluginDir = pluginDir;
     }
 
     async parseAllBooks() {
+        console.log('[Bible] 开始解析圣经数据...');
+        let items = [];
+
+        if (this.settings.dataSource === 'builtin') {
+            items = await this.parseBuiltinData();
+        } else {
+            items = await this.parseExternalBooks();
+        }
+
+        console.log('[Bible] 解析完成，共 ' + items.length + ' 条数据');
+        return items;
+    }
+
+    async parseBuiltinData() {
+        const items = [];
+        try {
+            const pluginId = 'bible-search-reader';
+            const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
+            if (await this.app.vault.adapter.exists(adapterPath)) {
+                const raw = await this.app.vault.adapter.read(adapterPath);
+                const data = JSON.parse(raw);
+                if (Array.isArray(data)) {
+                    for (const item of data) { items.push(item); }
+                    console.log('[Bible] 内置数据加载成功 (Adapter):', items.length, '条');
+                    return items;
+                }
+            }
+            if (Platform.isDesktop) {
+                const fs = window.require('fs');
+                const path = window.require('path');
+                const possiblePaths = [];
+                if (this.pluginDir) {
+                    possiblePaths.push(path.join(this.pluginDir, 'bible-data.json'));
+                }
+                try {
+                    const basePath = this.app.vault.adapter.getBasePath();
+                    possiblePaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, 'bible-data.json'));
+                } catch (e) {}
+                for (const dataPath of possiblePaths) {
+                    if (fs.existsSync(dataPath)) {
+                        const raw = fs.readFileSync(dataPath, 'utf-8');
+                        const data = JSON.parse(raw);
+                        if (Array.isArray(data)) {
+                            for (const item of data) { items.push(item); }
+                            console.log('[Bible] 内置数据加载成功 (fs):', items.length, '条');
+                            return items;
+                        }
+                    }
+                }
+            }
+            console.warn('[Bible] 未找到内置数据文件，尝试路径:', adapterPath);
+        } catch (e) {
+            console.error('[Bible] 读取内置数据失败:', e);
+        }
+        return items;
+    }
+
+    async parseExternalBooks() {
         const items = [];
         const vault = this.app.vault;
-        console.log('[Bible] 开始解析圣经数据...');
 
         const oldFolder = vault.getAbstractFileByPath(this.settings.oldTestamentPath);
         if (oldFolder && oldFolder instanceof TFolder) {
             for (const file of oldFolder.children) {
                 if (file instanceof TFile && file.extension === 'md') {
                     console.log('[Bible] 解析旧约文件:', file.path);
-                    const parsed = await this.parseBookFile(file, 'old');
+                    const content = await vault.read(file);
+                    const parsed = this.parseBookContent(content, file.basename, 'old');
                     items.push(...parsed);
                 }
             }
@@ -175,21 +646,19 @@ class BibleParser {
             for (const file of newFolder.children) {
                 if (file instanceof TFile && file.extension === 'md') {
                     console.log('[Bible] 解析新约文件:', file.path);
-                    const parsed = await this.parseBookFile(file, 'new');
+                    const content = await vault.read(file);
+                    const parsed = this.parseBookContent(content, file.basename, 'new');
                     items.push(...parsed);
                 }
             }
         }
-
-        console.log('[Bible] 解析完成，共 ' + items.length + ' 条数据');
         return items;
     }
 
-    async parseBookFile(file, testament) {
+    parseBookContent(content, fileName, testament) {
         const items = [];
-        const content = await this.app.vault.read(file);
         const lines = content.split('\n');
-        const fileName = file.basename;
+        const fileBaseName = fileName;
 
         const numMatch = fileName.match(/^\d+[.\s]*(.+)$/);
         let bookInfo = null;
@@ -1420,13 +1889,12 @@ class BibleSearchView extends ItemView {
         }
         // 找到所有匹配位置
         const matches = [];
-        for (const p of patterns) {
-            let m;
+        for (const kw of keywords) {
             const textLower = text.toLowerCase();
-            const kwLower = p.kw.toLowerCase();
+            const kwLower = kw.toLowerCase();
             let idx = textLower.indexOf(kwLower);
             while (idx !== -1) {
-                matches.push({ start: idx, end: idx + p.kw.length, kw: p.kw });
+                matches.push({ start: idx, end: idx + kw.length, kw: kw });
                 idx = textLower.indexOf(kwLower, idx + 1);
             }
         }
@@ -1936,6 +2404,11 @@ class BibleSearchView extends ItemView {
         if (themeEl) themeEl.style.fontSize = this.readerFontSize + 'px';
     }
     async openVerseLocation(item) {
+        // 内置数据模式下不跳转到文件
+        if (this.plugin.settings.dataSource === 'builtin') {
+            new Notice('内置数据模式下不支持跳转到文件位置');
+            return;
+        }
         const testament = item.testament;
         const folderPath = testament === 'old' ? this.plugin.settings.oldTestamentPath : this.plugin.settings.newTestamentPath;
         const folder = this.app.vault.getAbstractFileByPath(folderPath);
@@ -2056,7 +2529,7 @@ class BibleSearchView extends ItemView {
 class BibleSearchPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
-        this.parser = new BibleParser(this.app, this.settings);
+        this.parser = new BibleParser(this.app, this.settings, this.manifest.dir);
         this.searchEngine = new BibleSearchEngine();
         this.allItems = [];
 
@@ -2069,18 +2542,188 @@ class BibleSearchPlugin extends Plugin {
         await this.loadBibleData();
 
         this.registerEvent(this.app.workspace.onLayoutReady(() => {
-            this.activateSearchView();
+            if (!this.settings.hasSetup) {
+                new FirstRunModal(this.app, this).open();
+            } else {
+                this.activateSearchView();
+            }
+            if (this.settings.autoCheckUpdate) {
+                this.checkForUpdate();
+            }
         }));
     }
 
-    onunload() {}
+    onunload() {
+        const leaves = this.app.workspace.getLeavesOfType(BIBLE_SEARCH_VIEW_TYPE);
+        for (const leaf of leaves) {
+            try { leaf.detach(); } catch (e) {}
+        }
+        // 清理所有圣经相关的 DOM 元素
+        document.querySelectorAll('.bible-projection-fullscreen').forEach(el => el.remove());
+    }
 
     async loadSettings() {
-        this.settings = Object.assign({}, { oldTestamentPath: '圣经/旧约', newTestamentPath: '圣经/新约' }, await this.loadData());
+        this.settings = Object.assign({}, {
+            dataSource: 'builtin',
+            oldTestamentPath: '圣经/旧约',
+            newTestamentPath: '圣经/新约',
+            hasSetup: false,
+            autoCheckUpdate: true,
+            lastVersion: ''
+        }, await this.loadData());
+        if (!this.settings.dataSource) {
+            this.settings.dataSource = 'external';
+        }
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
+    }
+
+    async getBuiltinDataInfo() {
+        const info = { available: false, bookCount: 0, itemCount: 0, triedPaths: [] };
+        try {
+            const pluginId = this.manifest?.id || 'bible-search-reader';
+            const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
+            info.triedPaths.push(adapterPath);
+            if (await this.app.vault.adapter.exists(adapterPath)) {
+                const raw = await this.app.vault.adapter.read(adapterPath);
+                const data = JSON.parse(raw);
+                if (Array.isArray(data)) {
+                    info.available = true;
+                    info.itemCount = data.length;
+                    info.path = adapterPath;
+                    const bookIds = new Set();
+                    for (const item of data) { if (item.bookId) bookIds.add(item.bookId); }
+                    info.bookCount = bookIds.size;
+                    return info;
+                }
+            }
+            if (Platform.isDesktop) {
+                const fs = window.require('fs');
+                const path = window.require('path');
+                const possiblePaths = [];
+                if (this.manifest && this.manifest.dir) {
+                    possiblePaths.push(path.join(this.manifest.dir, 'bible-data.json'));
+                }
+                try {
+                    const basePath = this.app.vault.adapter.getBasePath();
+                    possiblePaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, 'bible-data.json'));
+                } catch (e) {}
+                for (const dataPath of possiblePaths) {
+                    info.triedPaths.push(dataPath);
+                    if (fs.existsSync(dataPath)) {
+                        const raw = fs.readFileSync(dataPath, 'utf-8');
+                        const data = JSON.parse(raw);
+                        if (Array.isArray(data)) {
+                            info.available = true;
+                            info.itemCount = data.length;
+                            info.path = dataPath;
+                            const bookIds = new Set();
+                            for (const item of data) { if (item.bookId) bookIds.add(item.bookId); }
+                            info.bookCount = bookIds.size;
+                            return info;
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[Bible] 检查内置数据失败:', e);
+            info.error = e.message;
+        }
+        return info;
+    }
+
+    async downloadBuiltinData() {
+        if (!Platform.isDesktop) {
+            throw new Error('自动下载仅支持桌面端，请手动下载并配置路径');
+        }
+        const fs = window.require('fs');
+        const path = window.require('path');
+        const pluginId = this.manifest?.id || 'bible-search-reader';
+        let targetDir = '';
+        if (this.manifest && this.manifest.dir) {
+            targetDir = this.manifest.dir;
+        } else {
+            const basePath = this.app.vault.adapter.getBasePath();
+            targetDir = path.join(basePath, '.obsidian', 'plugins', pluginId);
+        }
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+        }
+        const targetPath = path.join(targetDir, 'bible-data.json');
+
+        const notice = new Notice('正在下载内置数据...', 0);
+        const startTime = Date.now();
+        try {
+            const response = await requestUrl({ url: BIBLE_DATA_URL, method: 'GET' });
+            if (response.status !== 200) {
+                throw new Error('HTTP ' + response.status);
+            }
+            const elapsed = (Date.now() - startTime) / 1000;
+            const sizeMB = (response.arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+            const speed = (sizeMB / elapsed).toFixed(2);
+            fs.writeFileSync(targetPath, Buffer.from(response.arrayBuffer));
+            notice.hide();
+            new Notice('下载完成！' + sizeMB + 'MB，速度 ' + speed + 'MB/s');
+            console.log('[Bible] 内置数据下载完成:', targetPath);
+        } catch (e) {
+            notice.hide();
+            throw e;
+        }
+    }
+
+    async downloadAndExtractBible(url) {
+        if (!Platform.isDesktop) {
+            throw new Error('自动下载仅支持桌面端，请手动下载并配置路径');
+        }
+        const fs = window.require('fs');
+        const path = window.require('path');
+        const { execSync } = window.require('child_process');
+        const vaultBasePath = this.app.vault.adapter.getBasePath();
+
+        const notice = new Notice('正在下载圣经文档...', 0);
+        const startTime = Date.now();
+        let response;
+        try {
+            response = await requestUrl({ url: url, method: 'GET' });
+            if (response.status !== 200) {
+                throw new Error('HTTP ' + response.status);
+            }
+        } catch (e) {
+            notice.hide();
+            throw e;
+        }
+        const elapsed = (Date.now() - startTime) / 1000;
+        const sizeMB = (response.arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
+        const speed = (sizeMB / elapsed).toFixed(2);
+        notice.setMessage('下载完成 ' + sizeMB + 'MB (' + speed + 'MB/s)，正在解压...');
+
+        const tempZip = path.join(vaultBasePath, '.obsidian', 'temp-bible-download.zip');
+        if (!fs.existsSync(path.dirname(tempZip))) {
+            fs.mkdirSync(path.dirname(tempZip), { recursive: true });
+        }
+        fs.writeFileSync(tempZip, Buffer.from(response.arrayBuffer));
+
+        const extractTarget = path.join(vaultBasePath, '圣经');
+        if (!fs.existsSync(extractTarget)) fs.mkdirSync(extractTarget, { recursive: true });
+
+        if (process.platform === 'win32') {
+            execSync(`PowerShell -Command "Expand-Archive -Path '${tempZip}' -DestinationPath '${extractTarget}' -Force"`, { timeout: 60000 });
+        } else {
+            execSync(`unzip -o "${tempZip}" -d "${extractTarget}"`, { timeout: 60000 });
+        }
+
+        fs.unlinkSync(tempZip);
+
+        this.settings.oldTestamentPath = '圣经/旧约';
+        this.settings.newTestamentPath = '圣经/新约';
+        this.settings.dataSource = 'external';
+        await this.saveSettings();
+
+        notice.hide();
+        new Notice('解压完成！共 ' + sizeMB + 'MB');
+        console.log('[Bible] 外置圣经数据下载并解压完成');
     }
 
     async loadBibleData() {
@@ -2090,7 +2733,7 @@ class BibleSearchPlugin extends Plugin {
             console.log('[Bible] 数据加载完成，共 ' + this.allItems.length + ' 条');
         } catch (e) {
             console.error('[Bible] 加载失败:', e);
-            new Notice('加载圣经数据失败，请检查目录设置: ' + e.message);
+            new Notice('加载圣经数据失败，请检查设置: ' + e.message);
         }
     }
 
@@ -2103,6 +2746,128 @@ class BibleSearchPlugin extends Plugin {
             await leaf.setViewState({ type: BIBLE_SEARCH_VIEW_TYPE, active: true });
             workspace.revealLeaf(leaf);
         }
+    }
+
+    async checkForUpdate(manual = false) {
+        try {
+            const manifestUrl = 'https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/manifest.json';
+            const response = await requestUrl({ url: manifestUrl, method: 'GET', timeout: 10000 });
+            if (response.status !== 200) {
+                if (manual) new Notice('检查更新失败，无法获取版本信息');
+                return;
+            }
+            const remoteManifest = JSON.parse(response.text);
+            const currentVersion = this.manifest.version;
+            const latestVersion = remoteManifest.version;
+            if (this.compareVersion(latestVersion, currentVersion) > 0) {
+                if (manual) {
+                    new UpdateModal(this.app, latestVersion, CHANGELOG_CONTENT[latestVersion]).open();
+                } else {
+                    this.showUpdateNotification(latestVersion);
+                }
+            } else {
+                if (manual) new Notice('当前已是最新版本 v' + currentVersion);
+            }
+        } catch (e) {
+            console.error('[Bible] 检查更新失败:', e);
+            if (manual) new Notice('检查更新失败：' + e.message);
+        }
+    }
+
+    showUpdateNotification(latestVersion) {
+        const notice = new Notice('', 0);
+        const frag = document.createDocumentFragment();
+        const wrap = document.createElement('div');
+        wrap.style.padding = '8px';
+        wrap.style.minWidth = '280px';
+        wrap.innerHTML = '<div style="font-weight:600;margin-bottom:6px;">📢 Bible Search and Reader 有新版本</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">最新版本: v' + latestVersion + ' | 当前版本: v' + this.manifest.version + '</div>';
+        const btnWrap = document.createElement('div');
+        btnWrap.style.display = 'flex';
+        btnWrap.style.gap = '8px';
+        const updateBtn = document.createElement('button');
+        updateBtn.className = 'mod-cta';
+        updateBtn.textContent = '立即更新';
+        updateBtn.style.fontSize = '12px';
+        updateBtn.style.padding = '4px 12px';
+        const laterBtn = document.createElement('button');
+        laterBtn.textContent = '稍后';
+        laterBtn.style.fontSize = '12px';
+        laterBtn.style.padding = '4px 12px';
+        btnWrap.appendChild(updateBtn);
+        btnWrap.appendChild(laterBtn);
+        wrap.appendChild(btnWrap);
+        frag.appendChild(wrap);
+        notice.setMessage(frag);
+
+        laterBtn.addEventListener('click', () => notice.hide());
+        updateBtn.addEventListener('click', async () => {
+            notice.hide();
+            await this.performUpdate(latestVersion);
+        });
+    }
+
+    async performUpdate(targetVersion) {
+        if (!Platform.isDesktop) {
+            new Notice('自动更新仅支持桌面端');
+            return;
+        }
+        const notice = new Notice('正在下载更新...', 0);
+        const startTime = Date.now();
+        try {
+            const mainUrl = 'https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/' + targetVersion + '/main.js';
+            const mainResp = await requestUrl({ url: mainUrl, method: 'GET' });
+            if (mainResp.status !== 200) throw new Error('下载 main.js 失败');
+
+            const manifestUrl = 'https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/' + targetVersion + '/manifest.json';
+            const manifestResp = await requestUrl({ url: manifestUrl, method: 'GET' });
+            if (manifestResp.status !== 200) throw new Error('下载 manifest.json 失败');
+
+            const stylesUrl = 'https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/' + targetVersion + '/styles.css';
+            const stylesResp = await requestUrl({ url: stylesUrl, method: 'GET' });
+
+            const elapsed = (Date.now() - startTime) / 1000;
+            const totalBytes = mainResp.arrayBuffer.byteLength + manifestResp.arrayBuffer.byteLength +
+                (stylesResp.status === 200 ? stylesResp.arrayBuffer.byteLength : 0);
+            const totalMB = (totalBytes / 1024 / 1024).toFixed(2);
+            const speed = (totalMB / elapsed).toFixed(2);
+
+            notice.setMessage('下载完成 ' + totalMB + 'MB (' + speed + 'MB/s)，正在安装...');
+
+            const fs = window.require('fs');
+            const path = window.require('path');
+            const pluginDir = this.manifest.dir;
+            if (!pluginDir) throw new Error('无法确定插件目录');
+
+            fs.writeFileSync(path.join(pluginDir, 'main.js'), Buffer.from(mainResp.arrayBuffer));
+            fs.writeFileSync(path.join(pluginDir, 'manifest.json'), Buffer.from(manifestResp.arrayBuffer));
+            if (stylesResp.status === 200) {
+                fs.writeFileSync(path.join(pluginDir, 'styles.css'), Buffer.from(stylesResp.arrayBuffer));
+            }
+
+            this.settings.lastVersion = targetVersion;
+            await this.saveSettings();
+
+            notice.hide();
+            new Notice('更新成功！请重启 Obsidian 以应用新版本。');
+            new UpdateModal(this.app, targetVersion, CHANGELOG_CONTENT[targetVersion]).open();
+        } catch (e) {
+            notice.hide();
+            new Notice('更新失败：' + e.message);
+            console.error('[Bible] 更新失败:', e);
+        }
+    }
+
+    compareVersion(v1, v2) {
+        const parts1 = v1.split('.').map(Number);
+        const parts2 = v2.split('.').map(Number);
+        for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+            const a = parts1[i] || 0;
+            const b = parts2[i] || 0;
+            if (a > b) return 1;
+            if (a < b) return -1;
+        }
+        return 0;
     }
 }
 

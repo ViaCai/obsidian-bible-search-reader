@@ -24,13 +24,25 @@
 
 ## 快速开始
 
-1. **安装插件**：从 Obsidian 社区插件市场搜索 "Bible Search and Reader" 安装启用；或手动下载解压到 `.obsidian/plugins/bible-search-reader/`
-2. **准备圣经文档**：下载 [圣经文档（ZIP）](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/1.0.0/bible-documents.zip) 并解压到你的仓库
-3. **配置目录**：Obsidian 设置 → 社区插件 → 圣经检索与阅读 → 分别指定**旧约目录**和**新约目录**
+### 方式一：内置数据模式（推荐）
 
-   > 📁 **路径格式**：在 Obsidian 文件列表中，右键点击目标文件夹 →「复制路径」→「从仓库文件夹」，然后粘贴到设置中即可。
+1. **安装插件**：从 Obsidian 社区插件市场搜索 "Bible Search and Reader" 安装启用
+2. **首次引导**：启用后自动弹出引导窗口，选择「内置数据模式」
+3. **自动下载**：插件自动从 GitHub 下载 `bible-data.json`（约 14MB）到插件目录
+4. **开箱即用**：无需配置路径，直接点击左侧 📖 图标开始使用
 
-> 💡 如需使用其他版本圣经，可按下方「文档格式」自行整理。
+> 📦 内置数据模式下，仓库不会增加任何额外文件，也不需要设置圣经目录。
+
+### 方式二：外置数据模式
+
+1. **安装插件**：同上
+2. **首次引导**：选择「外置数据模式」
+3. **自动下载**：插件自动从 GitHub 下载圣经文档 ZIP（约 1.4MB）并解压到 Vault
+4. **自动配置**：插件自动填写旧约/新约目录路径
+
+> 📁 外置数据模式下，仓库会生成「圣经/旧约」和「圣经/新约」文件夹及 66 个 Markdown 文档。若文档被移动，需手动修改插件设置中的目录路径。
+
+> 💡 如需使用其他版本圣经（如和合本），可按下方「文档格式」自行整理后替换文档。
 
 ## 文档格式
 
@@ -107,11 +119,18 @@ author:
 
 **示例**：`世人 恩典`（同时包含，忽略顺序）、`世人，恩典`（同时包含，按顺序）、`世人；恩典`（包含任意一个）
 
+## 更新
+
+插件支持自动检测更新：
+- **自动检测**：设置 → 自动检测更新（默认开启），启动时自动检查新版本
+- **手动检查**：设置 → 立即检查更新
+- **一键更新**：检测到新版本后，点击「立即更新」即可自动下载并安装
+
 ## 注意事项
 
 1. 插件启动时自动加载圣经数据，首次加载可能需要几秒
 2. 修改圣经文档后，重新打开检索视图或重启 Obsidian 即可更新
-3. 移动端与桌面端均支持
+3. 移动端与桌面端均支持（自动下载功能仅桌面端可用）
 
 ## ☕ 支持
 
@@ -119,7 +138,7 @@ author:
 
 > **加 6:6** — 只是那在话语上受教的，当与施教的人共同分享一切的美物。
 
-<img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="微信收款码" width="240" />
+<img src="https://raw.githubusercontent.com/ViaCai/bitiful-helper/main/images/wechat-pay.png" alt="微信收款码" width="240" />
 
 ## 许可证
 
@@ -235,7 +254,7 @@ If you find this plugin helpful, your support is greatly appreciated to continue
 
 > **Galatians 6:6** — Let the one who is taught the word share all good things with the one who teaches.
 
-<img src="https://github.com/ViaCai/bitiful-helper/blob/main/images/wechat-pay.png" alt="WeChat Pay" width="240" />
+<img src="https://raw.githubusercontent.com/ViaCai/bitiful-helper/main/images/wechat-pay.png" alt="WeChat Pay" width="240" />
 
 ## License
 
