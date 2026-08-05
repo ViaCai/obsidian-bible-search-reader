@@ -1074,3 +1074,66 @@
 .bible-projection-fullscreen.light-mode .bible-proj-verse-box { background:rgba(0,0,0,0.03); }
 .bible-projection-fullscreen.light-mode .bible-proj-theme-box { border-bottom-color:rgba(0,0,0,0.1); }
 .bible-projection-fullscreen.light-mode .bible-proj-outline-box { border-left-color:rgba(0,0,0,0.15); }
+
+/* ===== 2.0.1 补充：JS 中使用但未定义的类 ===== */
+
+/* 分页跳转输入框 */
+.bible-page-jump-input {
+    width: 36px;
+    text-align: center;
+    padding: 2px 4px;
+    font-size: 12px;
+    border: 1px solid var(--bible-card-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+/* 首次运行引导 */
+.bible-first-run-header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+.bible-first-run-cards {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.bible-mode-card {
+    flex: 1;
+    padding: 16px;
+    border: 2px solid var(--background-modifier-border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+/* 阅读界面纲目内容行 */
+.bible-reader-verse-content-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+/* 投影模式内容样式 */
+.bible-proj-focus-text {
+    line-height: 1.8;
+}
+.bible-proj-focus-ref {
+    color: #a0a0a0;
+    margin-bottom: 20px;
+}
+.bible-proj-parallel-text {
+    line-height: 1.7;
+}
+.bible-proj-parallel-ref {
+    color: #a0a0a0;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+.bible-proj-text {
+    line-height: 1.7;
+}
+.bible-proj-ref {
+    color: #a0a0a0;
+}

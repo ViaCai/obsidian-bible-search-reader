@@ -4,6 +4,13 @@
 
 ## 中文
 
+## [2.0.1] - 2026-08-06
+
+### 修复
+- **内置数据路径去重**：修复桌面端设置页面显示两处相同内置数据的问题（相对路径与绝对路径指向同一文件）。
+- **README 默认版本描述**：修正默认圣经版本为「原注版圣经」（非和合本）。
+- **纯关键词搜索排序**：修复单个关键词搜索时结果未按圣经书卷顺序展示的问题。
+
 ## [2.0.0] - 2026-08-04
 
 ### 新增
@@ -146,6 +153,13 @@
 ---
 
 ## English
+
+## [2.0.1] - 2026-08-06
+
+### Fixed
+- **Built-in data path deduplication**: fixed duplicate built-in data entries on desktop settings (relative and absolute paths pointing to the same file).
+- **README default version description**: corrected default Bible version to "Chinese Recovery Version (原注版)" (not Union Version).
+- **Single keyword search sorting**: fixed search results not being sorted by biblical book order when using a single keyword.
 
 ## [1.0.5] - 2026-08-03
 

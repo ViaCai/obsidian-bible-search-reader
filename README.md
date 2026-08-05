@@ -76,7 +76,7 @@ author:
 
 ## 自定义圣经版本
 
-插件默认提供和合本圣经数据，你也可以使用其他中文圣经版本（如恢复本、新译本等），只需按以下步骤操作。
+插件默认提供原注版圣经数据，你也可以使用其他中文圣经版本（如恢复本、新译本等），只需按以下步骤操作。
 
 ### 1. 准备外置文档
 
@@ -235,7 +235,7 @@ author:
 
 ## Custom Bible Version
 
-The plugin ships with the Chinese Union Version by default. You can also use other Chinese Bible versions (e.g., Recovery Version, CNV, etc.) by following the steps below.
+The plugin ships with the Chinese Recovery Version (原注版) by default. You can also use other Chinese Bible versions (e.g., Recovery Version, CNV, etc.) by following the steps below.
 
 ### 1. Prepare External Documents
 

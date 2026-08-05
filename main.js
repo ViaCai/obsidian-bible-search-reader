@@ -217,6 +217,19 @@ class FirstRunModal extends Modal {
             confirmBtn.style.display = 'none';
             cancelBtn.style.display = 'none';
 
+            // 禁用模式选择卡片，避免用户在此阶段误操作切换模式
+            builtinCard.style.pointerEvents = 'none';
+            builtinCard.style.opacity = '0.5';
+            externalCard.style.pointerEvents = 'none';
+            externalCard.style.opacity = '0.5';
+
+            // 显示当前已选模式的提示
+            const modeTip = contentEl.createEl('div', {
+                cls: 'setting-item-description',
+                attr: { style: 'text-align:center;margin-bottom:12px;padding:8px;background:var(--background-secondary);border-radius:6px;' }
+            });
+            modeTip.setText('当前模式：' + (this.selectedMode === 'builtin' ? '内置数据模式' : '外置数据模式') + '（如需切换请关闭窗口重新选择）');
+
             const askWrap = contentEl.createDiv();
             askWrap.style.textAlign = 'center';
             askWrap.style.marginTop = '16px';
@@ -340,6 +353,14 @@ class FirstRunModal extends Modal {
 
 // ==================== 更新日志模态框 ====================
 const CHANGELOG_CONTENT = {
+    '2.0.1': `
+## [2.0.1] - 2026-08-06
+
+### 修复
+- **内置数据路径去重**：修复桌面端设置页面显示两处相同内置数据的问题（相对路径与绝对路径指向同一文件）。
+- **README 默认版本描述**：修正默认圣经版本为「原注版圣经」（非和合本）。
+- **纯关键词搜索排序**：修复单个关键词搜索时结果未按圣经书卷顺序展示的问题。
+`,
     '2.0.0': `
 ## [2.0.0] - 2026-08-04
 
@@ -457,21 +478,58 @@ class BibleSettingTab extends PluginSettingTab {
             builtinStatus.style.marginBottom = '16px';
             const statusLabel = builtinStatus.createEl('div', { cls: 'setting-item-name', text: '内置数据状态' });
             statusLabel.style.marginBottom = '6px';
-            const statusText = builtinStatus.createEl('div', { cls: 'setting-item-description' });
-            statusText.style.whiteSpace = 'pre-wrap';
-            statusText.style.lineHeight = '1.6';
+            const statusContent = builtinStatus.createDiv();
+            statusContent.style.whiteSpace = 'pre-wrap';
+            statusContent.style.lineHeight = '1.6';
+
             this.plugin.getBuiltinDataInfo().then(builtinInfo => {
-                if (builtinInfo.available) {
-                    statusText.setText('✅ 内置数据就绪：共 ' + builtinInfo.bookCount + ' 卷，' + builtinInfo.itemCount + ' 条数据');
-                    statusText.style.color = 'var(--interactive-success)';
+                statusContent.empty();
+                if (builtinInfo.available && builtinInfo.foundItems.length > 0) {
+                    for (const item of builtinInfo.foundItems) {
+                        const itemEl = statusContent.createDiv();
+                        itemEl.style.padding = '8px 0';
+                        itemEl.style.borderBottom = '1px solid var(--background-modifier-border)';
+                        const infoText = itemEl.createEl('div', {
+                            text: '✅ ' + item.bookCount + ' 卷，' + item.itemCount + ' 条数据'
+                        });
+                        infoText.style.color = 'var(--interactive-success)';
+                        const pathText = itemEl.createEl('div', {
+                            text: '📁 ' + item.path,
+                            cls: 'setting-item-description'
+                        });
+                        pathText.style.fontSize = '11px';
+                        pathText.style.marginTop = '2px';
+                        const delBtn = itemEl.createEl('button', { text: '🗑️ 删除此数据' });
+                        delBtn.style.marginTop = '4px';
+                        delBtn.style.fontSize = '11px';
+                        delBtn.style.padding = '2px 8px';
+                        delBtn.addEventListener('click', async () => {
+                            if (confirm('确定要删除 ' + item.path + ' 吗？')) {
+                                try {
+                                    await this.plugin.deleteBuiltinData(item.path);
+                                    new Notice('已删除: ' + item.path);
+                                    this.display();
+                                } catch (e) {
+                                    new Notice('删除失败: ' + e.message);
+                                }
+                            }
+                        });
+                    }
+                    if (builtinInfo.foundItems.length > 1) {
+                        const warnEl = statusContent.createEl('div', {
+                            text: '⚠️ 发现 ' + builtinInfo.foundItems.length + ' 处数据，建议只保留一处'
+                        });
+                        warnEl.style.color = 'var(--text-error)';
+                        warnEl.style.marginTop = '8px';
+                        warnEl.style.fontSize = '12px';
+                    }
                 } else {
-                    let msg = '❌ 未找到内置数据文件（bible-data.json）。\n请将它放在插件目录下，或点击下方按钮下载。';
-                    if (builtinInfo.error) msg += '\n错误信息: ' + builtinInfo.error;
-                    statusText.setText(msg);
+                    const pluginId = this.plugin.manifest?.id || 'bible-search-reader';
+                    const msg = '❌ 未找到内置数据文件（bible-data.json）。\n请将文件放在以下位置：\n  · .obsidian/plugins/' + pluginId + '/bible-data.json\n或点击下方按钮下载。';
+                    const statusText = statusContent.createEl('div', { text: msg });
                     statusText.style.color = 'var(--text-error)';
                 }
             });
-
             new Setting(containerEl)
                 .setName('下载内置数据')
                 .setDesc('从 GitHub 下载 bible-data.json（约 14MB）到插件目录。')
@@ -595,6 +653,7 @@ class BibleParser {
         try {
             const pluginId = 'bible-search-reader';
             const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
+            // 1. 检查 Vault adapter 插件目录（统一位置）
             if (await this.app.vault.adapter.exists(adapterPath)) {
                 const raw = await this.app.vault.adapter.read(adapterPath);
                 const data = JSON.parse(raw);
@@ -604,6 +663,7 @@ class BibleParser {
                     return items;
                 }
             }
+            // 2. 桌面端 fs 路径（兼容旧数据）
             if (Platform.isDesktop) {
                 const fs = window.require('fs');
                 const path = window.require('path');
@@ -627,7 +687,7 @@ class BibleParser {
                     }
                 }
             }
-            console.warn('[Bible] 未找到内置数据文件，尝试路径:', adapterPath);
+            console.warn('[Bible] 未找到内置数据文件，路径:', adapterPath);
         } catch (e) {
             console.error('[Bible] 读取内置数据失败:', e);
         }
@@ -878,6 +938,17 @@ class BibleSearchEngine {
                     if (aIdx !== -1 && bIdx !== -1 && aIdx !== bIdx) return aIdx - bIdx;
                 }
                 return 0;
+            });
+        }
+
+        // 纯关键词检索（无经文引用）：按圣经书卷顺序排序
+        if (refs.length === 0 && keywords.length > 0 && keywordMode !== 'or_ordered') {
+            results.sort((a, b) => {
+                const ia = a.item, ib = b.item;
+                if (ia.bookId !== ib.bookId) return ia.bookId - ib.bookId;
+                if (ia.chapter !== ib.chapter) return ia.chapter - ib.chapter;
+                if (ia.verse !== ib.verse) return ia.verse - ib.verse;
+                return ia.lineIndex - ib.lineIndex;
             });
         }
 
@@ -2592,50 +2663,65 @@ class BibleSearchPlugin extends Plugin {
     }
 
     async getBuiltinDataInfo() {
-        const info = { available: false, bookCount: 0, itemCount: 0, triedPaths: [] };
+        const info = { available: false, foundItems: [], triedPaths: [] };
         try {
             const pluginId = this.manifest?.id || 'bible-search-reader';
             const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
-            info.triedPaths.push(adapterPath);
-            if (await this.app.vault.adapter.exists(adapterPath)) {
-                const raw = await this.app.vault.adapter.read(adapterPath);
-                const data = JSON.parse(raw);
-                if (Array.isArray(data)) {
-                    info.available = true;
-                    info.itemCount = data.length;
-                    info.path = adapterPath;
-                    const bookIds = new Set();
-                    for (const item of data) { if (item.bookId) bookIds.add(item.bookId); }
-                    info.bookCount = bookIds.size;
-                    return info;
-                }
-            }
+            let allPaths = [adapterPath];
+
             if (Platform.isDesktop) {
                 const fs = window.require('fs');
                 const path = window.require('path');
-                const possiblePaths = [];
+                // 桌面端将相对路径转为绝对路径，便于后续去重
+                try {
+                    const basePath = this.app.vault.adapter.getBasePath();
+                    allPaths[0] = path.join(basePath, adapterPath);
+                } catch (e) {}
                 if (this.manifest && this.manifest.dir) {
-                    possiblePaths.push(path.join(this.manifest.dir, 'bible-data.json'));
+                    allPaths.push(path.join(this.manifest.dir, 'bible-data.json'));
                 }
                 try {
                     const basePath = this.app.vault.adapter.getBasePath();
-                    possiblePaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, 'bible-data.json'));
+                    allPaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, 'bible-data.json'));
                 } catch (e) {}
-                for (const dataPath of possiblePaths) {
-                    info.triedPaths.push(dataPath);
+                // 路径规范化并去重
+                allPaths = [...new Set(allPaths.map(p => path.normalize(p)))];
+            }
+
+            for (const dataPath of allPaths) {
+                info.triedPaths.push(dataPath);
+                let exists = false;
+                let raw = null;
+
+                if (Platform.isDesktop) {
+                    const fs = window.require('fs');
                     if (fs.existsSync(dataPath)) {
-                        const raw = fs.readFileSync(dataPath, 'utf-8');
+                        exists = true;
+                        raw = fs.readFileSync(dataPath, 'utf-8');
+                    }
+                } else {
+                    // 移动端只能通过 vault adapter 访问
+                    const relPath = dataPath;
+                    if (await this.app.vault.adapter.exists(relPath)) {
+                        exists = true;
+                        raw = await this.app.vault.adapter.read(relPath);
+                    }
+                }
+
+                if (exists && raw) {
+                    try {
                         const data = JSON.parse(raw);
                         if (Array.isArray(data)) {
-                            info.available = true;
-                            info.itemCount = data.length;
-                            info.path = dataPath;
                             const bookIds = new Set();
                             for (const item of data) { if (item.bookId) bookIds.add(item.bookId); }
-                            info.bookCount = bookIds.size;
-                            return info;
+                            info.foundItems.push({
+                                path: dataPath,
+                                itemCount: data.length,
+                                bookCount: bookIds.size
+                            });
+                            info.available = true;
                         }
-                    }
+                    } catch (e) {}
                 }
             }
         } catch (e) {
@@ -2645,26 +2731,32 @@ class BibleSearchPlugin extends Plugin {
         return info;
     }
 
+    async deleteBuiltinData(dataPath) {
+        try {
+            if (Platform.isDesktop) {
+                const fs = window.require('fs');
+                if (fs.existsSync(dataPath)) {
+                    fs.unlinkSync(dataPath);
+                    return true;
+                }
+            }
+            // 移动端或 fs 删除失败时，尝试通过 vault adapter 删除（相对路径）
+            const relPath = dataPath;
+            if (await this.app.vault.adapter.exists(relPath)) {
+                await this.app.vault.adapter.remove(relPath);
+                return true;
+            }
+        } catch (e) {
+            console.error('[Bible] 删除内置数据失败:', e);
+            throw e;
+        }
+        return false;
+    }
+
     async downloadBuiltinData() {
         const pluginId = this.manifest?.id || 'bible-search-reader';
         const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
-        let targetPath = '';
-        let targetDir = '';
-
-        if (Platform.isDesktop) {
-            const fs = window.require('fs');
-            const path = window.require('path');
-            if (this.manifest && this.manifest.dir) {
-                targetDir = this.manifest.dir;
-            } else {
-                const basePath = this.app.vault.adapter.getBasePath();
-                targetDir = path.join(basePath, '.obsidian', 'plugins', pluginId);
-            }
-            if (!fs.existsSync(targetDir)) {
-                fs.mkdirSync(targetDir, { recursive: true });
-            }
-            targetPath = path.join(targetDir, 'bible-data.json');
-        }
+        let savedPath = adapterPath;
 
         const notice = new Notice('正在下载内置数据...', 0);
         const startTime = Date.now();
@@ -2679,7 +2771,15 @@ class BibleSearchPlugin extends Plugin {
 
             if (Platform.isDesktop) {
                 const fs = window.require('fs');
+                const path = window.require('path');
+                const basePath = this.app.vault.adapter.getBasePath();
+                const targetDir = path.join(basePath, '.obsidian', 'plugins', pluginId);
+                if (!fs.existsSync(targetDir)) {
+                    fs.mkdirSync(targetDir, { recursive: true });
+                }
+                const targetPath = path.join(targetDir, 'bible-data.json');
                 fs.writeFileSync(targetPath, Buffer.from(response.arrayBuffer));
+                savedPath = targetPath;
                 console.log('[Bible] 内置数据下载完成:', targetPath);
             } else {
                 const dirPath = `.obsidian/plugins/${pluginId}`;
@@ -2691,7 +2791,7 @@ class BibleSearchPlugin extends Plugin {
             }
 
             notice.hide();
-            new Notice('下载完成！' + sizeMB + 'MB，速度 ' + speed + 'MB/s');
+            new Notice('下载完成！' + sizeMB + 'MB，速度 ' + speed + 'MB/s\n保存位置: ' + savedPath, 6000);
         } catch (e) {
             notice.hide();
             throw e;
