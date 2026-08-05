@@ -353,15 +353,35 @@ class FirstRunModal extends Modal {
 
 // ==================== 更新日志模态框 ====================
 const CHANGELOG_CONTENT = {
-    '2.0.1': `
+    '2.0.1': {
+        brief: [
+            '修复桌面端自动更新失败的问题',
+            '移动端现在也可以自动更新了',
+            '修复设置页面重复显示内置数据的问题',
+            '修正默认圣经版本说明',
+            '修复关键词搜索排序问题'
+        ],
+        detail: `
 ## [2.0.1] - 2026-08-06
 
 ### 修复
+- **桌面端自动更新失败**：修复因依赖不可靠的 manifest.dir 导致插件目录定位失败的问题，改为通过 vault basePath 计算绝对路径。
+- **移动端自动更新不支持**：移除桌面端限制，移动端现在也可通过 vault.adapter 一键下载并安装更新。
 - **内置数据路径去重**：修复桌面端设置页面显示两处相同内置数据的问题（相对路径与绝对路径指向同一文件）。
 - **README 默认版本描述**：修正默认圣经版本为「原注版圣经」（非和合本）。
 - **纯关键词搜索排序**：修复单个关键词搜索时结果未按圣经书卷顺序展示的问题。
-`,
-    '2.0.0': `
+`
+    },
+    '2.0.0': {
+        brief: [
+            '新增内置数据源，安装后开箱即用',
+            '支持内置/外置数据两种模式切换',
+            '新增首次运行引导，帮助选择数据源',
+            '支持一键下载圣经数据',
+            '支持自动检测并安装更新',
+            '更新后自动显示更新内容'
+        ],
+        detail: `
 ## [2.0.0] - 2026-08-04
 
 ### 新增
@@ -382,50 +402,80 @@ const CHANGELOG_CONTENT = {
 - **搜索结果显示异常**：修复 highlightKeywords 中未定义变量导致的渲染中断。
 - **下载报错**：修复 Platform is not defined 错误，确保下载功能正常工作。
 `
+    }
 };
 
 class UpdateModal extends Modal {
     constructor(app, version, content) {
         super(app);
         this.version = version;
-        this.content = content || CHANGELOG_CONTENT[this.version] || '';
+        // 优先使用 brief（简洁版），兼容旧版字符串格式
+        const entry = CHANGELOG_CONTENT[this.version];
+        if (Array.isArray(entry)) {
+            this.brief = entry;
+            this.detail = '';
+        } else if (entry && typeof entry === 'object') {
+            this.brief = entry.brief || [];
+            this.detail = entry.detail || '';
+        } else {
+            this.brief = [];
+            this.detail = content || entry || '';
+        }
     }
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
         contentEl.style.padding = '24px';
-        contentEl.style.maxWidth = '600px';
+        contentEl.style.maxWidth = '480px';
 
-        contentEl.createEl('h2', { text: '🎉 Bible Search and Reader 已更新至 v' + this.version });
-        const body = contentEl.createDiv();
-        body.style.marginTop = '16px';
-        body.style.lineHeight = '1.8';
-        body.style.fontSize = '14px';
+        contentEl.createEl('h2', {
+            text: '🎉 Bible Search and Reader 已更新至 v' + this.version,
+            attr: { style: 'text-align:center;font-size:18px;margin-bottom:4px;' }
+        });
+        contentEl.createEl('p', {
+            text: '本次更新内容：',
+            attr: { style: 'text-align:center;color:var(--text-muted);font-size:13px;margin-bottom:16px;' }
+        });
 
-        const lines = this.content.trim().split('\n');
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('## ')) {
-                body.createEl('h3', { text: trimmed.replace('## ', '') });
-            } else if (trimmed.startsWith('### ')) {
-                body.createEl('h4', { text: trimmed.replace('### ', ''), attr: { style: 'color:var(--bible-accent);margin-top:12px;' } });
-            } else if (trimmed.startsWith('- ')) {
-                body.createEl('div', { text: '• ' + trimmed.replace('- ', ''), attr: { style: 'margin-left:12px;margin-bottom:4px;' } });
-            } else if (trimmed) {
-                body.createEl('div', { text: trimmed });
-            }
+        const list = contentEl.createEl('ul');
+        list.style.paddingLeft = '20px';
+        list.style.marginBottom = '20px';
+        list.style.lineHeight = '1.8';
+
+        const items = this.brief.length > 0 ? this.brief : this._extractBriefFromDetail();
+        for (const item of items) {
+            const li = list.createEl('li');
+            li.style.fontSize = '14px';
+            li.setText(item);
         }
 
         const btnWrap = contentEl.createDiv();
         btnWrap.style.textAlign = 'center';
-        btnWrap.style.marginTop = '20px';
         const okBtn = btnWrap.createEl('button', { cls: 'mod-cta', text: '知道了' });
+        okBtn.style.padding = '6px 24px';
         okBtn.addEventListener('click', () => this.close());
+    }
+    _extractBriefFromDetail() {
+        // 从旧版 detail 字符串中提取列表项作为兜底
+        const items = [];
+        const lines = this.detail.split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('- ')) {
+                // 去掉加粗标记和技术前缀，只保留通俗描述
+                let text = trimmed.replace(/^-\s*/, '').replace(/\*\*/g, '');
+                // 去掉冒号前的标题部分（如 "桌面端自动更新失败："）
+                text = text.replace(/^[^:]+：\s*/, '');
+                if (text) items.push(text);
+            }
+        }
+        return items;
     }
     onClose() {
         this.contentEl.empty();
     }
 }
+
 
 // ==================== 设置标签页 ====================
 const BIBLE_DATA_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-data.json';
@@ -2934,10 +2984,6 @@ class BibleSearchPlugin extends Plugin {
     }
 
     async performUpdate(targetVersion) {
-        if (!Platform.isDesktop) {
-            new Notice('自动更新仅支持桌面端');
-            return;
-        }
         const notice = new Notice('正在下载更新...', 0);
         const startTime = Date.now();
         try {
@@ -2960,15 +3006,31 @@ class BibleSearchPlugin extends Plugin {
 
             notice.setMessage('下载完成 ' + totalMB + 'MB (' + speed + 'MB/s)，正在安装...');
 
-            const fs = window.require('fs');
-            const path = window.require('path');
-            const pluginDir = this.manifest.dir;
-            if (!pluginDir) throw new Error('无法确定插件目录');
+            const pluginId = this.manifest?.id || 'bible-search-reader';
 
-            fs.writeFileSync(path.join(pluginDir, 'main.js'), Buffer.from(mainResp.arrayBuffer));
-            fs.writeFileSync(path.join(pluginDir, 'manifest.json'), Buffer.from(manifestResp.arrayBuffer));
-            if (stylesResp.status === 200) {
-                fs.writeFileSync(path.join(pluginDir, 'styles.css'), Buffer.from(stylesResp.arrayBuffer));
+            if (Platform.isDesktop) {
+                const fs = window.require('fs');
+                const path = window.require('path');
+                const basePath = this.app.vault.adapter.getBasePath();
+                const pluginDir = path.join(basePath, '.obsidian', 'plugins', pluginId);
+
+                if (!fs.existsSync(pluginDir)) {
+                    fs.mkdirSync(pluginDir, { recursive: true });
+                }
+
+                fs.writeFileSync(path.join(pluginDir, 'main.js'), Buffer.from(mainResp.arrayBuffer));
+                fs.writeFileSync(path.join(pluginDir, 'manifest.json'), Buffer.from(manifestResp.arrayBuffer));
+                if (stylesResp.status === 200) {
+                    fs.writeFileSync(path.join(pluginDir, 'styles.css'), Buffer.from(stylesResp.arrayBuffer));
+                }
+            } else {
+                // 移动端通过 vault.adapter 写入插件目录
+                const pluginDir = `.obsidian/plugins/${pluginId}`;
+                await this.app.vault.adapter.writeBinary(`${pluginDir}/main.js`, mainResp.arrayBuffer);
+                await this.app.vault.adapter.writeBinary(`${pluginDir}/manifest.json`, manifestResp.arrayBuffer);
+                if (stylesResp.status === 200) {
+                    await this.app.vault.adapter.writeBinary(`${pluginDir}/styles.css`, stylesResp.arrayBuffer);
+                }
             }
 
             this.settings.lastVersion = targetVersion;
