@@ -144,7 +144,7 @@ class FirstRunModal extends Modal {
         builtinCard.style.borderRadius = '8px';
         builtinCard.style.cursor = 'pointer';
         builtinCard.style.transition = 'all 0.2s';
-        builtinCard.createEl('h3', { text: '📦 内置数据模式' });
+        builtinCard.createEl('h3', { text: '📦 内置数据模式（推荐）' });
         builtinCard.createEl('p', { text: '1. 需要下载14MB文件，文件较大，对网络要求较高。', cls: 'setting-item-description' });
         builtinCard.createEl('p', { text: '2. 仓库不会增加额外的文件夹和文件。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
         builtinCard.createEl('p', { text: '3. 不需要设置圣经目录。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
@@ -161,6 +161,9 @@ class FirstRunModal extends Modal {
         externalCard.createEl('p', { text: '1. 需要下载1.4MB文件，文件较小，网络要求较低。', cls: 'setting-item-description' });
         externalCard.createEl('p', { text: '2. 下载后会自动解压到仓库并配置默认目录，会在仓库新建圣经文档，内含66个圣经文档。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
         externalCard.createEl('p', { text: '3. 若圣经文档被移动，则需要手动修改插件设置里的圣经目录。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
+        if (!Platform.isDesktop) {
+            externalCard.createEl('p', { text: '⚠️ 移动端暂不支持自动下载解压，请手动下载 ZIP 后解压到 Vault。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;color:var(--text-error);' } });
+        }
 
         const selectCard = (mode) => {
             this.selectedMode = mode;
@@ -288,22 +291,43 @@ class FirstRunModal extends Modal {
             downloadBtn.addEventListener('click', async () => {
                 haveDataBtn.disabled = true;
                 downloadBtn.disabled = true;
-                downloadBtn.setText('下载中...');
-                try {
-                    if (this.selectedMode === 'builtin') {
+                if (this.selectedMode === 'builtin') {
+                    downloadBtn.setText('下载中...');
+                    try {
                         await this.plugin.downloadBuiltinData();
-                    } else {
-                        await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
+                        this.plugin.settings.hasSetup = true;
+                        await this.plugin.saveSettings();
+                        await this.plugin.loadBibleData();
+                        this.plugin.activateSearchView();
+                        this.close();
+                    } catch (e) {
+                        new Notice('下载失败：' + e.message);
+                        haveDataBtn.disabled = false;
+                        downloadBtn.disabled = false;
+                        downloadBtn.setText('我没有数据，请帮我下载');
                     }
-                    this.plugin.settings.hasSetup = true;
-                    await this.plugin.saveSettings();
-                    await this.plugin.loadBibleData();
-                    this.plugin.activateSearchView();
-                    this.close();
-                } catch (e) {
-                    new Notice('下载失败：' + e.message);
-                    downloadBtn.disabled = false;
-                    downloadBtn.setText('我没有数据，请帮我下载');
+                } else {
+                    if (!Platform.isDesktop) {
+                        new Notice('移动端暂不支持自动下载解压外置数据。请从 Release 页面下载 bible-documents.zip，解压到 Vault 后点击「我已有数据」。', 10000);
+                        haveDataBtn.disabled = false;
+                        downloadBtn.disabled = false;
+                        downloadBtn.setText('我没有数据，请帮我下载');
+                        return;
+                    }
+                    downloadBtn.setText('下载中...');
+                    try {
+                        await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
+                        this.plugin.settings.hasSetup = true;
+                        await this.plugin.saveSettings();
+                        await this.plugin.loadBibleData();
+                        this.plugin.activateSearchView();
+                        this.close();
+                    } catch (e) {
+                        new Notice('下载失败：' + e.message);
+                        haveDataBtn.disabled = false;
+                        downloadBtn.disabled = false;
+                        downloadBtn.setText('我没有数据，请帮我下载');
+                    }
                 }
             });
         });
@@ -494,10 +518,14 @@ class BibleSettingTab extends PluginSettingTab {
 
             new Setting(containerEl)
                 .setName('下载圣经/模板文档')
-                .setDesc('自动从 GitHub 下载圣经文档并解压到 vault 根目录，同时自动配置路径。')
+                .setDesc(Platform.isDesktop ? '自动从 GitHub 下载圣经文档并解压到 vault 根目录，同时自动配置路径。' : '移动端请手动下载 ZIP 文件并解压到 Vault，然后配置下方目录路径。')
                 .addButton(button => {
-                    const btn = button.setButtonText('⬇️ 下载并解压').setCta();
+                    const btn = button.setButtonText(Platform.isDesktop ? '⬇️ 下载并解压' : '📱 移动端手动指南').setCta();
                     btn.onClick(async () => {
+                        if (!Platform.isDesktop) {
+                            new Notice('请从 Release 页面下载 bible-documents.zip，解压到 Vault 根目录（生成 圣经/旧约 和 圣经/新约 文件夹），然后在下方填写对应路径。', 10000);
+                            return;
+                        }
                         btn.buttonEl.setAttribute('disabled', 'true');
                         btn.setButtonText('下载中...');
                         try {
@@ -1129,49 +1157,55 @@ class BibleProjectionOverlay {
         this.overlay.className = 'bible-projection-fullscreen';
         this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:#1a1a2e;color:#fff;';
 
-        const toolbar = document.createElement('div');
-        toolbar.className = 'bible-proj-toolbar';
-        const toolbarLeft = toolbar.createDiv({ cls: 'bible-proj-toolbar-left' });
-        toolbarLeft.createEl('span', { cls: 'bible-proj-page-num', text: '1 / ' + this.slides.length });
-        toolbarLeft.createEl('span', { cls: 'bible-proj-badge', text: this.getModeLabel() });
-
-        const toolbarCenter = toolbar.createDiv({ cls: 'bible-proj-toolbar-center' });
-        toolbarCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '-', attr: { 'data-action': 'font-smaller' } });
-        toolbarCenter.createEl('span', { cls: 'bible-proj-font-size', text: this.fontSize + 'px' });
-        toolbarCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '+', attr: { 'data-action': 'font-larger' } });
-        toolbarCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '⟲', attr: { 'data-action': 'font-reset' } });
-
-        const toolbarRight = toolbar.createDiv({ cls: 'bible-proj-toolbar-right' });
-        if (this.mode !== 'focus') {
-            toolbarRight.createEl('button', { cls: 'bible-proj-tool-btn', text: '⬜', attr: { 'data-action': 'toggle-centered', title: '切换居中' } });
-        }
-        toolbarRight.createEl('button', { cls: 'bible-proj-tool-btn', text: '🌙', attr: { 'data-action': 'toggle-theme' } });
-        toolbarRight.createEl('button', { cls: 'bible-proj-tool-btn', text: '✕', attr: { 'data-action': 'close' } });
-        this.overlay.appendChild(toolbar);
+        // 顶部：模式 | 快捷键说明 | 页码
+        const topBar = document.createElement('div');
+        topBar.className = 'bible-proj-topbar';
+        topBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 16px;background:rgba(0,0,0,0.2);border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;';
+        const topLeft = topBar.createDiv();
+        topLeft.createEl('span', { cls: 'bible-proj-mode-name', text: this.getModeName() });
+        const topCenter = topBar.createDiv();
+        topCenter.style.cssText = 'font-size:11px;opacity:0.5;text-align:center;flex:1;';
+        topCenter.setText('← → 翻页  ·  +/- 字体  ·  T 主题  ·  ESC 关闭');
+        const topRight = topBar.createDiv();
+        topRight.createEl('span', { cls: 'bible-proj-page-num', text: (this.currentSlide + 1) + '/' + this.slides.length + '页' });
+        this.overlay.appendChild(topBar);
 
         this.contentArea = document.createElement('div');
         this.contentArea.className = 'bible-proj-content';
         this.contentArea.style.cssText = 'flex:1;overflow:auto;display:flex;flex-direction:column;align-items:center;position:relative;';
         this.overlay.appendChild(this.contentArea);
 
-        const bottomNav = document.createElement('div');
-        bottomNav.className = 'bible-proj-bottom';
-        const prevBtn = bottomNav.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-prev', text: '◀' });
-        const bottomInfo = bottomNav.createDiv({ cls: 'bible-proj-bottom-info' });
-        bottomInfo.createEl('div', { text: this.getModeName() + ' - ' + this.results.length + ' 节经文' });
-        const hintDiv = bottomInfo.createEl('div', { text: '使用方向键切换，+/- 调整字体，T 切换主题' });
-        hintDiv.style.fontSize = '12px';
-        hintDiv.style.opacity = '0.6';
-        const nextBtn = bottomNav.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-next', text: '▶' });
-        this.overlay.appendChild(bottomNav);
+        // 底部：翻页 + 操作按钮（同一行）
+        const bottomBar = document.createElement('div');
+        bottomBar.className = 'bible-proj-bottombar';
+        bottomBar.style.cssText = 'flex-shrink:0;background:rgba(0,0,0,0.2);border-top:1px solid rgba(255,255,255,0.1);';
+
+        const bottomRow = bottomBar.createDiv({ cls: 'bible-proj-bottom-row' });
+        bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 16px;gap:8px;';
+        const prevBtn = bottomRow.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-prev', text: '◀' });
+
+        const toolCenter = bottomRow.createDiv({ cls: 'bible-proj-tool-center' });
+        toolCenter.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:6px;flex:1;';
+        toolCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '-', attr: { 'data-action': 'font-smaller', title: '缩小字体' } });
+        toolCenter.createEl('span', { cls: 'bible-proj-font-size', text: this.fontSize + 'px' });
+        toolCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '+', attr: { 'data-action': 'font-larger', title: '放大字体' } });
+        toolCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '⟲', attr: { 'data-action': 'font-reset', title: '重置字体' } });
+        if (this.mode !== 'focus') {
+            toolCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '⬜', attr: { 'data-action': 'toggle-centered', title: '切换居中' } });
+        }
+        toolCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '🌙', attr: { 'data-action': 'toggle-theme', title: '切换主题' } });
+        toolCenter.createEl('button', { cls: 'bible-proj-tool-btn', text: '✕', attr: { 'data-action': 'close', title: '关闭投影' } });
+
+        const nextBtn = bottomRow.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-next', text: '▶' });
+        this.overlay.appendChild(bottomBar);
 
         document.body.appendChild(this.overlay);
-        this.bindEvents(toolbar, bottomNav);
+        this.bindEvents(toolCenter, bottomRow);
         this.renderSlide();
     }
 
-    bindEvents(toolbar, bottomNav) {
-        toolbar.addEventListener('click', (e) => {
+    bindEvents(toolCenter, bottomRow) {
+        toolCenter.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-action]');
             if (!btn) return;
             const action = btn.dataset.action;
@@ -1183,8 +1217,8 @@ class BibleProjectionOverlay {
             else if (action === 'toggle-theme') { this.toggleTheme(); }
         });
 
-        bottomNav.querySelector('.bible-proj-prev').addEventListener('click', () => this.prevSlide());
-        bottomNav.querySelector('.bible-proj-next').addEventListener('click', () => this.nextSlide());
+        bottomRow.querySelector('.bible-proj-prev').addEventListener('click', () => this.prevSlide());
+        bottomRow.querySelector('.bible-proj-next').addEventListener('click', () => this.nextSlide());
 
         this.keyHandler = (e) => {
             if (e.key === 'ArrowRight' || e.key === ' ') this.nextSlide();
@@ -1238,9 +1272,7 @@ class BibleProjectionOverlay {
 
         const slide = this.slides[this.currentSlide];
         const pageNumEl = this.overlay.querySelector('.bible-proj-page-num');
-        const badgeEl = this.overlay.querySelector('.bible-proj-badge');
-        if (pageNumEl) pageNumEl.textContent = (this.currentSlide + 1) + ' / ' + this.slides.length;
-        if (badgeEl) badgeEl.textContent = this.getModeLabel();
+        if (pageNumEl) pageNumEl.textContent = (this.currentSlide + 1) + '/' + this.slides.length + '页';
 
         const wrapper = document.createElement('div');
         wrapper.className = 'bible-proj-slide-wrapper';
@@ -2525,8 +2557,6 @@ class BibleSearchPlugin extends Plugin {
         this.registerEvent(this.app.workspace.onLayoutReady(() => {
             if (!this.settings.hasSetup) {
                 new FirstRunModal(this.app, this).open();
-            } else {
-                this.activateSearchView();
             }
             if (this.settings.autoCheckUpdate) {
                 this.checkForUpdate();
@@ -2616,23 +2646,25 @@ class BibleSearchPlugin extends Plugin {
     }
 
     async downloadBuiltinData() {
-        if (!Platform.isDesktop) {
-            throw new Error('自动下载仅支持桌面端，请手动下载并配置路径');
-        }
-        const fs = window.require('fs');
-        const path = window.require('path');
         const pluginId = this.manifest?.id || 'bible-search-reader';
+        const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
+        let targetPath = '';
         let targetDir = '';
-        if (this.manifest && this.manifest.dir) {
-            targetDir = this.manifest.dir;
-        } else {
-            const basePath = this.app.vault.adapter.getBasePath();
-            targetDir = path.join(basePath, '.obsidian', 'plugins', pluginId);
+
+        if (Platform.isDesktop) {
+            const fs = window.require('fs');
+            const path = window.require('path');
+            if (this.manifest && this.manifest.dir) {
+                targetDir = this.manifest.dir;
+            } else {
+                const basePath = this.app.vault.adapter.getBasePath();
+                targetDir = path.join(basePath, '.obsidian', 'plugins', pluginId);
+            }
+            if (!fs.existsSync(targetDir)) {
+                fs.mkdirSync(targetDir, { recursive: true });
+            }
+            targetPath = path.join(targetDir, 'bible-data.json');
         }
-        if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-        }
-        const targetPath = path.join(targetDir, 'bible-data.json');
 
         const notice = new Notice('正在下载内置数据...', 0);
         const startTime = Date.now();
@@ -2644,10 +2676,22 @@ class BibleSearchPlugin extends Plugin {
             const elapsed = (Date.now() - startTime) / 1000;
             const sizeMB = (response.arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
             const speed = (sizeMB / elapsed).toFixed(2);
-            fs.writeFileSync(targetPath, Buffer.from(response.arrayBuffer));
+
+            if (Platform.isDesktop) {
+                const fs = window.require('fs');
+                fs.writeFileSync(targetPath, Buffer.from(response.arrayBuffer));
+                console.log('[Bible] 内置数据下载完成:', targetPath);
+            } else {
+                const dirPath = `.obsidian/plugins/${pluginId}`;
+                if (!(await this.app.vault.adapter.exists(dirPath))) {
+                    await this.app.vault.adapter.mkdir(dirPath);
+                }
+                await this.app.vault.adapter.writeBinary(adapterPath, response.arrayBuffer);
+                console.log('[Bible] 内置数据下载完成:', adapterPath);
+            }
+
             notice.hide();
             new Notice('下载完成！' + sizeMB + 'MB，速度 ' + speed + 'MB/s');
-            console.log('[Bible] 内置数据下载完成:', targetPath);
         } catch (e) {
             notice.hide();
             throw e;
@@ -2656,7 +2700,8 @@ class BibleSearchPlugin extends Plugin {
 
     async downloadAndExtractBible(url) {
         if (!Platform.isDesktop) {
-            throw new Error('自动下载仅支持桌面端，请手动下载并配置路径');
+            new Notice('移动端暂不支持自动解压，请手动下载 ZIP 文件并解压到 Vault 目录，然后在设置中配置圣经目录路径。', 8000);
+            return;
         }
         const fs = window.require('fs');
         const path = window.require('path');

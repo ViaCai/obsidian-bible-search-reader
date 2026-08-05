@@ -516,36 +516,58 @@
 .bible-projection-fullscreen {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
-.bible-proj-toolbar {
+
+/* 顶部信息栏 */
+.bible-proj-topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 20px;
+    padding: 6px 16px;
     background: rgba(0,0,0,0.2);
     border-bottom: 1px solid rgba(255,255,255,0.1);
     flex-shrink: 0;
 }
-.bible-proj-toolbar-left,
-.bible-proj-toolbar-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.bible-proj-toolbar-center {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.bible-proj-page-num {
+.bible-proj-mode-name {
     font-size: 14px;
     font-weight: 600;
 }
-.bible-proj-badge {
-    padding: 2px 10px;
-    background: #7c3aed;
-    color: #fff;
-    border-radius: 12px;
-    font-size: 12px;
+.bible-proj-page-num {
+    font-size: 13px;
+    opacity: 0.8;
+}
+
+/* 内容区域 */
+.bible-proj-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.bible-proj-slide-wrapper {
+    max-width: 900px;
+    width: 90%;
+    text-align: center;
+    padding: 20px;
+    margin: auto;
+    overflow-y: auto;
+    max-height: 100%;
+}
+
+/* 底部工具栏 */
+.bible-proj-bottombar {
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.2);
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+.bible-proj-tool-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .bible-proj-tool-btn {
     width: 32px;
@@ -568,63 +590,52 @@
     min-width: 50px;
     text-align: center;
 }
-.bible-proj-content {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-}
-.bible-proj-slide-wrapper {
-    max-width: 900px;
-    width: 90%;
-    text-align: center;
-    padding: 20px;
-    margin: auto;
-    overflow-y: auto;
-    max-height: 100%;
-}
-.bible-proj-bottom {
+
+/* 底部翻页导航 */
+.bible-proj-bottom-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 20px;
-    background: rgba(0,0,0,0.2);
-    border-top: 1px solid rgba(255,255,255,0.1);
-    flex-shrink: 0;
+    padding: 6px 16px;
+    gap: 8px;
+}
+.bible-proj-tool-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex: 1;
 }
 .bible-proj-nav-btn {
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: none;
     background: #3b82f6;
     color: #fff;
-    font-size: 16px;
+    font-size: 14px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
 }
 .bible-proj-nav-btn:hover {
     background: #2563eb;
 }
-.bible-proj-bottom-info {
-    text-align: center;
-    font-size: 13px;
-    opacity: 0.8;
-}
 
 /* 浅色模式投影 */
-.bible-projection-fullscreen.light-mode .bible-proj-toolbar,
-.bible-projection-fullscreen.light-mode .bible-proj-bottom {
+.bible-projection-fullscreen.light-mode .bible-proj-topbar,
+.bible-projection-fullscreen.light-mode .bible-proj-bottombar {
     background: rgba(0,0,0,0.05);
     border-color: rgba(0,0,0,0.1);
 }
 .bible-projection-fullscreen.light-mode .bible-proj-tool-btn {
     border-color: rgba(0,0,0,0.2);
     background: rgba(0,0,0,0.05);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-tool-row {
+    border-bottom-color: rgba(0,0,0,0.05);
 }
 
 /* 移动端适配 */
@@ -639,11 +650,32 @@
         width: 95%;
         padding: 10px;
     }
-    .bible-proj-toolbar {
-        padding: 8px 12px;
+    .bible-proj-topbar {
+        padding: 4px 10px;
     }
-    .bible-proj-toolbar-center {
-        display: none;
+    .bible-proj-mode-name {
+        font-size: 12px;
+    }
+    .bible-proj-bottom-row {
+        padding: 4px 10px;
+        gap: 4px;
+    }
+    .bible-proj-tool-center {
+        gap: 4px;
+    }
+    .bible-proj-tool-btn {
+        width: 26px;
+        height: 26px;
+        font-size: 11px;
+    }
+    .bible-proj-font-size {
+        font-size: 11px;
+        min-width: 36px;
+    }
+    .bible-proj-nav-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 12px;
     }
 }
 
