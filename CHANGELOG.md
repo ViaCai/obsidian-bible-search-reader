@@ -4,6 +4,16 @@
 
 ## 中文
 
+## [2.0.2] - 2026-08-09
+
+### 改进
+- **检索经文时，点击经文出处，可跳转至内容所在的章节**：搜索结果中点击经文出处或纲目时，无论内置/外置数据模式，均统一跳转到插件「圣经阅读」界面并高亮定位，不再依赖外置 Markdown 文件。
+
+### 修复
+- **自动更新安装失败**：修复因依赖不可靠的 manifest.dir 导致插件目录定位失败的问题，改为通过 vault basePath 计算绝对路径。
+
+---
+
 ## [2.0.1] - 2026-08-06
 
 ### 修复
@@ -155,6 +165,16 @@
 ---
 
 ## English
+
+## [2.0.2] - 2026-08-09
+
+### Improved
+- **Unified jump to reader view**: Clicking a verse reference or outline in search results now jumps to the plugin's "Bible Reader" tab with highlight positioning, regardless of built-in or external data mode. No longer depends on external Markdown files.
+
+### Fixed
+- **Built-in data mode jump failure**: Fixed the issue where clicking a verse reference in built-in data mode showed "jump not supported".
+
+---
 
 ## [2.0.1] - 2026-08-06
 
