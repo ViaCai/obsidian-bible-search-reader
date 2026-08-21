@@ -337,6 +337,8 @@
     cursor: pointer;
     transition: all 0.15s ease;
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 .bible-result-card:hover {
     border-color: var(--bible-accent);
@@ -870,6 +872,16 @@
     border-left-color: var(--bible-accent);
     background: var(--background-secondary);
 }
+/* 对照经文卡片样式 - 稍作缩进和区分 */
+.bible-reader-compare-card {
+    margin-left: 16px;
+    margin-bottom: 4px;
+    border-left-color: var(--bible-card-border);
+    opacity: 0.95;
+}
+.bible-reader-compare-card:hover {
+    border-left-color: var(--bible-accent);
+}
 .bible-reader-verse-card.selected {
     border-left-color: var(--bible-accent);
     background: var(--background-modifier-active-hover);
@@ -1137,3 +1149,408 @@
 .bible-proj-ref {
     color: #a0a0a0;
 }
+
+/* ===== 2.1.0 新增：对照模式相关样式 ===== */
+
+/* 对照设置侧边栏容器 */
+.bible-compare-sidebar {
+    position: fixed;
+    top: 0;
+    right: -360px;
+    width: 340px;
+    height: 100%;
+    background: var(--background-primary);
+    border-left: 1px solid var(--bible-card-border);
+    box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+    z-index: 1000;
+    transition: right 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+.bible-compare-sidebar.open {
+    right: 0;
+}
+
+/* 侧边栏标题 */
+.bible-compare-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid var(--bible-card-border);
+    flex-shrink: 0;
+}
+.bible-compare-header h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+/* 面板内容区 */
+.bible-compare-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+
+/* 版本列表项 */
+.bible-compare-version-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border: 1px solid var(--bible-card-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.bible-compare-version-item:hover {
+    border-color: var(--bible-accent);
+    background: var(--background-modifier-hover);
+}
+.bible-compare-version-item.active {
+    border-color: var(--bible-accent);
+    background: rgba(78, 205, 196, 0.08);
+}
+
+/* 拖拽手柄 */
+.bible-compare-version-drag {
+    color: var(--text-faint);
+    font-size: 14px;
+    cursor: grab;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+}
+.bible-compare-version-drag:active {
+    cursor: grabbing;
+}
+
+/* 版本名称 */
+.bible-compare-version-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+/* 版本选择复选框 */
+.bible-compare-version-checkbox {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--bible-card-border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    background: var(--background-primary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.bible-compare-version-checkbox.checked {
+    background: var(--bible-accent);
+    border-color: var(--bible-accent);
+    color: var(--text-on-accent);
+}
+
+/* 刷新按钮 */
+.bible-compare-refresh-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--bible-card-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: 12px;
+    width: 100%;
+    text-align: center;
+}
+.bible-compare-refresh-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--bible-accent);
+}
+
+/* 对照模式结果卡 */
+.bible-result-card.compare-mode {
+    border-left: 3px solid var(--bible-accent);
+}
+
+/* 主版本经文（正常样式） */
+.bible-result-verse-main {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-normal);
+}
+
+/* 对照版本经文（弱化样式） */
+.bible-result-verse-compare {
+    font-size: 11.7px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    margin-top: 4px;
+    padding-left: 12px;
+    border-left: 2px solid var(--bible-card-border);
+}
+
+/* 阅读对照模式卡片 */
+.bible-reader-verse-card.compare-mode {
+    border-left: 3px solid var(--bible-accent);
+    padding: 10px;
+}
+
+/* 阅读主版本 */
+.bible-reader-verse-main {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-normal);
+}
+
+/* 阅读对照版本（弱化） */
+.bible-reader-verse-compare {
+    font-size: 12.6px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    margin-top: 6px;
+    padding-left: 12px;
+    border-left: 2px solid var(--bible-card-border);
+}
+
+/* 投影对照经文（弱化） */
+.bible-proj-verse-compare {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    margin-top: 4px;
+    padding-left: 8px;
+    border-left: 2px solid rgba(255,255,255,0.15);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-verse-compare {
+    border-left-color: rgba(0,0,0,0.15);
+}
+
+/* 工具栏按钮通用样式 */
+.bible-toolbar-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--bible-card-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.bible-toolbar-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--bible-accent);
+}
+.bible-toolbar-btn.active {
+    background: var(--bible-accent);
+    color: var(--text-on-accent);
+    border-color: var(--bible-accent);
+}
+
+/* 面板外部遮罩（点击关闭用） */
+.bible-overlay-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease;
+}
+.bible-overlay-backdrop.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* ===== 对照弹窗 ===== */
+.bible-compare-modal {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.bible-compare-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--bible-card-border);
+    flex-shrink: 0;
+}
+.bible-compare-modal-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+.bible-compare-modal-desc {
+    padding: 8px 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--bible-card-border);
+    flex-shrink: 0;
+}
+.bible-compare-modal-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+}
+.bible-compare-modal-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border: 1px solid var(--bible-card-border);
+    border-radius: 6px;
+    cursor: grab;
+    transition: background 0.15s;
+}
+.bible-compare-modal-row:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-compare-modal-info:hover .bible-compare-modal-name {
+    color: var(--text-accent);
+}
+.bible-compare-modal-row.dragging {
+    opacity: 0.5;
+    background: var(--background-modifier-hover);
+}
+.bible-compare-modal-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+}
+.bible-compare-modal-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+.bible-compare-modal-status {
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* ===== 搜索结果对照版本样式 ===== */
+/* 与阅读标签页一致：无背景色，直接嵌入主卡片内 */
+.bible-compare-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 0;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+/* 对照行左列：复选框 + 并列标签上下排列 */
+.bible-compare-left-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    position: relative;
+}
+/* 对照行的并列标签使用静态定位，位于复选框正下方 */
+.bible-compare-left-col .bible-side-tag {
+    position: static;
+    margin-top: 2px;
+}
+.bible-compare-row:hover {
+    background: transparent;
+}
+.bible-compare-side-row {
+    padding-left: 28px;
+    margin-top: 4px;
+}
+.bible-compare-side-row .bible-side-tag {
+    position: static;
+    display: inline-block;
+}
+.bible-compare-text {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-muted);
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+/* ===== 阅读器对照版本样式 ===== */
+.bible-reader-compare-row {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding: 6px 0 !important;
+    margin: 2px 0 !important;
+    cursor: pointer !important;
+    border-radius: 4px !important;
+    background: transparent !important;
+    transition: background 0.15s !important;
+    width: 100% !important;
+    position: relative !important;
+    margin-left: -28px !important; /* 抵消父容器的 padding */
+    padding-left: 28px !important; /* 与主版本对齐 */
+}
+.bible-reader-compare-row:hover {
+    background: var(--background-modifier-hover) !important;
+}
+.bible-reader-compare-text {
+    flex: 1 !important;
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+    color: var(--text-muted) !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow: visible !important;
+    max-width: none !important;
+}
+/* 分隔线样式 */
+.bible-reader-divider {
+    height: 1px;
+    background: var(--background-modifier-border);
+    margin: 8px 0;
+}
+
+/* ===== 混合模式投影引用样式 ===== */
+.bible-proj-mixed-ref {
+    margin-bottom: 10px;
+    font-weight: bold;
+    font-size: 18px;
+    color: #ffd700;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-mixed-ref {
+    color: #b8860b;
+}
+
+/* ===== 阅读视图对照版左列（候选框+并列标签纵向排列） ===== */
+.bible-reader-compare-left-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.bible-reader-compare-left-col .bible-reader-side-tag {
+    position: static;
+    margin-top: 2px;
+}
+

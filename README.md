@@ -1,134 +1,155 @@
-# 圣经检索与阅读 (Bible Search and Reader)
+# 圣经检索与阅读 (Bible Search and Reader) v2.1.0
 
 ![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-> Obsidian 插件，用于本地圣经 Markdown 文档的检索、阅读与投影。
+> Obsidian 插件，用于多版本圣经数据的检索、阅读与投影。支持内置多版本对照、智能检索语法和投影模式。
 
 ---
-
-## 目录 / Table of Contents
-
-- [中文文档](#中文文档)
-- [English Documentation](#english-documentation)
-
----
-
-# 中文文档
 
 ## 功能特性
 
+- **多版本圣经支持**：同时加载多个圣经版本，支持恢复本、新标点和合本及自定义版本
+- **多版本对照阅读**：检索和阅读时可选开启对照模式，在主版本经文下方显示其他版本
+- **版本选择引导**：首次安装后自动弹出引导窗口，帮助用户选择并下载所需的圣经版本
+- **版本管理设置**：全新的版本管理界面，支持启用/禁用版本、设置主版本、删除版本、下载新版本
 - **圣经搜索**：支持主题、纲目、经文三种检索类型；可按全部圣经或自定义书卷范围搜索
 - **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、关键词（多词组合匹配）、以及混合检索
 - **阅读模式**：书卷/章节网格浏览，快速跳转，字体调节，主题与纲目同屏显示
 - **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作
+- **自动更新**：支持启动时自动检测新版本，一键下载并安装更新
+
+---
 
 ## 快速开始
 
-### 方式一：内置数据模式（推荐）
+### 首次安装引导
 
 1. **安装插件**：从 Obsidian 社区插件市场搜索 "Bible Search and Reader" 安装启用
-2. **首次引导**：启用后自动弹出引导窗口，选择「内置数据模式」
-3. **自动下载**：插件自动从 GitHub 下载 `bible-data.json`（约 14MB）到插件目录
-4. **开箱即用**：无需配置路径，直接点击左侧 📖 图标开始使用
+2. **版本选择引导**：启用后自动弹出引导窗口，显示已安装的版本和可下载的版本
+3. **选择版本**：勾选需要的圣经版本（可多选），点击「下一步」
+4. **自动下载**：若选择的版本本地不存在，插件自动从 GitHub 下载对应数据文件
+5. **开箱即用**：下载完成后直接点击左侧 📖 图标开始使用
 
-> 📦 内置数据模式下，仓库不会增加任何额外文件，也不需要设置圣经目录。
+> 📦 所有圣经数据以内置 JSON 形式存放在插件目录，仓库不会增加额外文件。
 
-### 方式二：外置数据模式
+### 版本管理
 
-1. **安装插件**：同上
-2. **首次引导**：选择「外置数据模式」
-3. **自动下载**：插件自动从 GitHub 下载圣经文档 ZIP（约 1.4MB）并解压到 Vault
-4. **自动配置**：插件自动填写旧约/新约目录路径
+在插件设置中可管理已安装的版本：
+- **启用/禁用**：控制哪些版本可用
+- **设置主版本**：选择检索和阅读时的默认版本
+- **删除版本**：移除不再需要的版本数据
+- **下载新版本**：从列表中选择并下载新的圣经版本
 
-> 📁 外置数据模式下，仓库会生成「圣经/旧约」和「圣经/新约」文件夹及 66 个 Markdown 文档。若文档被移动，需手动修改插件设置中的目录路径。
-
-> 💡 如需使用其他版本圣经（如和合本），可按下方「文档格式」自行整理后替换文档。
-
-## 文档格式
-
-### 文件命名
-建议：`序号. 书卷名.md`，如 `01. 创世记.md`、`40. 马太福音.md`。旧约与新约文件分开放置。
-
-### 内容格式
-
-```markdown
 ---
-title:
-author:
----
-> **主题：书卷主题内容**
 
-# 书卷名第1章
+## 圣经版本
 
-> 壹　纲目内容　一1～5
+### 标准版本映射表
 
-书卷简称1:1 经文内容
-书卷简称1:2 经文内容
-```
+插件支持以下 14 个标准中文圣经版本：
 
-**格式说明**
-| 类型 | 格式 | 示例 |
-|------|------|------|
-| 主题 | `> **主题：内容**` | `> **主题：神的创造**` |
-| 纲目 | `> 纲目内容`（以 `>` 开头，不含"主题"） | `> 壹　神的创造　一1～二3` |
-| 经文 | `简称章:节 内容` | `加1:1 作使徒的保罗...` |
-| 章标题 | `# 书卷名第X章` | `# 加拉太书第1章` |
+| 版本名称 | 标准缩写 | 文件名 | 说明 |
+|---------|---------|--------|------|
+| 1919原版官话和合本 | CUV | `bible-cuv-data.json` | 原始和合本 |
+| 简体新标点和合本 | CUVS / CUNP | `bible-cuvs-data.json` | 主流简体中文版本 |
+| 和合本修订版 | RCUV | `bible-rcuv-data.json` | 和合本修订版 |
+| 恢复本 | CRV / RCV | `bible-crv-data.json` |  Recovery Version，推荐 |
+| 新译本 简体 | CNVS / CNV / NCV | `bible-cnvs-data.json` | 台湾圣经公会新译本 |
+| 新译本 繁体 | CNVT | `bible-cnvt-data.json` | 繁体字版本 |
+| 现代中文译本 | TCV | `bible-tcv-data.json` | 现代中文译本 |
+| 当代圣经 简体 | CCB | `bible-ccb-data.json` | 当代圣经简体中文版 |
+| 当代圣经 繁体 | CCBT | `bible-ccbt-data.json` | 当代圣经繁体中文版 |
+| 新普及译本 | CNLT | `bible-cnlt-data.json` | 新普及译本 |
+| 吕振中译本 | LZZ / LZC | `bible-lzz-data.json` | 吕振中译本 |
+| 思高本 | SGB / SBV | `bible-sgb-data.json` | 思高圣经译本 |
+| 牧灵圣经 | CCBIB | `bible-ccbib-data.json` | 牧灵圣经 |
+| 中文标准译本 | CSBS / CSB | `bible-csbs-data.json` | 中文标准译本 |
 
-## 自定义圣经版本
+> 💡 **默认提供版本**：恢复本 (CRV) 和新标点和合本 (CUVS) 在 Release 中默认提供。
 
-插件默认提供原注版圣经数据，你也可以使用其他中文圣经版本（如恢复本、新译本等），只需按以下步骤操作。
+### 自定义版本命名规则
 
-### 1. 准备外置文档
+使用其他中文圣经版本时，请按以下规则准备数据文件：
 
-按照「文档格式」整理你的圣经文档，确保：
-- 文件命名规范：`序号. 书卷名.md`
-- 内容格式正确：主题、纲目、经文、章标题
-- 旧约和新约分别放在两个文件夹中
+1. **文件命名**：`bible-{缩写}-data.json`
+   - 示例：`bible-cuvs-data.json`、`bible-crv-data.json`
+   - 缩写建议：使用 3-6 个字母的小写英文缩写
+2. **数据格式**：JSON 数组，每条记录包含以下字段：
+   ```json
+   {
+     "bookId": 1,
+     "chapter": 1,
+     "verse": 1,
+     "type": "verse",
+     "content": "起初神创造天地。",
+     "testament": "OT",
+     "bookShortName": "创",
+     "bookFullName": "创世记",
+     "lineIndex": 0
+   }
+   ```
+3. **放置位置**：将文件放到插件目录（`.obsidian/plugins/bible-search-reader/`）下
+4. **自动识别**：插件启动时会自动识别该版本，在设置中可启用并设为主版本
 
-### 2. 外置数据转内置数据
+### 数据文件命名规范
 
-如果你希望将外置文档打包成内置的 `bible-data.json`（推荐，开箱即用）：
-
-1. **下载工具**：从 Release 下载 [`build-bible-data.html`](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/build-bible-data.html)
-2. **打开工具**：用浏览器直接打开该 HTML 文件（无需联网，纯本地运行）
-3. **选择文件夹**：
-   - 点击「选择旧约文件夹」，选中你的旧约文档所在文件夹
-   - 点击「选择新约文件夹」，选中你的新约文档所在文件夹
-4. **生成数据**：点击「生成 bible-data.json」，浏览器会自动下载生成的文件
-5. **放置文件**：将下载的 `bible-data.json` 放到插件目录（`.obsidian/plugins/bible-search-reader/`）下
-6. **切换模式**：在插件设置中选择「使用内置数据」，即可使用你的自定义版本
-
-> 💡 **提示**：生成工具会校验文档格式，如果某卷书解析失败，会在页面中显示错误信息，方便你定位问题。
-
-### 3. 直接使用外置数据
-
-如果你不想打包成内置数据，也可以直接使用外置文档：
-1. 将整理好的圣经文件夹放入 Vault
-2. 在插件设置中关闭「使用内置数据」
-3. 分别设置「旧约圣经目录」和「新约圣经目录」的路径
-4. 插件会自动解析外置文档
+| 文件类型 | 命名格式 | 示例 |
+|---------|---------|------|
+| 标准版本数据 | `bible-{缩写}-data.json` | `bible-cuvs-data.json` |
+| 自定义版本数据 | `bible-{自定义缩写}-data.json` | `bible-myversion-data.json` |
+| 版本元数据 | `versions.json` | （插件自动生成） |
 
 ---
 
 ## 使用指南
 
 ### 搜索
+
 1. 点击左侧边栏 📖 图标或运行命令「打开圣经检索」
-2. 选择检索种类（主题/纲目/经文）和范围，输入内容后点击「🔍 查询」
-3. 点击结果卡片选中（可排序、标记并列），再点击「逐节/并列/混合投影」
-4. 点击经文出处可直接跳转到圣经文档对应位置
+2. 点击「对照」按钮，在侧边栏勾选要使用的圣经版本（可多选）
+3. 勾选多个版本时，最上方的版本为主版本，其余为对照版本，可拖动调整顺序
+4. 选择检索种类（主题/纲目/经文）和范围，输入内容后点击「🔍 查询」
+5. 开启多版本对照后，搜索结果下方会显示其他版本的对照经文
+6. 点击结果卡片选中（可排序、标记并列），对照版本也有独立的候选框可选中
+7. 点击「逐节/并列/混合投影」进行投影
 
 ### 阅读
+
 1. 切换到「圣经阅读」选项卡
 2. 点击书卷简称 → 章节编号 → 阅读内容
-3. 使用「快速跳转」下拉框或「上一章/下一章」按钮翻章
-4. 点击卡片选中内容，可进行复制或投影
+3. 开启多版本对照后，每节经文下方会显示其他版本对照
+4. 点击卡片或对照版本的候选框选中内容，可进行复制或投影
+
+### 对照设置说明
+
+- **全局对照面板**：点击「对照」按钮打开，同时影响圣经检索和圣经阅读视图
+- **版本排序**：拖动调整版本顺序，最上方为显示优先级最高的主版本
+- **独立操作**：对照版本的经文拥有独立的候选框，可独立选中用于复制和投影
+- **简洁显示**：对照经文不再显示版本全名，直接显示经文内容，复制/投影时自动补上版本简称和出处
+- **投影支持**：逐节、并列、混合投影均支持同时显示多个版本，对照版本自动弱化显示
+
+### 全局操作与本页操作
+
+**全局操作**（作用于整个书卷或所有已选中内容）：
+- **全局全选**：按顺序选中当前书卷所有章节的主版本内容（含主题）
+- **全局取消**：取消所有已选中的内容（跨所有章节）
+- **全局复制**：复制所有已选中的内容
+- **逐节/并列/混合投影**：投影所有已选中的内容
+
+**本页操作**（仅作用于当前章节）：
+- **本页全选**：选中当前章的主版本内容（第一章额外包含主题）
+- **本页复制**：仅复制当前章已选中的内容
+- **复制经文**：复制当前章主版本的全部经文
+- **复制纲目**：复制当前章主版本的纲目
 
 ### 投影操作
+
 - `←/→` 或 `空格`：翻页
 - `+/-`：调整字体大小
 - `T`：切换深色/浅色主题
 - `ESC`：退出投影
+
+---
 
 ## 检索语法速查
 
@@ -153,7 +174,7 @@ author:
 | 分号 `；` `;` | 包含任意（OR） | 是 | 关键词顺序 |
 | 句号 `。` `.` | 包含任意（OR） | 否 | 经文顺序 |
 
-**示例**：`世人 恩典`（同时包含，忽略顺序）、`世人，恩典`（同时包含，按顺序）、`世人；恩典`（包含任意一个）
+---
 
 ## 更新
 
@@ -162,172 +183,22 @@ author:
 - **手动检查**：设置 → 立即检查更新
 - **一键更新**：检测到新版本后，点击「立即更新」即可自动下载并安装
 
-## 注意事项
+---
 
-1. 插件启动时自动加载圣经数据，首次加载可能需要几秒
-2. 修改圣经文档后，重新打开检索视图或重启 Obsidian 即可更新
-3. 移动端与桌面端均支持（自动下载功能仅桌面端可用）
+## 兼容性说明
 
-## ☕ 支持
+### 数据源模式
 
-如果觉得这个插件对你有帮助，可以给予支持，以便继续开发。
+- **2.1.0 起仅支持内置数据模式**，移除了外置数据模式，简化架构
+- 旧版本数据自动迁移：自动检测旧版 `bible-data.json` 并迁移为恢复本（CRV）版本
 
-> **加 6:6** — 只是那在话语上受教的，当与施教的人共同分享一切的美物。
+### 平台支持
 
-<img src="https://raw.githubusercontent.com/ViaCai/bitiful-helper/main/images/wechat-pay.png" alt="微信收款码" width="240" />
+- 移动端与桌面端均支持
+- 自动下载功能在桌面端更稳定
+
+---
 
 ## 许可证
-
-MIT License
-
----
-
-# English Documentation
-
-> ⚠️ **This plugin currently supports Chinese Bible documents only.** All book names, verse reference formats, and search syntax are based on Chinese (Simplified/Traditional). **English or other language Bible versions are NOT supported.** The English documentation below is provided for reference only.
-
-## Features
-
-- **Bible Search**: Search by Theme, Outline, or Verse; scope can be set to the entire Bible or custom book selections
-- **Smart Search Syntax**: Supports Chinese verse references (e.g. `太1:1`, `路一1～3`), keyword combinations, and mixed queries
-- **Reader Mode**: Grid browsing by book/chapter, quick jump, font size adjustment, with themes and outlines displayed alongside verses
-- **Projection Mode**: Selected content can be projected in Focus, Parallel, or Mixed mode; supports keyboard/scroll wheel/touch navigation
-
-## Quick Start
-
-1. **Install the plugin**: Search for "Bible Search and Reader" in the Obsidian Community Plugins marketplace, or manually download and extract to `.obsidian/plugins/bible-search-reader/`
-2. **Prepare Bible documents**: Download the [sample Chinese Bible documents (ZIP)](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-documents.zip) and extract them into your vault
-3. **Configure directories**: Obsidian Settings → Community Plugins → Bible Search and Reader → set the **Old Testament Path** and **New Testament Path**
-
-   > 📁 **Path format**: In the Obsidian file explorer, right-click the target folder → "Copy path" → "From vault folder", then paste it into the plugin settings.
-
-> 💡 If you need a different Chinese Bible version, you can reformat your own documents following the rules below.
-
-## Document Format
-
-### File Naming
-Recommended: `Number. BookName.md`, e.g. `01. 创世记.md`, `40. 马太福音.md`. Old and New Testament files should be placed in separate folders.
-
-### Content Format
-
-```markdown
----
-title:
-author:
----
-> **主题：书卷主题内容**
-
-# 书卷名第1章
-
-> 壹　纲目内容　一1～5
-
-书卷简称1:1 经文内容
-书卷简称1:2 经文内容
-```
-
-**Format Rules**
-| Type | Format | Example |
-|------|--------|---------|
-| Theme | `> **主题：content**` | `> **主题：神的创造**` |
-| Outline | `> outline content` (starts with `>`, no "主题") | `> 壹　神的创造　一1～二3` |
-| Verse | `ShortNameChapter:Verse content` | `加1:1 作使徒的保罗...` |
-| Chapter title | `# BookName第X章` | `# 加拉太书第1章` |
-
-## Custom Bible Version
-
-The plugin ships with the Chinese Recovery Version (原注版) by default. You can also use other Chinese Bible versions (e.g., Recovery Version, CNV, etc.) by following the steps below.
-
-### 1. Prepare External Documents
-
-Organize your Bible documents following the "Document Format" rules above. Make sure:
-- File naming follows the convention: `Number. BookName.md`
-- Content format is correct: theme, outline, verse, chapter title
-- Old and New Testament files are placed in separate folders
-
-### 2. Convert External Data to Built-in Data
-
-If you want to package your external documents into a built-in `bible-data.json` (recommended, works out of the box):
-
-1. **Download the tool**: Download [`build-bible-data.html`](https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/build-bible-data.html) from the Release page
-2. **Open the tool**: Open the HTML file directly in your browser (runs entirely offline, no internet required)
-3. **Select folders**:
-   - Click "Select Old Testament folder" and choose your OT document folder
-   - Click "Select New Testament folder" and choose your NT document folder
-4. **Generate data**: Click "Generate bible-data.json" and the browser will download the generated file
-5. **Place the file**: Move the downloaded `bible-data.json` into the plugin directory (`.obsidian/plugins/bible-search-reader/`)
-6. **Switch mode**: In plugin settings, enable "Use built-in data" to use your custom version
-
-> 💡 **Tip**: The generator validates document format during parsing. If a book fails to parse, an error message will be displayed on the page to help you locate the issue.
-
-### 3. Use External Data Directly
-
-If you prefer not to package into built-in data, you can use external documents directly:
-1. Place your Bible folders into the Vault
-2. In plugin settings, disable "Use built-in data"
-3. Set the "Old Testament Path" and "New Testament Path" accordingly
-4. The plugin will automatically parse the external documents
-
----
-
-## Usage Guide
-
-### Search
-1. Click the 📖 icon in the left sidebar or run the command "Open Bible Search"
-2. Select search types (Theme / Outline / Verse) and scope, enter your query, and click "🔍 Search"
-3. Click result cards to select (with ordering and side-by-side tagging), then click "Focus / Parallel / Mixed Projection"
-4. Click a verse reference to jump directly to the corresponding location in the Bible document
-
-### Reading
-1. Switch to the "Bible Reader" tab
-2. Click a book abbreviation → chapter number → read the content
-3. Use the "Quick Jump" dropdowns or "Previous / Next Chapter" buttons to navigate
-4. Click cards to select content for copying or projection
-
-### Projection Controls
-- `←/→` or `Space`: Navigate slides
-- `+/-`: Adjust font size
-- `T`: Toggle dark/light theme
-- `ESC`: Exit projection
-
-## Search Syntax Cheatsheet
-
-### Verse References
-
-| Input | Meaning |
-|-------|---------|
-| `加1:1` | Galatians 1:1 |
-| `路一1～3` | Luke 1:1–3 |
-| `太1:1-2:5` | Matthew 1:1 to 2:5 |
-| `太1:1, 5` | Matthew 1:1 and 1:5 (continuation within same book) |
-| `约一1, 十四7~21, 23` | John 1:1, 14:7–21, 14:23 (mixed continuation) |
-
-### Keyword Matching
-
-The separator determines the matching behavior:
-
-| Separator | Mode | Order Sensitive | Result Sorting |
-|-----------|------|-----------------|----------------|
-| Space / 顿号 `、` | AND | No | Verse order |
-| Comma `，` `,` | AND | **Yes** (input order) | Verse order |
-| Semicolon `；` `;` | OR | Yes | Keyword order |
-| Period `。` `.` | OR | No | Verse order |
-
-**Examples**: `世人 恩典` (contains both, any order), `世人，恩典` (contains both, in order), `世人；恩典` (contains either)
-
-## Notes
-
-1. The plugin loads Bible data automatically on startup; the first load may take a few seconds
-2. After modifying Bible documents, reload the search view or restart Obsidian to update
-3. Supports both desktop and mobile platforms
-
-## ☕ Support
-
-If you find this plugin helpful, your support is greatly appreciated to continue development.
-
-> **Galatians 6:6** — Let the one who is taught the word share all good things with the one who teaches.
-
-<img src="https://raw.githubusercontent.com/ViaCai/bitiful-helper/main/images/wechat-pay.png" alt="WeChat Pay" width="240" />
-
-## License
 
 MIT License

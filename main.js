@@ -77,14 +77,42 @@ for (const book of BIBLE_BOOKS) {
     BOOK_MAP[book.fullName] = book;
     BOOK_ID_MAP[book.id] = book;
 }
-// 别名映射（文档中使用约二/约三，但标准简称是约贰/约叁）
 BOOK_MAP['约二'] = BOOK_MAP['约贰'];
 BOOK_MAP['约三'] = BOOK_MAP['约叁'];
 const BOOK_SHORT_NAMES = BIBLE_BOOKS.map(b => b.shortName);
-// 加入别名（文档中使用约二/约三，但标准简称是约贰/约叁）
 if (BOOK_MAP['约二'] && !BOOK_SHORT_NAMES.includes('约二')) BOOK_SHORT_NAMES.push('约二');
 if (BOOK_MAP['约三'] && !BOOK_SHORT_NAMES.includes('约三')) BOOK_SHORT_NAMES.push('约三');
 BOOK_SHORT_NAMES.sort((a, b) => b.length - a.length);
+
+// ==================== 版本数据配置 ====================
+const VERSION_MAP = {
+    'CUV': '1919原版官话和合本',
+    'CUVS': '简体新标点和合本（主流）',
+    'CUNP': '简体新标点和合本（主流）',
+    'RCUV': '和合本修订版',
+    'CRV': '恢复本（推荐）',
+    'RCV': '恢复本（推荐）',
+    'CNVS': '新译本 简体',
+    'CNVT': '新译本 繁体',
+    'CNV': '新译本 简体',
+    'NCV': '新译本 简体',
+    'TCV': '现代中文译本',
+    'CCB': '当代圣经 简体',
+    'CCBT': '当代圣经 繁体',
+    'CNLT': '新普及译本',
+    'LZZ': '吕振中译本',
+    'LZC': '吕振中译本',
+    'SGB': '思高本',
+    'SBV': '思高本',
+    'CCBIB': '牧灵圣经',
+    'CSBS': '中文标准译本',
+    'CSB': '中文标准译本',
+};
+
+const DEFAULT_VERSIONS = [
+    { key: 'CRV', name: '恢复本（推荐）', file: 'bible-crv-data.json', url: 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-crv-data.json' },
+    { key: 'CUVS', name: '简体新标点和合本（主流）', file: 'bible-cuvs-data.json', url: 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-cuvs-data.json' }
+];
 
 // ==================== 工具函数 ====================
 function chineseToNumber(s) {
@@ -112,247 +140,26 @@ function parseNumber(s) {
     return NaN;
 }
 
-// ==================== 首次运行引导模态框 ====================
-class FirstRunModal extends Modal {
-    constructor(app, plugin) {
-        super(app);
-        this.plugin = plugin;
-        this.selectedMode = null;
-    }
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.style.padding = '24px';
-        contentEl.style.maxWidth = '640px';
-
-        const header = contentEl.createDiv({ cls: 'bible-first-run-header' });
-        header.style.textAlign = 'center';
-        header.style.marginBottom = '20px';
-        header.createEl('h2', { text: '📖 欢迎使用圣经检索与阅读插件' });
-        header.createEl('p', { text: '首次使用，请选择圣经数据来源', cls: 'setting-item-description' });
-
-        const cards = contentEl.createDiv({ cls: 'bible-first-run-cards' });
-        cards.style.display = 'flex';
-        cards.style.gap = '16px';
-        cards.style.marginBottom = '20px';
-
-        const builtinCard = cards.createDiv({ cls: 'bible-mode-card' });
-        builtinCard.dataset.mode = 'builtin';
-        builtinCard.style.flex = '1';
-        builtinCard.style.padding = '16px';
-        builtinCard.style.border = '2px solid var(--background-modifier-border)';
-        builtinCard.style.borderRadius = '8px';
-        builtinCard.style.cursor = 'pointer';
-        builtinCard.style.transition = 'all 0.2s';
-        builtinCard.createEl('h3', { text: '📦 内置数据模式（推荐）' });
-        builtinCard.createEl('p', { text: '1. 需要下载14MB文件，文件较大，对网络要求较高。', cls: 'setting-item-description' });
-        builtinCard.createEl('p', { text: '2. 仓库不会增加额外的文件夹和文件。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
-        builtinCard.createEl('p', { text: '3. 不需要设置圣经目录。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
-
-        const externalCard = cards.createDiv({ cls: 'bible-mode-card' });
-        externalCard.dataset.mode = 'external';
-        externalCard.style.flex = '1';
-        externalCard.style.padding = '16px';
-        externalCard.style.border = '2px solid var(--background-modifier-border)';
-        externalCard.style.borderRadius = '8px';
-        externalCard.style.cursor = 'pointer';
-        externalCard.style.transition = 'all 0.2s';
-        externalCard.createEl('h3', { text: '📁 外置数据模式' });
-        externalCard.createEl('p', { text: '1. 需要下载1.4MB文件，文件较小，网络要求较低。', cls: 'setting-item-description' });
-        externalCard.createEl('p', { text: '2. 下载后会自动解压到仓库并配置默认目录，会在仓库新建圣经文档，内含66个圣经文档。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
-        externalCard.createEl('p', { text: '3. 若圣经文档被移动，则需要手动修改插件设置里的圣经目录。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;' } });
-        if (!Platform.isDesktop) {
-            externalCard.createEl('p', { text: '⚠️ 移动端暂不支持自动下载解压，请手动下载 ZIP 后解压到 Vault。', cls: 'setting-item-description', attr: { style: 'margin-top:4px;color:var(--text-error);' } });
-        }
-
-        const selectCard = (mode) => {
-            this.selectedMode = mode;
-            builtinCard.style.borderColor = mode === 'builtin' ? 'var(--bible-accent)' : 'var(--background-modifier-border)';
-            builtinCard.style.background = mode === 'builtin' ? 'rgba(78,205,196,0.08)' : '';
-            externalCard.style.borderColor = mode === 'external' ? 'var(--bible-accent)' : 'var(--background-modifier-border)';
-            externalCard.style.background = mode === 'external' ? 'rgba(78,205,196,0.08)' : '';
-            confirmBtn.disabled = false;
-        };
-        builtinCard.addEventListener('click', () => selectCard('builtin'));
-        externalCard.addEventListener('click', () => selectCard('external'));
-
-        const btnWrap = contentEl.createDiv();
-        btnWrap.style.textAlign = 'center';
-        const confirmBtn = btnWrap.createEl('button', { cls: 'mod-cta', text: '确认选择' });
-        confirmBtn.disabled = true;
-        confirmBtn.style.marginRight = '8px';
-        const cancelBtn = btnWrap.createEl('button', { text: '稍后再说' });
-        cancelBtn.addEventListener('click', () => this.close());
-
-        confirmBtn.addEventListener('click', async () => {
-            confirmBtn.disabled = true;
-            confirmBtn.setText('检查数据中...');
-
-            // 先设置数据源模式
-            this.plugin.settings.dataSource = this.selectedMode;
-            await this.plugin.saveSettings();
-
-            // 检查是否已有数据
-            let hasData = false;
-            if (this.selectedMode === 'builtin') {
-                const info = await this.plugin.getBuiltinDataInfo();
-                hasData = info.available;
-            } else {
-                const oldFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.oldTestamentPath);
-                const newFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.newTestamentPath);
-                hasData = !!(oldFolder && newFolder);
-            }
-
-            if (hasData) {
-                // 已有数据，直接打开
-                this.plugin.settings.hasSetup = true;
-                await this.plugin.saveSettings();
-                await this.plugin.loadBibleData();
-                this.plugin.activateSearchView();
-                this.close();
-                return;
-            }
-
-            // 无数据，询问用户
-            confirmBtn.style.display = 'none';
-            cancelBtn.style.display = 'none';
-
-            // 禁用模式选择卡片，避免用户在此阶段误操作切换模式
-            builtinCard.style.pointerEvents = 'none';
-            builtinCard.style.opacity = '0.5';
-            externalCard.style.pointerEvents = 'none';
-            externalCard.style.opacity = '0.5';
-
-            // 显示当前已选模式的提示
-            const modeTip = contentEl.createEl('div', {
-                cls: 'setting-item-description',
-                attr: { style: 'text-align:center;margin-bottom:12px;padding:8px;background:var(--background-secondary);border-radius:6px;' }
-            });
-            modeTip.setText('当前模式：' + (this.selectedMode === 'builtin' ? '内置数据模式' : '外置数据模式') + '（如需切换请关闭窗口重新选择）');
-
-            const askWrap = contentEl.createDiv();
-            askWrap.style.textAlign = 'center';
-            askWrap.style.marginTop = '16px';
-            askWrap.createEl('p', { text: '未找到对应的圣经数据，您是否需要下载？', cls: 'setting-item-description', attr: { style: 'margin-bottom:12px;' } });
-
-            const haveDataBtn = askWrap.createEl('button', { cls: 'mod-cta', text: '我已有数据，不需下载' });
-            haveDataBtn.style.marginRight = '8px';
-            const downloadBtn = askWrap.createEl('button', { cls: 'mod-cta', text: '我没有数据，请帮我下载' });
-
-            haveDataBtn.addEventListener('click', async () => {
-                haveDataBtn.disabled = true;
-                downloadBtn.disabled = true;
-                haveDataBtn.setText('检查中...');
-
-                // 再次检查数据
-                let found = false;
-                if (this.selectedMode === 'builtin') {
-                    const info = await this.plugin.getBuiltinDataInfo();
-                    found = info.available;
-                } else {
-                    const oldFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.oldTestamentPath);
-                    const newFolder = this.plugin.app.vault.getAbstractFileByPath(this.plugin.settings.newTestamentPath);
-                    found = !!(oldFolder && newFolder);
-                }
-
-                if (found) {
-                    this.plugin.settings.hasSetup = true;
-                    await this.plugin.saveSettings();
-                    await this.plugin.loadBibleData();
-                    this.plugin.activateSearchView();
-                    this.close();
-                } else {
-                    askWrap.empty();
-                    askWrap.createEl('p', { text: '仍未找到圣经数据，是否需要下载？', cls: 'setting-item-description', attr: { style: 'margin-bottom:12px;color:var(--text-error);' } });
-                    const yesBtn = askWrap.createEl('button', { cls: 'mod-cta', text: '是，帮我下载' });
-                    yesBtn.style.marginRight = '8px';
-                    const noBtn = askWrap.createEl('button', { text: '否，稍后处理' });
-
-                    yesBtn.addEventListener('click', async () => {
-                        yesBtn.disabled = true;
-                        noBtn.disabled = true;
-                        yesBtn.setText('下载中...');
-                        try {
-                            if (this.selectedMode === 'builtin') {
-                                await this.plugin.downloadBuiltinData();
-                            } else {
-                                await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
-                            }
-                            this.plugin.settings.hasSetup = true;
-                            await this.plugin.saveSettings();
-                            await this.plugin.loadBibleData();
-                            this.plugin.activateSearchView();
-                            this.close();
-                        } catch (e) {
-                            new Notice('下载失败：' + e.message);
-                            yesBtn.disabled = false;
-                            yesBtn.setText('是，帮我下载');
-                        }
-                    });
-
-                    noBtn.addEventListener('click', async () => {
-                        this.plugin.settings.hasSetup = true;
-                        await this.plugin.saveSettings();
-                        await this.plugin.loadBibleData();
-                        this.plugin.activateSearchView();
-                        this.close();
-                        new Notice('未找到圣经数据，请到设置里配置正确后，才能使用。', 5000);
-                    });
-                }
-            });
-
-            downloadBtn.addEventListener('click', async () => {
-                haveDataBtn.disabled = true;
-                downloadBtn.disabled = true;
-                if (this.selectedMode === 'builtin') {
-                    downloadBtn.setText('下载中...');
-                    try {
-                        await this.plugin.downloadBuiltinData();
-                        this.plugin.settings.hasSetup = true;
-                        await this.plugin.saveSettings();
-                        await this.plugin.loadBibleData();
-                        this.plugin.activateSearchView();
-                        this.close();
-                    } catch (e) {
-                        new Notice('下载失败：' + e.message);
-                        haveDataBtn.disabled = false;
-                        downloadBtn.disabled = false;
-                        downloadBtn.setText('我没有数据，请帮我下载');
-                    }
-                } else {
-                    if (!Platform.isDesktop) {
-                        new Notice('移动端暂不支持自动下载解压外置数据。请从 Release 页面下载 bible-documents.zip，解压到 Vault 后点击「我已有数据」。', 10000);
-                        haveDataBtn.disabled = false;
-                        downloadBtn.disabled = false;
-                        downloadBtn.setText('我没有数据，请帮我下载');
-                        return;
-                    }
-                    downloadBtn.setText('下载中...');
-                    try {
-                        await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
-                        this.plugin.settings.hasSetup = true;
-                        await this.plugin.saveSettings();
-                        await this.plugin.loadBibleData();
-                        this.plugin.activateSearchView();
-                        this.close();
-                    } catch (e) {
-                        new Notice('下载失败：' + e.message);
-                        haveDataBtn.disabled = false;
-                        downloadBtn.disabled = false;
-                        downloadBtn.setText('我没有数据，请帮我下载');
-                    }
-                }
-            });
-        });
-    }
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-    }
-}
-
-// ==================== 更新日志模态框 ====================
+// ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '2.1.0': `
+## [2.1.0] - 2026-08-20
+
+### 新增
+- **多版本圣经支持**：支持同时加载多个圣经版本，可在设置中管理已安装的版本。
+- **多版本对照模式**：检索和阅读视图均支持多版本对照，默认关闭，开启后在首选经文下方按顺序显示其他版本。
+- **版本管理设置**：全新的版本管理界面，支持启用/禁用版本、设置主版本、删除版本、下载新版本。
+- **首次运行版本选择**：首次安装后引导用户选择圣经版本（可多选），自动检测本地已安装版本，支持下载原注版和新标点和合本。
+- **自定义版本识别**：自动识别插件目录下 bible-{缩写}-data.json 格式的自定义版本，支持常见中文圣经版本缩写对照表。
+
+### 改进
+- **移除外置数据模式**：2.1.0 起仅支持内置数据模式，简化架构和设置。
+- **对照版本独立操作**：对照版本的经文拥有独立的候选框，可独立选中用于复制和投影。
+- **投影支持多版本**：逐节、并列、混合投影均支持同时显示多个版本，对照版本自动弱化显示。
+
+### 兼容
+- **旧版本数据迁移**：自动检测旧版 bible-data.json 并迁移为原注本（CRV）版本。
+`,
     '2.0.2': `
 ## [2.0.2] - 2026-08-09
 
@@ -393,6 +200,179 @@ const CHANGELOG_CONTENT = {
 `
 };
 
+// ==================== 首次运行引导模态框（版本选择）====================
+class FirstRunModal extends Modal {
+    constructor(app, plugin) {
+        super(app);
+        this.plugin = plugin;
+    }
+    async onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.style.padding = '24px';
+        contentEl.style.maxWidth = '640px';
+
+        await this.plugin.syncScannedVersions();
+
+        const header = contentEl.createDiv({ cls: 'bible-first-run-header' });
+        header.style.textAlign = 'center';
+        header.style.marginBottom = '20px';
+        header.createEl('h2', { text: '📖 欢迎使用圣经检索与阅读插件' });
+        header.createEl('p', { text: '请选择要使用的圣经版本（可多选），拖动调整顺序，最上方的版本将作为主版本', cls: 'setting-item-description' });
+
+        const versionList = contentEl.createDiv({ cls: 'bible-version-list' });
+        versionList.style.display = 'flex';
+        versionList.style.flexDirection = 'column';
+        versionList.style.gap = '10px';
+        versionList.style.marginBottom = '20px';
+
+        this.renderVersionList(versionList);
+
+        const btnWrap = contentEl.createDiv();
+        btnWrap.style.textAlign = 'center';
+        const confirmBtn = btnWrap.createEl('button', { cls: 'mod-cta', text: '确认选择' });
+        confirmBtn.style.marginRight = '8px';
+        const cancelBtn = btnWrap.createEl('button', { text: '稍后再说' });
+
+        cancelBtn.addEventListener('click', () => this.close());
+        confirmBtn.addEventListener('click', async () => this.onConfirm());
+    }
+
+    renderVersionList(container) {
+        container.empty();
+        for (let i = 0; i < this.plugin.settings.versions.length; i++) {
+            const ver = this.plugin.settings.versions[i];
+            const row = container.createDiv({ cls: 'bible-version-row' });
+            row.setAttribute('draggable', 'true');
+            row.dataset.index = String(i);
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '10px';
+            row.style.padding = '10px';
+            row.style.border = '2px solid var(--background-modifier-border)';
+            row.style.borderRadius = '8px';
+            row.style.cursor = 'pointer';
+            row.style.transition = 'all 0.2s';
+
+            const dragHandle = row.createEl('span', { text: '≡', attr: { style: 'color:var(--text-muted);cursor:grab;font-size:16px;' } });
+
+            const checkbox = row.createEl('input', { type: 'checkbox', attr: { 'data-key': ver.key } });
+            checkbox.style.width = '18px';
+            checkbox.style.height = '18px';
+            checkbox.style.cursor = 'pointer';
+            checkbox.checked = ver.enabled;
+            if (!ver.installed) checkbox.disabled = true;
+
+            const info = row.createDiv();
+            info.style.flex = '1';
+            info.createEl('div', { text: ver.name, cls: 'setting-item-name' });
+            const desc = info.createEl('div', { cls: 'setting-item-description' });
+            if (ver.installed) {
+                const label = ver.isPrimary ? '✅ 已安装（主版本）' : ver.enabled ? '✅ 已安装（对照）' : '✅ 已安装';
+                desc.setText(label);
+                desc.style.color = ver.isPrimary ? 'var(--interactive-success)' : ver.enabled ? 'var(--text-accent)' : 'var(--text-muted)';
+            } else {
+                desc.setText('⬇️ 需要下载');
+                desc.style.color = 'var(--text-accent)';
+            }
+
+            checkbox.addEventListener('change', () => {
+                ver.enabled = checkbox.checked;
+                const firstEnabled = this.plugin.settings.versions.find(v => v.enabled);
+                for (const v of this.plugin.settings.versions) v.isPrimary = false;
+                if (firstEnabled) firstEnabled.isPrimary = true;
+                this.renderVersionList(container);
+            });
+
+            row.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', String(i));
+                row.style.opacity = '0.5';
+            });
+            row.addEventListener('dragend', () => {
+                row.style.opacity = '1';
+            });
+            row.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                const afterElement = this.getDragAfterElement(container, e.clientY);
+                const draggable = container.querySelector('[style*="opacity: 0.5"]');
+                if (draggable) {
+                    if (afterElement == null) container.appendChild(draggable);
+                    else container.insertBefore(draggable, afterElement);
+                }
+            });
+        }
+        container.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const newOrder = [];
+            const rows = container.querySelectorAll('.bible-version-row');
+            for (const row of rows) {
+                const idx = parseInt(row.dataset.index);
+                newOrder.push(this.plugin.settings.versions[idx]);
+            }
+            const firstEnabled = newOrder.find(v => v.enabled);
+            for (const v of newOrder) v.isPrimary = false;
+            if (firstEnabled) firstEnabled.isPrimary = true;
+            this.plugin.settings.versions = newOrder;
+            this.renderVersionList(container);
+        });
+    }
+
+    getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.bible-version-row:not([style*="opacity: 0.5"])')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    async onConfirm() {
+        const selected = this.plugin.settings.versions.filter(v => v.enabled);
+        if (selected.length === 0) {
+            new Notice('请至少选择一个圣经版本');
+            return;
+        }
+
+        for (const ver of selected) {
+            if (!ver.installed) {
+                const defaultVer = DEFAULT_VERSIONS.find(dv => dv.key === ver.key);
+                if (defaultVer) {
+                    const notice = new Notice(`正在下载 ${ver.name}...`, 0);
+                    try {
+                        await this.plugin.downloadVersionData(defaultVer);
+                        ver.installed = true;
+                        ver.file = defaultVer.file;
+                        notice.hide();
+                    } catch (e) {
+                        notice.hide();
+                        new Notice(`${ver.name} 下载失败: ${e.message}`);
+                        ver.enabled = false;
+                    }
+                }
+            }
+        }
+
+        const firstEnabled = this.plugin.settings.versions.find(v => v.enabled && v.installed);
+        for (const v of this.plugin.settings.versions) v.isPrimary = false;
+        if (firstEnabled) firstEnabled.isPrimary = true;
+
+        this.plugin.settings.hasSetup = true;
+        await this.plugin.saveSettings();
+        await this.plugin.loadBibleData();
+        this.plugin.activateSearchView();
+        this.close();
+    }
+
+    onClose() {
+        this.contentEl.empty();
+    }
+}
+
+// ==================== 更新日志模态框 ====================
 class UpdateModal extends Modal {
     constructor(app, version, content) {
         super(app);
@@ -439,24 +419,19 @@ class UpdateModal extends Modal {
     }
 
     renderInlineMarkdown(container, text) {
-        let i = 0;
-        while (i < text.length) {
-            const start = text.indexOf("**", i);
-            if (start === -1) {
-                container.appendChild(document.createTextNode(text.slice(i)));
-                break;
+        const regex = /\*\*(.*?)\*\*/g;
+        let lastIndex = 0;
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
             }
-            if (start > i) {
-                container.appendChild(document.createTextNode(text.slice(i, start)));
-            }
-            const end = text.indexOf("**", start + 2);
-            if (end === -1) {
-                container.appendChild(document.createTextNode(text.slice(i)));
-                break;
-            }
-            const strong = container.createEl("strong", { text: text.slice(start + 2, end) });
-            strong.style.fontWeight = "600";
-            i = end + 2;
+            const strong = container.createEl('strong', { text: match[1] });
+            strong.style.fontWeight = '600';
+            lastIndex = match.index + match[0].length;
+        }
+        if (lastIndex < text.length) {
+            container.appendChild(document.createTextNode(text.slice(lastIndex)));
         }
     }
     onClose() {
@@ -465,9 +440,6 @@ class UpdateModal extends Modal {
 }
 
 // ==================== 设置标签页 ====================
-const BIBLE_DATA_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-data.json';
-const BIBLE_DOCUMENTS_URL = 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-documents.zip';
-
 class BibleSettingTab extends PluginSettingTab {
     constructor(app, plugin) {
         super(app, plugin);
@@ -478,179 +450,104 @@ class BibleSettingTab extends PluginSettingTab {
         containerEl.empty();
         containerEl.createEl('h2', { text: '圣经检索与阅读设置' });
 
-        containerEl.createEl('h3', { text: '数据源', cls: 'setting-item-name' });
-        containerEl.createEl('div', { cls: 'setting-item-description', text: '选择圣经数据的来源方式' });
+        // ===== 板块 A：圣经版本管理 =====
+        containerEl.createEl('h3', { text: '圣经版本管理', cls: 'setting-item-name' });
+        containerEl.createEl('div', { cls: 'setting-item-description', text: '管理已安装的圣经版本。点击刷新按钮重新识别插件目录下的圣经数据文件。自定义版本请按 bible-{缩写}-data.json 命名并放置到插件目录下。' });
 
-        const modeDesc = containerEl.createEl('div', { cls: 'setting-item' });
-        modeDesc.style.padding = '12px 18px';
-        modeDesc.style.background = 'var(--background-secondary)';
-        modeDesc.style.borderRadius = '6px';
-        modeDesc.style.marginBottom = '12px';
-        modeDesc.style.fontSize = '13px';
-        modeDesc.style.lineHeight = '1.8';
-        modeDesc.style.color = 'var(--text-muted)';
-        if (this.plugin.settings.dataSource === 'builtin') {
-            modeDesc.setText('内置数据：需要下载 14MB 文件，文件较大，对网络要求较高，仓库不会有额外的文件增加，也不需要设置圣经所在的目录。');
-        } else {
-            modeDesc.setText('外置数据：需要下载 1.4MB 文件，文件较小，对网络要求较低，下载好后会自动解压，在仓库里生成对应的文件夹和 66 个圣经文档，作为数据源，并且会自动填写默认的圣经目录。若圣经文档被移动，则需要手动修改插件设置里的圣经目录。');
-        }
+        const refreshBtn = containerEl.createEl('button', { cls: 'bible-small-btn', text: '🔄 刷新识别' });
+        refreshBtn.style.marginBottom = '12px';
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.setAttribute('disabled', 'true');
+            refreshBtn.setText('刷新中...');
+            await this.plugin.syncScannedVersions();
+            this.display();
+            new Notice('版本识别已刷新');
+        });
 
-        new Setting(containerEl)
-            .setName('使用内置数据（推荐）')
-            .setDesc('开启后使用内置 bible-data.json，关闭则使用外置 Markdown 文档。')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.dataSource === 'builtin')
-                .onChange(async (value) => {
-                    this.plugin.settings.dataSource = value ? 'builtin' : 'external';
-                    await this.plugin.saveSettings();
-                    this.display();
-                    await this.plugin.loadBibleData();
-                }));
+        const versionList = containerEl.createDiv({ cls: 'bible-version-list' });
+        versionList.style.marginBottom = '16px';
 
-        if (this.plugin.settings.dataSource === 'builtin') {
-            const builtinStatus = containerEl.createEl('div', { cls: 'setting-item' });
-            builtinStatus.style.padding = '12px 18px';
-            builtinStatus.style.background = 'var(--background-secondary)';
-            builtinStatus.style.borderRadius = '6px';
-            builtinStatus.style.marginBottom = '16px';
-            const statusLabel = builtinStatus.createEl('div', { cls: 'setting-item-name', text: '内置数据状态' });
-            statusLabel.style.marginBottom = '6px';
-            const statusContent = builtinStatus.createDiv();
-            statusContent.style.whiteSpace = 'pre-wrap';
-            statusContent.style.lineHeight = '1.6';
+        const allVersions = this.plugin.settings.versions;
+        const defaultKeys = DEFAULT_VERSIONS.map(dv => dv.key);
 
-            this.plugin.getBuiltinDataInfo().then(builtinInfo => {
-                statusContent.empty();
-                if (builtinInfo.available && builtinInfo.foundItems.length > 0) {
-                    for (const item of builtinInfo.foundItems) {
-                        const itemEl = statusContent.createDiv();
-                        itemEl.style.padding = '8px 0';
-                        itemEl.style.borderBottom = '1px solid var(--background-modifier-border)';
-                        const infoText = itemEl.createEl('div', {
-                            text: '✅ ' + item.bookCount + ' 卷，' + item.itemCount + ' 条数据'
-                        });
-                        infoText.style.color = 'var(--interactive-success)';
-                        const pathText = itemEl.createEl('div', {
-                            text: '📁 ' + item.path,
-                            cls: 'setting-item-description'
-                        });
-                        pathText.style.fontSize = '11px';
-                        pathText.style.marginTop = '2px';
-                        const delBtn = itemEl.createEl('button', { text: '🗑️ 删除此数据' });
-                        delBtn.style.marginTop = '4px';
-                        delBtn.style.fontSize = '11px';
-                        delBtn.style.padding = '2px 8px';
-                        delBtn.addEventListener('click', async () => {
-                            if (confirm('确定要删除 ' + item.path + ' 吗？')) {
-                                try {
-                                    await this.plugin.deleteBuiltinData(item.path);
-                                    new Notice('已删除: ' + item.path);
-                                    this.display();
-                                } catch (e) {
-                                    new Notice('删除失败: ' + e.message);
-                                }
-                            }
-                        });
-                    }
-                    if (builtinInfo.foundItems.length > 1) {
-                        const warnEl = statusContent.createEl('div', {
-                            text: '⚠️ 发现 ' + builtinInfo.foundItems.length + ' 处数据，建议只保留一处'
-                        });
-                        warnEl.style.color = 'var(--text-error)';
-                        warnEl.style.marginTop = '8px';
-                        warnEl.style.fontSize = '12px';
-                    }
-                } else {
-                    const pluginId = this.plugin.manifest?.id || 'bible-search-reader';
-                    const msg = '❌ 未找到内置数据文件（bible-data.json）。\n请将文件放在以下位置：\n  · .obsidian/plugins/' + pluginId + '/bible-data.json\n或点击下方按钮下载。';
-                    const statusText = statusContent.createEl('div', { text: msg });
-                    statusText.style.color = 'var(--text-error)';
-                }
-            });
-            new Setting(containerEl)
-                .setName('下载内置数据')
-                .setDesc('从 GitHub 下载 bible-data.json（约 14MB）到插件目录。')
-                .addButton(button => {
-                    const btn = button.setButtonText('⬇️ 下载 bible-data.json').setCta();
-                    btn.onClick(async () => {
-                        btn.buttonEl.setAttribute('disabled', 'true');
-                        btn.setButtonText('下载中...');
-                        try {
-                            await this.plugin.downloadBuiltinData();
-                            new Notice('内置数据下载完成！');
-                        } catch (e) {
-                            new Notice('下载失败：' + e.message);
+        for (const ver of allVersions) {
+            const isDefault = defaultKeys.includes(ver.key);
+            const row = versionList.createDiv({ cls: 'bible-version-setting-row' });
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.gap = '12px';
+            row.style.padding = '8px 0';
+            row.style.borderBottom = '1px solid var(--background-modifier-border)';
+
+            const info = row.createDiv();
+            info.style.flex = '1';
+            info.createEl('div', { text: ver.name + ' (' + ver.key + ')', cls: 'setting-item-name' });
+            const status = info.createEl('div', { cls: 'setting-item-description' });
+            if (ver.installed) {
+                status.setText('✅ 已安装');
+                status.style.color = 'var(--interactive-success)';
+            } else {
+                status.setText('⬇️ 未安装');
+                status.style.color = 'var(--text-accent)';
+            }
+
+            if (!ver.installed && isDefault) {
+                const dlBtn = row.createEl('button', { text: '⬇️ 下载', cls: 'bible-small-btn' });
+                dlBtn.addEventListener('click', async () => {
+                    dlBtn.setAttribute('disabled', 'true');
+                    dlBtn.setText('下载中...');
+                    try {
+                        const defaultVer = DEFAULT_VERSIONS.find(dv => dv.key === ver.key);
+                        if (defaultVer) {
+                            await this.plugin.downloadVersionData(defaultVer);
+                            ver.installed = true;
+                            ver.file = defaultVer.file;
+                            await this.plugin.saveSettings();
+                            await this.plugin.loadBibleData();
+                            new Notice(`${ver.name} 下载完成`);
+                            this.display();
                         }
-                        btn.buttonEl.removeAttribute('disabled');
-                        btn.setButtonText('⬇️ 下载 bible-data.json');
-                        this.display();
-                        await this.plugin.loadBibleData();
-                    });
+                    } catch (e) {
+                        new Notice('下载失败：' + e.message);
+                        dlBtn.removeAttribute('disabled');
+                        dlBtn.setText('⬇️ 下载');
+                    }
                 });
-        } else {
-            new Setting(containerEl)
-                .setName('旧约圣经目录')
-                .setDesc('旧约圣经 Markdown 文档所在的文件夹路径（如：圣经/旧约）')
-                .addText(text => text
-                    .setPlaceholder('圣经/旧约')
-                    .setValue(this.plugin.settings.oldTestamentPath)
-                    .onChange(async (value) => {
-                        this.plugin.settings.oldTestamentPath = value;
+            } else if (ver.installed) {
+                const delBtn = row.createEl('button', { text: '🗑️ 删除', cls: 'bible-small-btn' });
+                delBtn.title = '删除此版本数据';
+                delBtn.addEventListener('click', async () => {
+                    if (confirm(`确定要删除 ${ver.name} 吗？此操作不可恢复。`)) {
+                        try {
+                            await this.plugin.deleteVersionData(ver);
+                        } catch (e) {}
+                        ver.installed = false;
+                        ver.enabled = false;
+                        const firstEnabled = this.plugin.settings.versions.find(v => v.enabled && v.installed);
+                        for (const v of this.plugin.settings.versions) v.isPrimary = false;
+                        if (firstEnabled) firstEnabled.isPrimary = true;
                         await this.plugin.saveSettings();
                         await this.plugin.loadBibleData();
-                    }));
-            new Setting(containerEl)
-                .setName('新约圣经目录')
-                .setDesc('新约圣经 Markdown 文档所在的文件夹路径（如：圣经/新约）')
-                .addText(text => text
-                    .setPlaceholder('圣经/新约')
-                    .setValue(this.plugin.settings.newTestamentPath)
-                    .onChange(async (value) => {
-                        this.plugin.settings.newTestamentPath = value;
-                        await this.plugin.saveSettings();
-                        await this.plugin.loadBibleData();
-                    }));
-
-            new Setting(containerEl)
-                .setName('下载圣经/模板文档')
-                .setDesc(Platform.isDesktop ? '自动从 GitHub 下载圣经文档并解压到 vault 根目录，同时自动配置路径。' : '移动端请手动下载 ZIP 文件并解压到 Vault，然后配置下方目录路径。')
-                .addButton(button => {
-                    const btn = button.setButtonText(Platform.isDesktop ? '⬇️ 下载并解压' : '📱 移动端手动指南').setCta();
-                    btn.onClick(async () => {
-                        if (!Platform.isDesktop) {
-                            new Notice('请从 Release 页面下载 bible-documents.zip，解压到 Vault 根目录（生成 圣经/旧约 和 圣经/新约 文件夹），然后在下方填写对应路径。', 10000);
-                            return;
-                        }
-                        btn.buttonEl.setAttribute('disabled', 'true');
-                        btn.setButtonText('下载中...');
-                        try {
-                            await this.plugin.downloadAndExtractBible(BIBLE_DOCUMENTS_URL);
-                            new Notice('圣经文档下载并解压成功，路径已自动配置');
-                        } catch (e) {
-                            new Notice('下载失败：' + e.message);
-                            console.error('[Bible] 下载失败:', e);
-                        }
-                        btn.buttonEl.removeAttribute('disabled');
-                        btn.setButtonText('⬇️ 下载并解压');
                         this.display();
-                    });
+                    }
                 });
+            }
         }
 
-        containerEl.createEl('h3', { text: '更新', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
+        // ===== 板块 B：插件更新 =====
+        containerEl.createEl('h3', { text: '插件更新', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
         new Setting(containerEl)
             .setName('自动检测更新')
-            .setDesc('启动时自动检测是否有新版本，并在右上角弹出更新提示。')
+            .setDesc('启动时自动检测是否有新版本')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.autoCheckUpdate)
                 .onChange(async (value) => {
                     this.plugin.settings.autoCheckUpdate = value;
                     await this.plugin.saveSettings();
                 }));
-
         new Setting(containerEl)
             .setName('立即检查更新')
-            .setDesc('手动检查是否有新版本可用。')
+            .setDesc('手动检查是否有新版本')
             .addButton(button => button
                 .setButtonText('🔍 检查更新')
                 .onClick(async () => {
@@ -660,10 +557,12 @@ class BibleSettingTab extends PluginSettingTab {
                     button.setDisabled(false);
                     button.setButtonText('🔍 检查更新');
                 }));
+
+    
     }
 }
 
-// ==================== 圣经解析器（带原文顺序索引）====================
+// ==================== 圣经解析器（多版本）====================
 class BibleParser {
     constructor(app, settings, pluginDir) {
         this.app = app;
@@ -672,216 +571,66 @@ class BibleParser {
     }
 
     async parseAllBooks() {
-        console.log('[Bible] 开始解析圣经数据...');
         let items = [];
-
-        if (this.settings.dataSource === 'builtin') {
-            items = await this.parseBuiltinData();
-        } else {
-            items = await this.parseExternalBooks();
+        const enabledVersions = this.settings.versions.filter(v => v.enabled && v.installed);
+        for (const ver of enabledVersions) {
+            const verItems = await this.parseVersion(ver);
+            items.push(...verItems);
         }
-
-        console.log('[Bible] 解析完成，共 ' + items.length + ' 条数据');
         return items;
     }
 
-    async parseBuiltinData() {
+    async parseVersion(versionConfig) {
         const items = [];
+        const { file, key } = versionConfig;
         try {
             const pluginId = 'bible-search-reader';
-            const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
-            // 1. 检查 Vault adapter 插件目录（统一位置）
+            const adapterPath = `.obsidian/plugins/${pluginId}/${file}`;
+
             if (await this.app.vault.adapter.exists(adapterPath)) {
                 const raw = await this.app.vault.adapter.read(adapterPath);
                 const data = JSON.parse(raw);
                 if (Array.isArray(data)) {
-                    for (const item of data) { items.push(item); }
-                    console.log('[Bible] 内置数据加载成功 (Adapter):', items.length, '条');
+                    for (const item of data) {
+                        item.versionKey = key;
+                        items.push(item);
+                    }
+                    
                     return items;
                 }
             }
-            // 2. 桌面端 fs 路径（兼容旧数据）
+
             if (Platform.isDesktop) {
                 const fs = window.require('fs');
                 const path = window.require('path');
                 const possiblePaths = [];
                 if (this.pluginDir) {
-                    possiblePaths.push(path.join(this.pluginDir, 'bible-data.json'));
+                    possiblePaths.push(path.join(this.pluginDir, file));
                 }
                 try {
                     const basePath = this.app.vault.adapter.getBasePath();
-                    possiblePaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, 'bible-data.json'));
+                    possiblePaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, file));
                 } catch (e) {}
+
                 for (const dataPath of possiblePaths) {
                     if (fs.existsSync(dataPath)) {
                         const raw = fs.readFileSync(dataPath, 'utf-8');
                         const data = JSON.parse(raw);
                         if (Array.isArray(data)) {
-                            for (const item of data) { items.push(item); }
-                            console.log('[Bible] 内置数据加载成功 (fs):', items.length, '条');
+                            for (const item of data) {
+                                item.versionKey = key;
+                                items.push(item);
+                            }
+                            
                             return items;
                         }
                     }
                 }
             }
-            console.warn('[Bible] 未找到内置数据文件，路径:', adapterPath);
+            console.warn(`[Bible] 未找到版本 ${key} 数据文件: ${file}`);
         } catch (e) {
-            console.error('[Bible] 读取内置数据失败:', e);
+            console.error(`[Bible] 读取版本 ${key} 数据失败:`, e);
         }
-        return items;
-    }
-
-    async parseExternalBooks() {
-        const items = [];
-        const vault = this.app.vault;
-
-        const oldFolder = vault.getAbstractFileByPath(this.settings.oldTestamentPath);
-        if (oldFolder && oldFolder instanceof TFolder) {
-            for (const file of oldFolder.children) {
-                if (file instanceof TFile && file.extension === 'md') {
-                    console.log('[Bible] 解析旧约文件:', file.path);
-                    const content = await vault.read(file);
-                    const parsed = this.parseBookContent(content, file.basename, 'old');
-                    items.push(...parsed);
-                }
-            }
-        }
-
-        const newFolder = vault.getAbstractFileByPath(this.settings.newTestamentPath);
-        if (newFolder && newFolder instanceof TFolder) {
-            for (const file of newFolder.children) {
-                if (file instanceof TFile && file.extension === 'md') {
-                    console.log('[Bible] 解析新约文件:', file.path);
-                    const content = await vault.read(file);
-                    const parsed = this.parseBookContent(content, file.basename, 'new');
-                    items.push(...parsed);
-                }
-            }
-        }
-        return items;
-    }
-
-    parseBookContent(content, fileName, testament) {
-        const items = [];
-        const lines = content.split('\n');
-        const fileBaseName = fileName;
-
-        const numMatch = fileName.match(/^\d+[.\s]*(.+)$/);
-        let bookInfo = null;
-
-        if (numMatch) {
-            const id = parseInt(fileName.match(/^(\d+)/)[1]);
-            bookInfo = BOOK_ID_MAP[id];
-        }
-
-        if (!bookInfo) {
-            // 先精确匹配 fullName
-            for (const book of BIBLE_BOOKS) {
-                if (fileName.includes(book.fullName)) {
-                    bookInfo = book;
-                    break;
-                }
-            }
-        }
-        if (!bookInfo) {
-            // 再按 shortName 长度降序匹配，避免"约"先匹配到约翰福音，"撒"先匹配到撒母耳记上
-            const sortedByLength = [...BIBLE_BOOKS].sort((a, b) => b.shortName.length - a.shortName.length);
-            for (const book of sortedByLength) {
-                if (fileName.includes(book.shortName)) {
-                    bookInfo = book;
-                    break;
-                }
-            }
-        }
-
-        if (!bookInfo) {
-            console.warn('[Bible] 无法识别书卷: ' + fileName);
-            return items;
-        }
-
-        console.log('[Bible] 识别书卷: ' + bookInfo.fullName);
-
-        let currentChapter = 0;
-        let lineIndex = 0;
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) { lineIndex++; continue; }
-
-            const themeMatch = trimmed.match(/^>\s*\*\*主题[：:](.+)\*\*$/);
-            if (themeMatch) {
-                items.push({
-                    type: 'theme', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
-                    bookFullName: bookInfo.fullName, testament: bookInfo.testament,
-                    chapter: currentChapter, verse: 0, lineIndex: lineIndex,
-                    content: themeMatch[1].trim(), rawLine: trimmed
-                });
-                lineIndex++;
-                continue;
-            }
-
-            if (trimmed.startsWith('>')) {
-                // 精确区分主题和纲目：主题格式为 > **主题：...**
-                const isTheme = /^>\s*\*\*主题[：:].+\*\*\s*$/.test(trimmed);
-                if (!isTheme) {
-                    const outlineContent = trimmed.replace(/^>\s*/, '').trim();
-                    if (outlineContent) {
-                        items.push({
-                            type: 'outline', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
-                            bookFullName: bookInfo.fullName, testament: bookInfo.testament,
-                            chapter: currentChapter, verse: 0, lineIndex: lineIndex,
-                            content: outlineContent, rawLine: trimmed
-                        });
-                    }
-                    lineIndex++;
-                    continue;
-                }
-            }
-
-            const chapterMatch = trimmed.match(/^#+\s*(?:.*第)?([\d一二三四五六七八九十百零]+)章?.*$/);
-            if (chapterMatch && trimmed.length < 50) {
-                const ch = parseNumber(chapterMatch[1]);
-                if (!isNaN(ch) && ch > 0 && ch <= 200) {
-                    currentChapter = ch;
-                }
-                lineIndex++;
-                continue;
-            }
-
-            // 统一经文解析：按书卷简称长度降序匹配，确保"约壹"优先于"约"
-            let verseMatched = false;
-            for (const sn of BOOK_SHORT_NAMES) {
-                if (trimmed.startsWith(sn)) {
-                    const after = trimmed.slice(sn.length);
-                    const m = after.match(/^(\d+)[：:](\d+)\s*(.*)$/);
-                    if (m) {
-                        const chapter = parseInt(m[1]);
-                        const verse = parseInt(m[2]);
-                        const verseContent = m[3].trim();
-                        const matchedBook = BOOK_MAP[sn];
-                        if (matchedBook && matchedBook.id === bookInfo.id) {
-                            currentChapter = chapter;
-                            items.push({
-                                type: 'verse', bookId: bookInfo.id, bookShortName: bookInfo.shortName,
-                                bookFullName: bookInfo.fullName, testament: bookInfo.testament,
-                                chapter: chapter, verse: verse, lineIndex: lineIndex,
-                                content: verseContent, rawLine: trimmed
-                            });
-                        }
-                        verseMatched = true;
-                        break;
-                    }
-                }
-            }
-            if (verseMatched) {
-                lineIndex++;
-                continue;
-            }
-
-            lineIndex++;
-        }
-
-        console.log('[Bible] ' + bookInfo.fullName + ' 解析完成: ' + items.length + ' 条');
         return items;
     }
 }
@@ -891,7 +640,7 @@ class BibleSearchEngine {
     constructor() { this.items = []; }
     setItems(items) { this.items = items; }
 
-    search(query, types, range, bookIds) {
+    search(query, types, range, bookIds, primaryKey) {
         if (!query.trim()) return [];
         const parsed = this.parseQuery(query);
         const refs = parsed.refs;
@@ -902,6 +651,7 @@ class BibleSearchEngine {
         const seen = new Set();
 
         for (const item of this.items) {
+            if (item.versionKey !== primaryKey) continue;
             if (!types.includes(item.type)) continue;
             if (range === 'old' && item.testament !== 'old') continue;
             if (range === 'new' && item.testament !== 'new') continue;
@@ -909,7 +659,7 @@ class BibleSearchEngine {
             if (range === 'multi' && bookIds && bookIds.length > 0 && !bookIds.includes(item.bookId)) continue;
 
             let matched = false;
-            let refIndex = -1; // 记录匹配的是第几个引用，用于按输入顺序排序
+            let refIndex = -1;
 
             if (refs.length > 0) {
                 for (let i = 0; i < refs.length; i++) {
@@ -923,10 +673,8 @@ class BibleSearchEngine {
             if (keywords.length > 0) {
                 const contentLower = item.content.toLowerCase();
                 if (keywordMode === 'or' || keywordMode === 'or_ordered') {
-                    // OR 模式：包含任意一个关键词
                     matched = matched || keywords.some(k => contentLower.includes(k.toLowerCase()));
                 } else if (keywordMode === 'and_ordered') {
-                    // AND + 顺序：同时包含，且按输入顺序出现
                     let lastIndex = -1;
                     let allFound = true;
                     for (const kw of keywords) {
@@ -936,7 +684,6 @@ class BibleSearchEngine {
                     }
                     if (allFound) matched = true;
                 } else {
-                    // AND 模式（默认）：同时包含，忽略顺序
                     const allMatch = keywords.every(k => contentLower.includes(k.toLowerCase()));
                     if (allMatch) matched = true;
                 }
@@ -951,18 +698,15 @@ class BibleSearchEngine {
             }
         }
 
-        // 经文引用检索：按输入顺序排序（_refIndex 从小到大，相同则保持原文顺序）
         if (refs.length > 0) {
             results.sort((a, b) => {
                 const aIdx = a._refIndex;
                 const bIdx = b._refIndex;
                 if (aIdx !== -1 && bIdx !== -1 && aIdx !== bIdx) return aIdx - bIdx;
-                // 相同 refIndex 或纯关键词匹配时，按原文 lineIndex 排序
                 return a.item.lineIndex - b.item.lineIndex;
             });
         }
 
-        // OR_ordered 模式：按关键词顺序排序结果
         if (keywordMode === 'or_ordered' && keywords.length > 0 && refs.length === 0) {
             results.sort((a, b) => {
                 const aContent = a.item.content.toLowerCase();
@@ -978,7 +722,6 @@ class BibleSearchEngine {
             });
         }
 
-        // 纯关键词检索（无经文引用）：按圣经书卷顺序排序
         if (refs.length === 0 && keywords.length > 0 && keywordMode !== 'or_ordered') {
             results.sort((a, b) => {
                 const ia = a.item, ib = b.item;
@@ -989,7 +732,6 @@ class BibleSearchEngine {
             });
         }
 
-        // 清理内部排序字段
         for (const r of results) { delete r._refIndex; }
 
         return results;
@@ -998,30 +740,22 @@ class BibleSearchEngine {
     parseQuery(query) {
         const refs = [];
         const keywords = [];
-
-        // 统一标点符号（保留原始分隔符信息用于判断模式）
         const normalizedQuery = query.replace(/[～~]/g, '-').replace(/[：:]/g, ':');
-
-        // 判断关键词匹配模式
-        let keywordMode = 'and'; // 默认：空格/顿号 = AND，忽略顺序
+        let keywordMode = 'and';
         if (/[,，]/.test(query) && !/[；;。.]/.test(query)) {
-            keywordMode = 'and_ordered'; // 逗号 = AND，不忽略顺序
+            keywordMode = 'and_ordered';
         } else if (/[；;]/.test(query) && !/[。.]/.test(query)) {
-            keywordMode = 'or_ordered'; // 分号 = OR，按关键词顺序展示
+            keywordMode = 'or_ordered';
         } else if (/[。.]/.test(query)) {
-            keywordMode = 'or'; // 句号 = OR，按经文顺序展示
+            keywordMode = 'or';
         }
 
-        // 按所有分隔符分割成 tokens（逗号、顿号、分号、句号、空格）
         const tokens = normalizedQuery.split(/[,，、；;\s。\.]+/).map(t => t.trim()).filter(t => t.length > 0);
-
         let currentBookId = null;
         let currentChapter = 1;
 
         for (const token of tokens) {
             let matched = false;
-
-            // 1. 尝试作为带书卷的完整引用
             for (const sn of BOOK_SHORT_NAMES) {
                 if (token.startsWith(sn)) {
                     const parsed = this.parseVerseReference(token);
@@ -1036,7 +770,6 @@ class BibleSearchEngine {
             }
             if (matched) continue;
 
-            // 2. 尝试作为延续引用（基于上一个书卷）
             if (currentBookId !== null) {
                 const contParsed = this.parseContinuationReference(token, currentBookId, currentChapter);
                 if (contParsed.length > 0) {
@@ -1046,8 +779,6 @@ class BibleSearchEngine {
                 }
             }
             if (matched) continue;
-
-            // 3. 作为关键词
             keywords.push(token);
         }
 
@@ -1065,9 +796,7 @@ class BibleSearchEngine {
         const book = BOOK_MAP[bookShortName];
         if (!book) return ranges;
 
-        // 处理范围分隔符（支持 ~ 和 -）
         const rangeParts = remaining.split(/[~\-]/);
-
         if (rangeParts.length === 2) {
             const start = this.parseChapterVerse(rangeParts[0]);
             const end = this.parseChapterVerse(rangeParts[1]);
@@ -1090,28 +819,24 @@ class BibleSearchEngine {
 
     parseChapterVerse(s) {
         s = s.trim();
-        // 格式1: 阿拉伯数字:阿拉伯数字，如 "1:1", "2:5"
         let match = s.match(/^(\d+):(\d+)$/);
         if (match) {
             const ch = parseInt(match[1]);
             const vs = parseInt(match[2]);
             if (ch > 0 && vs > 0) return { chapter: ch, verse: vs };
         }
-        // 格式2: 中文数字:阿拉伯数字，如 "一:1", "十一:2"
         match = s.match(/^([一二三四五六七八九十百零]+):(\d+)$/);
         if (match) {
             const ch = chineseToNumber(match[1]);
             const vs = parseInt(match[2]);
             if (!isNaN(ch) && ch > 0 && vs > 0) return { chapter: ch, verse: vs };
         }
-        // 格式3: 中文数字+阿拉伯数字（无冒号），如 "一1", "十一2"
         match = s.match(/^([一二三四五六七八九十百零]+)(\d+)$/);
         if (match) {
             const ch = chineseToNumber(match[1]);
             const vs = parseInt(match[2]);
             if (!isNaN(ch) && ch > 0 && vs > 0) return { chapter: ch, verse: vs };
         }
-        // 格式4: 阿拉伯数字+中文数字（无冒号），如 "1一"
         match = s.match(/^(\d+)([一二三四五六七八九十百零]+)$/);
         if (match) {
             const ch = parseInt(match[1]);
@@ -1123,8 +848,6 @@ class BibleSearchEngine {
 
     parseContinuationReference(token, bookId, currentChapter) {
         const ranges = [];
-
-        // 格式1: chapter:verse-range，如 "14:7-21", "2:9-10"
         let m = token.match(/^([一二三四五六七八九十百零\d]+):(\d+)-(\d+)$/);
         if (m) {
             const ch = parseNumber(m[1]);
@@ -1135,8 +858,6 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
-        // 格式2: chapter:verse，如 "2:3", "3:34"
         m = token.match(/^([一二三四五六七八九十百零\d]+):(\d+)$/);
         if (m) {
             const ch = parseNumber(m[1]);
@@ -1146,8 +867,6 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
-        // 格式3: 中文章+数字节-range，如 "十四7-21", "二一9-10"
         m = token.match(/^([一二三四五六七八九十百零]+)(\d+)-(\d+)$/);
         if (m) {
             const ch = chineseToNumber(m[1]);
@@ -1158,8 +877,6 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
-        // 格式4: 中文章+数字节，如 "三34", "二一9", "二二13", "十四7"
         m = token.match(/^([一二三四五六七八九十百零]+)(\d+)$/);
         if (m) {
             const ch = chineseToNumber(m[1]);
@@ -1169,8 +886,6 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
-        // 格式5: 纯数字节号（同章），如 "23", "4", "9"
         m = token.match(/^(\d+)$/);
         if (m) {
             const vs = parseInt(m[1]);
@@ -1179,8 +894,6 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
-        // 格式6: 纯中文数字节号（同章），如 "二十三", "四"
         m = token.match(/^([一二三四五六七八九十百零]+)$/);
         if (m) {
             const vs = chineseToNumber(m[1]);
@@ -1189,8 +902,6 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
-        // 格式7: 纯数字节范围（同章），如 "7-21", "13-15"
         m = token.match(/^(\d+)-(\d+)$/);
         if (m) {
             const vs = parseInt(m[1]);
@@ -1200,8 +911,6 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
-        // 格式8: 纯中文数字节范围（同章），如 "七-二十一"
         m = token.match(/^([一二三四五六七八九十百零]+)-([一二三四五六七八九十百零]+)$/);
         if (m) {
             const vs = chineseToNumber(m[1]);
@@ -1211,10 +920,8 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-
         return ranges;
     }
-
 
     matchVerseRef(item, ref) {
         if (item.type !== 'verse') return false;
@@ -1225,9 +932,12 @@ class BibleSearchEngine {
         return true;
     }
 }
+
+// ==================== 投影覆盖层（支持多版本）====================
 class BibleProjectionOverlay {
     constructor(app, results, mode, showSource) {
         this.app = app;
+        // 所有模式都接收完整的选中数据；分组逻辑在 buildSlides 中处理
         this.results = results.filter(r => r.selected).sort((a, b) => a.order - b.order);
         this.mode = mode;
         this.showSource = showSource !== false;
@@ -1244,19 +954,30 @@ class BibleProjectionOverlay {
     buildSlides() {
         const selected = this.results;
         if (this.mode === 'focus') {
-            for (const r of selected) this.slides.push({ items: [r.item] });
-        } else if (this.mode === 'parallel') {
-            this.slides.push({ items: selected.map(r => r.item) });
-        } else if (this.mode === 'mixed') {
-            let currentGroup = [];
+            // 逐节模式：每个选中项单独一页（sideBySide 只在混合模式生效）
             for (const r of selected) {
-                currentGroup.push(r.item);
-                if (!r.sideBySide) {
-                    this.slides.push({ items: [...currentGroup] });
-                    currentGroup = [];
+                this.slides.push({ items: [r] });
+            }
+        } else if (this.mode === 'parallel') {
+            // 并列模式：所有选中项在一页
+            this.slides.push({ items: [...selected] });
+        } else if (this.mode === 'mixed') {
+            // 混合模式：按选中顺序逐页展示，勾了并列的项与前一页合并
+            selected.forEach((r, i) => {
+            });
+            
+            // 按选中顺序构建slides
+            let currentSlide = null;
+            for (const r of selected) {
+                if (r.sideBySide && currentSlide !== null) {
+                    // 勾了并列：添加到当前slide（与前一页合并）
+                    currentSlide.items.push(r);
+                } else {
+                    // 普通项：创建新slide
+                    currentSlide = { items: [r] };
+                    this.slides.push(currentSlide);
                 }
             }
-            if (currentGroup.length > 0) this.slides.push({ items: currentGroup });
         }
     }
 
@@ -1265,7 +986,6 @@ class BibleProjectionOverlay {
         this.overlay.className = 'bible-projection-fullscreen';
         this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:#1a1a2e;color:#fff;';
 
-        // 顶部：模式 | 快捷键说明 | 页码
         const topBar = document.createElement('div');
         topBar.className = 'bible-proj-topbar';
         topBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 16px;background:rgba(0,0,0,0.2);border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;';
@@ -1283,7 +1003,6 @@ class BibleProjectionOverlay {
         this.contentArea.style.cssText = 'flex:1;overflow:auto;display:flex;flex-direction:column;align-items:center;position:relative;';
         this.overlay.appendChild(this.contentArea);
 
-        // 底部：翻页 + 操作按钮（同一行）
         const bottomBar = document.createElement('div');
         bottomBar.className = 'bible-proj-bottombar';
         bottomBar.style.cssText = 'flex-shrink:0;background:rgba(0,0,0,0.2);border-top:1px solid rgba(255,255,255,0.1);';
@@ -1387,58 +1106,90 @@ class BibleProjectionOverlay {
         wrapper.style.cssText = 'max-width:' + this.getWrapperMaxWidth() + 'px;width:90%;text-align:center;padding:20px;margin:auto;overflow-y:auto;max-height:100%;';
 
         if (this.mode === 'focus') {
-            const item = slide.items[0];
-            // 阅读模式（showSource=false）下，theme/outline 不显示出处
-            const shouldShowRef = this.showSource || item.type === 'verse';
-            if (shouldShowRef) {
-                const refDiv = wrapper.createEl('div', { cls: 'bible-proj-ref bible-proj-focus-ref', text: this.getItemRef(item) });
-                refDiv.style.marginBottom = '20px';
-                if (item.type === 'theme') {
-                    refDiv.classList.add('bible-proj-focus-theme-ref');
-                } else if (item.type === 'outline') {
-                    refDiv.classList.add('bible-proj-focus-outline-ref');
+            for (const r of slide.items) {
+                const item = { ...r.item, ...r };
+                const isCompare = item._isCompare;
+
+                if (isCompare) {
+                    const refDiv = wrapper.createEl('div', { cls: 'bible-proj-ref bible-proj-compare-ref', text: this.getItemRef(item) });
+                    refDiv.style.marginBottom = '8px';
+                    refDiv.style.fontSize = (this.fontSize * 0.5) + 'px';
+                    refDiv.style.color = this.isDark ? '#888' : '#999';
+
+                    const textDiv = wrapper.createEl('div', { cls: 'bible-proj-text bible-proj-compare-text', text: this.getItemContent(item) });
+                    textDiv.style.lineHeight = '1.6';
+                    textDiv.style.fontSize = (this.fontSize * 0.75) + 'px';
+                    textDiv.style.opacity = '0.7';
+                    textDiv.style.marginBottom = '16px';
+                } else {
+                    const shouldShowRef = this.showSource || item.type === 'verse';
+                    if (shouldShowRef) {
+                        const refDiv = wrapper.createEl('div', { cls: 'bible-proj-ref bible-proj-focus-ref', text: this.getItemRef(item) });
+                        refDiv.style.marginBottom = '20px';
+                        if (item.type === 'theme') refDiv.classList.add('bible-proj-focus-theme-ref');
+                        else if (item.type === 'outline') refDiv.classList.add('bible-proj-focus-outline-ref');
+                    }
+                    const textDiv = wrapper.createEl('div', { cls: 'bible-proj-text bible-proj-focus-text', text: this.getItemContent(item) });
+                    textDiv.style.lineHeight = '1.8';
+                    textDiv.style.fontSize = this.fontSize + 'px';
+                    if (item.type === 'theme') textDiv.classList.add('bible-proj-focus-theme');
+                    else if (item.type === 'outline') textDiv.classList.add('bible-proj-focus-outline');
                 }
-            }
-            const textDiv = wrapper.createEl('div', { cls: 'bible-proj-text bible-proj-focus-text', text: this.getItemContent(item) });
-            textDiv.style.lineHeight = '1.8';
-            if (item.type === 'theme') {
-                textDiv.classList.add('bible-proj-focus-theme');
-            } else if (item.type === 'outline') {
-                textDiv.classList.add('bible-proj-focus-outline');
             }
         } else {
             wrapper.style.textAlign = this.isCentered ? 'center' : 'left';
-            for (const item of slide.items) {
-                const itemEl = document.createElement('div');
-                // 根据类型设置不同的样式：经文保留背景框，主题和纲目去掉背景框
-                if (item.type === 'verse') {
-                    itemEl.classList.add('bible-proj-verse-box');
-                } else if (item.type === 'theme') {
-                    itemEl.classList.add('bible-proj-theme-box');
-                    itemEl.classList.add('bible-proj-parallel-theme');
-                } else if (item.type === 'outline') {
-                    itemEl.classList.add('bible-proj-outline-box');
-                    itemEl.classList.add('bible-proj-parallel-outline');
+            
+            // 混合模式：普通项单独一页，勾了并列的项与前一页合并
+            if (this.mode === 'mixed') {
+                // 所有项使用相同样式
+                for (const r of slide.items) {
+                    const item = { ...r.item, ...r };
+                    const itemEl = document.createElement('div');
+                    itemEl.style.cssText = 'margin-bottom:15px;padding:20px;background:rgba(255,255,255,0.05);border-radius:8px;';
+                    
+                    const refDiv = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-mixed-ref', text: this.getItemRef(item) });
+                    
+                    const textDiv = itemEl.createEl('div', { cls: 'bible-proj-text', text: this.getItemContent(item) });
+                    textDiv.style.cssText = 'line-height:1.8;font-size:' + this.fontSize + 'px;';
+                    
+                    itemEl.appendChild(refDiv);
+                    itemEl.appendChild(textDiv);
+                    wrapper.appendChild(itemEl);
                 }
-                const shouldShowRef = this.showSource || item.type === 'verse';
-                if (shouldShowRef) {
-                    const pRef = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-parallel-ref', text: this.getItemRef(item) });
-                    pRef.style.marginBottom = '8px';
-                    pRef.style.fontWeight = '600';
-                    if (item.type === 'theme') {
-                        pRef.classList.add('bible-proj-parallel-theme-ref');
-                    } else if (item.type === 'outline') {
-                        pRef.classList.add('bible-proj-parallel-outline-ref');
+            } else {
+                // 其他模式：所有选中项在一页
+                for (const r of slide.items) {
+                    const item = { ...r.item, ...r };
+                    const isCompare = item._isCompare;
+
+                    const itemEl = document.createElement('div');
+                    if (item.type === 'verse') itemEl.classList.add('bible-proj-verse-box');
+                    else if (item.type === 'theme') itemEl.classList.add('bible-proj-theme-box', 'bible-proj-parallel-theme');
+                    else if (item.type === 'outline') itemEl.classList.add('bible-proj-outline-box', 'bible-proj-parallel-outline');
+
+                    if (isCompare) {
+                        const pRef = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-parallel-ref', text: this.getItemRef(item) });
+                        pRef.style.marginBottom = '8px';
+                        pRef.style.fontWeight = '600';
+                        const pText = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-parallel-text', text: this.getItemContent(item) });
+                        pText.style.lineHeight = '1.7';
+                        pText.classList.add('bible-proj-compare-text');
+                        pText.style.fontSize = (this.fontSize * 0.7) + 'px';
+                        pText.style.opacity = '0.7';
+                    } else {
+                        const shouldShowRef = this.showSource || item.type === 'verse';
+                        if (shouldShowRef) {
+                            const pRef = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-parallel-ref', text: this.getItemRef(item) });
+                            pRef.style.marginBottom = '8px';
+                            pRef.style.fontWeight = '600';
+                        }
+                        const pText = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-parallel-text', text: this.getItemContent(item) });
+                        pText.style.lineHeight = '1.7';
+                        if (item.type === 'theme') pText.classList.add('bible-proj-parallel-theme-text');
+                        else if (item.type === 'outline') pText.classList.add('bible-proj-parallel-outline-text');
                     }
+                    wrapper.appendChild(itemEl);
                 }
-                const pText = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-parallel-text', text: this.getItemContent(item) });
-                pText.style.lineHeight = '1.7';
-                if (item.type === 'theme') {
-                    pText.classList.add('bible-proj-parallel-theme-text');
-                } else if (item.type === 'outline') {
-                    pText.classList.add('bible-proj-parallel-outline-text');
-                }
-                wrapper.appendChild(itemEl);
             }
         }
 
@@ -1453,12 +1204,13 @@ class BibleProjectionOverlay {
         this.overlay.querySelectorAll('.bible-proj-focus-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; el.style.color = this.isDark ? '#a0a0a0' : '#666'; });
         this.overlay.querySelectorAll('.bible-proj-parallel-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-parallel-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.55) + 'px'; el.style.color = this.isDark ? '#a0a0a0' : '#666'; });
-        // 主题字体大小（比经文大15%）
         this.overlay.querySelectorAll('.bible-proj-focus-theme').forEach(el => { el.style.fontSize = (this.fontSize * 1.15) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-theme-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-outline').forEach(el => { el.style.fontSize = (this.fontSize * 0.95) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-outline-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-parallel-theme-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85 * 1.15) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-compare-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.75) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-compare-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.5) + 'px'; });
         const wrapper = this.overlay.querySelector('.bible-proj-slide-wrapper');
         if (wrapper) wrapper.style.maxWidth = this.getWrapperMaxWidth() + 'px';
     }
@@ -1516,12 +1268,23 @@ class BibleProjectionOverlay {
     }
 
     getItemRef(item) {
+        // 检查 item 本身或其内部是否有 _isCompare
+        const isCompare = item._isCompare || (item.item && item.item._isCompare);
+        if (isCompare) {
+            // 投影中对照经文显示英文简写
+            const versionKey = item.versionKey || (item.item && item.item.versionKey);
+            const bookShortName = item.bookShortName || (item.item && item.item.bookShortName);
+            const chapter = item.chapter || (item.item && item.item.chapter);
+            const verse = item.verse || (item.item && item.item.verse);
+            return `⌈${versionKey.toLowerCase()}⌋${bookShortName}${chapter}:${verse}`;
+        }
         if (item.type === 'theme') return item.bookFullName + ' 主题';
         if (item.type === 'outline') return item.bookFullName + ' 纲目';
         return item.bookShortName + item.chapter + ':' + item.verse;
     }
 
     getItemContent(item) {
+        if (item._isCompare) return item.content;
         if (item.type === 'theme') return '主题：' + item.content;
         if (item.type === 'outline') return item.content;
         return item.content;
@@ -1536,7 +1299,7 @@ class BibleProjectionOverlay {
     }
 }
 
-// ==================== 侧边栏圣经视图（选项卡：搜索 + 阅读）====================
+// ==================== 侧边栏圣经视图 ====================
 const BIBLE_SEARCH_VIEW_TYPE = 'bible-search-view';
 
 class BibleSearchView extends ItemView {
@@ -1554,18 +1317,27 @@ class BibleSearchView extends ItemView {
         this.readerBook = null;
         this.readerChapter = 1;
         this.readerFontSize = 15;
-
         this.readerResults = [];
         this.readerSelectCounter = 0;
         this.selectedBookIds = new Set();
         this.searchFocusMode = false;
         this.readerFocusMode = false;
+        this.comparePanelOpen = false;
+        // 保存最后搜索条件，用于版本顺序改变后重新搜索
+        this.lastSearchQuery = '';
+        this.lastSearchTypes = ['theme', 'outline', 'verse'];
+        this.lastRangeValue = 'all';
+        this.lastBookIds = [];
+        // 独立存储对照经文的选中状态，不添加到 results 数组
+        this.compareSelections = {};
+        this.cmpOrder = [];  // 保持对照版本选中的顺序
     }
     getViewType() { return BIBLE_SEARCH_VIEW_TYPE; }
     getDisplayText() { return '圣经检索'; }
     getIcon() { return 'book-plus'; }
 
     async onOpen() {
+        this.contentEl.style.height = '100%';
         this.container = this.contentEl.createDiv({ cls: 'bible-search-container' });
         this.buildTabs();
         this.buildSearchTab();
@@ -1578,10 +1350,259 @@ class BibleSearchView extends ItemView {
         const tabBar = this.container.createDiv({ cls: 'bible-tab-bar' });
         this.tabSearch = tabBar.createEl('button', { cls: 'bible-tab active', text: '圣经搜索' });
         this.tabReader = tabBar.createEl('button', { cls: 'bible-tab', text: '圣经阅读' });
+
         this.tabSearch.addEventListener('click', () => this.switchTab('search'));
         this.tabReader.addEventListener('click', () => this.switchTab('reader'));
-        this.focusModeBtn = tabBar.createEl('button', { cls: 'bible-focus-mode-btn', text: '专注模式' });
+
+        this.compareBtn = tabBar.createEl('button', { cls: 'bible-compare-toggle-btn', text: '对照' });
+        this.compareBtn.addEventListener('click', () => this.toggleComparePanel());
+
+        this.focusModeBtn = tabBar.createEl('button', { cls: 'bible-focus-mode-btn', text: '专注' });
         this.focusModeBtn.addEventListener('click', () => this.toggleFocusMode());
+    }
+
+
+
+    getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.bible-compare-modal-row:not(.dragging)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    toggleComparePanel() {
+        this.comparePanelOpen = !this.comparePanelOpen;
+        if (this.comparePanelOpen) {
+            this._openCompareModal();
+        } else {
+            this._closeCompareModal();
+        }
+        this.compareBtn.classList.toggle('active', this.comparePanelOpen);
+    }
+
+    _openCompareModal() {
+        // 移除旧的弹窗
+        this._closeCompareModal();
+
+        // 创建遮罩层
+        this._compareBackdrop = document.createElement('div');
+        this._compareBackdrop.className = 'bible-overlay-backdrop active';
+        this._compareBackdrop.addEventListener('click', () => this.toggleComparePanel());
+        document.body.appendChild(this._compareBackdrop);
+
+        // 创建弹窗容器
+        const modal = document.createElement('div');
+        modal.className = 'bible-compare-modal';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--background-primary);border:1px solid var(--bible-card-border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,0.25);z-index:1001;width:400px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;';
+
+        // 标题栏
+        const header = modal.createDiv({ cls: 'bible-compare-modal-header' });
+        header.createEl('h3', { text: '对照设置' });
+        const closeBtn = header.createEl('button', { cls: 'bible-small-btn', text: '✕' });
+        closeBtn.addEventListener('click', () => this.toggleComparePanel());
+
+        // 刷新按钮
+        const refreshBtn = modal.createEl('button', { cls: 'bible-small-btn', text: '🔄 刷新版本', style: 'margin:10px 16px 0;width:calc(100% - 32px);' });
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.setAttribute('disabled', 'true');
+            await this.plugin.syncScannedVersions();
+            this._renderCompareModal();
+            refreshBtn.removeAttribute('disabled');
+            new Notice('版本识别已刷新');
+        });
+
+        // 说明文字
+        const desc = modal.createDiv({ cls: 'bible-compare-modal-desc', text: '勾选要使用的版本，可拖动调整顺序。最上方的版本为主版本，其余为对照版本。' });
+
+        // 版本列表容器
+        this._compareModalList = modal.createDiv({ cls: 'bible-compare-modal-list' });
+        this._renderCompareModal();
+
+        document.body.appendChild(modal);
+        this._compareModal = modal;
+    }
+
+    _closeCompareModal() {
+        if (this._compareModal) {
+            this._compareModal.remove();
+            this._compareModal = null;
+        }
+        if (this._compareBackdrop) {
+            this._compareBackdrop.remove();
+            this._compareBackdrop = null;
+        }
+    }
+
+    _renderCompareModal() {
+        if (!this._compareModalList) return;
+        this._compareModalList.empty();
+        // 移除旧的 drop 监听器，避免重复添加
+        const newContainer = this._compareModalList.cloneNode(false);
+        this._compareModalList.parentNode.replaceChild(newContainer, this._compareModalList);
+        this._compareModalList = newContainer;
+        const versions = this.plugin.settings.versions;
+
+        for (let i = 0; i < versions.length; i++) {
+            const ver = versions[i];
+            const row = this._compareModalList.createDiv({ cls: 'bible-compare-modal-row' });
+            row.setAttribute('draggable', 'true');
+            row.dataset.index = String(i);
+            row.dataset.key = ver.key;  // 用于 drop 时查找版本
+
+            const dragHandle = row.createEl('span', { cls: 'bible-compare-drag-handle', text: '≡' });
+
+            const checkbox = row.createEl('input', { type: 'checkbox' });
+            checkbox.checked = ver.enabled;
+            checkbox.addEventListener('change', async () => {
+                const oldPrimary = this.plugin.settings.versions.find(v => v.isPrimary)?.key;
+                ver.enabled = checkbox.checked;
+
+                // 确保至少有一个版本被选中
+                const enabledVersions = this.plugin.settings.versions.filter(v => v.enabled && v.installed);
+                if (enabledVersions.length === 0) {
+                    ver.enabled = true;
+                    checkbox.checked = true;
+                    new Notice('至少需要一个圣经版本');
+                    return;
+                }
+
+                const firstEnabled = this.plugin.settings.versions.find(v => v.enabled && v.installed);
+                for (const v of this.plugin.settings.versions) v.isPrimary = false;
+                if (firstEnabled) firstEnabled.isPrimary = true;
+                await this.plugin.saveSettings();
+                await this.plugin.loadBibleData();
+                this._renderCompareModal();
+                if (this.activeTab === 'reader' && this.readerState === 'content') {
+                    this.renderChapterContent();
+                }
+                if (this.activeTab === 'search' && this.results.length > 0) {
+                    const newPrimary = this.plugin.settings.versions.find(v => v.isPrimary)?.key;
+                    if (oldPrimary !== newPrimary && this.lastSearchQuery) {
+                        if (this.plugin.searchEngine === null || this.plugin.allItems.length === 0) {
+                            await this.plugin.loadBibleData();
+                        }
+                        const primaryKey = this.getPrimaryVersion();
+                        if (primaryKey) {
+                            this.results = this.plugin.searchEngine.search(this.lastSearchQuery, this.lastSearchTypes, this.lastRangeValue, this.lastBookIds, primaryKey);
+                            this.selectCounter = 0;
+                            this.compareSelections = {};
+                            this.cmpOrder = [];
+                            const parsed = this.plugin.searchEngine.parseQuery(this.lastSearchQuery);
+                            this.keywords = parsed.keywords;
+                        }
+                    }
+                    this.renderResults();
+                }
+            });
+
+            const info = row.createDiv({ cls: 'bible-compare-modal-info' });
+            info.createEl('span', { text: ver.name, cls: 'bible-compare-modal-name' });
+            const status = info.createEl('span', { cls: 'bible-compare-modal-status' });
+            if (ver.installed) {
+                status.setText(ver.isPrimary ? '主版本' : ver.enabled ? '对照版本' : '已启用');
+                status.style.color = ver.isPrimary ? 'var(--interactive-success)' : ver.enabled ? 'var(--text-accent)' : 'var(--text-muted)';
+            } else {
+                status.setText('未安装');
+                status.style.color = 'var(--text-muted)';
+                checkbox.disabled = true;
+                row.style.opacity = '0.5';
+            }
+            // 点击版本名也能切换选中状态
+            row.addEventListener('click', (e) => {
+                if (e.target === checkbox || e.target.classList.contains('bible-compare-drag-handle')) return;
+                checkbox.checked = !checkbox.checked;
+                checkbox.dispatchEvent(new Event('change'));
+            });
+            info.style.cursor = 'pointer';
+
+            // 拖拽排序
+            row.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', String(i));
+                row.classList.add('dragging');
+            });
+            row.addEventListener('dragend', () => row.classList.remove('dragging'));
+            row.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                const afterElement = this.getDragAfterElement(this._compareModalList, e.clientY);
+                const draggable = this._compareModalList.querySelector('.dragging');
+                if (draggable) {
+                    if (afterElement == null) {
+                        this._compareModalList.appendChild(draggable);
+                    } else {
+                        this._compareModalList.insertBefore(draggable, afterElement);
+                    }
+                }
+            });
+        }
+
+        this._compareModalList.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            // 记录旧的主版本
+            const oldPrimary = this.plugin.settings.versions.find(v => v.isPrimary)?.key;
+            
+            // 重新从 HTML 顺序读取版本
+            const rows = this._compareModalList.querySelectorAll('.bible-compare-modal-row');
+            const newOrder = [];
+            for (const row of rows) {
+                const key = row.dataset.key;
+                const ver = this.plugin.settings.versions.find(v => v.key === key);
+                if (ver) newOrder.push(ver);
+            }
+            // 确保所有版本都在（可能有未扫描到的）
+            for (const v of this.plugin.settings.versions) {
+                if (!newOrder.find(nv => nv.key === v.key)) {
+                    newOrder.push(v);
+                }
+            }
+            const firstEnabled = newOrder.find(v => v.enabled && v.installed);
+            for (const v of newOrder) v.isPrimary = false;
+            if (firstEnabled) firstEnabled.isPrimary = true;
+            this.plugin.settings.versions = newOrder;
+            await this.plugin.saveSettings();
+            
+            // 更新对照模态框
+            this._renderCompareModal();
+            
+            // 检查主版本是否改变
+            const newPrimary = this.plugin.settings.versions.find(v => v.isPrimary)?.key;
+            
+            if (this.activeTab === 'reader' && this.readerState === 'content') {
+                this.renderChapterContent();
+            }
+            
+            if (this.activeTab === 'search') {
+                if (oldPrimary !== newPrimary && this.lastSearchQuery) {
+                    // 主版本改变，重新搜索
+                    const types = this.lastSearchTypes;
+                    const rangeValue = this.lastRangeValue;
+                    const bookIds = this.lastBookIds;
+                    
+                    if (this.plugin.searchEngine === null || this.plugin.allItems.length === 0) {
+                        await this.plugin.loadBibleData();
+                    }
+                    
+                    const primaryKey = this.getPrimaryVersion();
+                    if (primaryKey) {
+                        this.results = this.plugin.searchEngine.search(this.lastSearchQuery, types, rangeValue, bookIds, primaryKey);
+                        this.selectCounter = 0;
+                        const parsed = this.plugin.searchEngine.parseQuery(this.lastSearchQuery);
+                        this.keywords = parsed.keywords;
+                    }
+                }
+                this.renderResults();
+            }
+        });
+    }
+
+    hasCompareMode() {
+        const enabled = this.plugin.settings.versions.filter(v => v.enabled && v.installed);
+        return enabled.length > 1;
     }
 
     switchTab(tab) {
@@ -1594,14 +1615,44 @@ class BibleSearchView extends ItemView {
         this.updateFocusModeBtn();
     }
 
+    getPrimaryVersion() {
+        const pv = this.plugin.settings.versions.find(v => v.isPrimary && v.enabled && v.installed);
+        return pv ? pv.key : null;
+    }
+    getReaderPrimaryVersion() {
+        return this.getPrimaryVersion();
+    }
+
+    getCompareVersions() {
+        const primary = this.plugin.settings.versions.find(v => v.isPrimary);
+        return this.plugin.settings.versions.filter(v => v.enabled && v.installed && v.key !== (primary?.key));
+    }
+
+    findCompareItems(bookId, chapter, verse, type) {
+        const compares = [];
+        const compareVersions = this.getCompareVersions();
+        if (compareVersions.length === 0) return compares;
+        for (const ver of compareVersions) {
+            const found = this.plugin.allItems.find(i =>
+                i.versionKey === ver.key &&
+                i.bookId === bookId &&
+                i.chapter === chapter &&
+                i.verse === verse &&
+                i.type === type
+            );
+            if (found) {
+                compares.push({ item: found, versionName: ver.name, versionKey: ver.key });
+            }
+        }
+        return compares;
+    }
+
     buildSearchTab() {
         this.searchPanel = this.container.createDiv({ cls: 'bible-tab-panel' });
 
-        // 固定顶部区域
         const fixedTop = this.searchPanel.createDiv({ cls: 'bible-search-fixed-top' });
         this.searchFixedTop = fixedTop;
 
-        // 检索范围
         const rangeSection = fixedTop.createDiv({ cls: 'bible-section' });
         const rangeHeader = rangeSection.createDiv({ cls: 'bible-section-header' });
         const rangeIcon = rangeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
@@ -1664,7 +1715,6 @@ class BibleSearchView extends ItemView {
             });
         }
 
-        // 输入框
         const inputRow = fixedTop.createDiv({ cls: 'bible-input-row' });
         this.searchInput = inputRow.createEl('input', {
             cls: 'bible-search-input',
@@ -1682,6 +1732,8 @@ class BibleSearchView extends ItemView {
             this.searchInput.value = '';
             this.results = [];
             this.selectCounter = 0;
+            this.compareSelections = {};
+            this.cmpOrder = [];
             this.currentPage = 0;
             this.keywords = [];
             if (this.resultsContainer) {
@@ -1692,7 +1744,6 @@ class BibleSearchView extends ItemView {
             if (this.paginationEl) this.paginationEl.empty();
         });
 
-        // 全局操作
         const actionSection = fixedTop.createDiv({ cls: 'bible-section bible-action-section' });
         const actionHeader = actionSection.createDiv({ cls: 'bible-section-header' });
         const actionIcon = actionHeader.createEl('span', { cls: 'bible-section-icon', text: '⚡' });
@@ -1701,16 +1752,15 @@ class BibleSearchView extends ItemView {
         actionHeader.addEventListener('click', () => {
             const isCollapsed = actionBody.style.display === 'none';
             actionBody.style.display = isCollapsed ? 'grid' : 'none';
-            actionIcon.textContent = isCollapsed ? '⚡' : '⚡';
+            actionIcon.textContent = isCollapsed ? '▼' : '▶';
         });
         const selectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局全选' });
         const deselectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '取消全选' });
+        const copyAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局复制' });
         const focusBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '逐节投影' });
         const parallelBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '并列投影' });
         const mixedBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '混合投影' });
-        const copyAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局复制' });
 
-        // 检索种类
         const typeSection = fixedTop.createDiv({ cls: 'bible-section' });
         const typeHeader = typeSection.createDiv({ cls: 'bible-section-header' });
         const typeIcon = typeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
@@ -1729,7 +1779,6 @@ class BibleSearchView extends ItemView {
             label.createSpan({ text: type === 'theme' ? '主题' : type === 'outline' ? '纲目' : '经文' });
         }
 
-        // 结果区域头部
         this.resultsHeader = fixedTop.createDiv({ cls: 'bible-results-header' });
         this.resultsCount = this.resultsHeader.createEl('span', { cls: 'bible-results-count', text: '' });
         const pageSelectAllBtn = this.resultsHeader.createEl('button', { cls: 'bible-small-btn', text: '本页全选' });
@@ -1737,12 +1786,10 @@ class BibleSearchView extends ItemView {
 
         this.paginationEl = fixedTop.createDiv({ cls: 'bible-pagination' });
 
-        // 可滚动结果区域
         this.searchScrollArea = this.searchPanel.createDiv({ cls: 'bible-search-scroll-area' });
         this.resultsContainer = this.searchScrollArea.createDiv({ cls: 'bible-results-list' });
         this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容后点击查询' });
 
-        // 事件
         searchBtn.addEventListener('click', () => this.performSearch());
         this.searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.performSearch(); });
         selectAllBtn.addEventListener('click', () => this.selectAll());
@@ -1817,9 +1864,9 @@ class BibleSearchView extends ItemView {
     updateFocusModeBtn() {
         if (!this.focusModeBtn) return;
         if (this.activeTab === 'search') {
-            this.focusModeBtn.textContent = this.searchFocusMode ? '退出专注' : '专注模式';
+            this.focusModeBtn.textContent = this.searchFocusMode ? '退出专注' : '专注';
         } else {
-            this.focusModeBtn.textContent = this.readerFocusMode ? '退出专注' : '专注模式';
+            this.focusModeBtn.textContent = this.readerFocusMode ? '退出专注' : '专注';
         }
     }
 
@@ -1846,8 +1893,19 @@ class BibleSearchView extends ItemView {
             await this.plugin.loadBibleData();
         }
 
-        this.results = this.plugin.searchEngine.search(query, types, rangeValue, bookIds);
+        const primaryKey = this.getPrimaryVersion();
+        if (!primaryKey) { new Notice('未设置主版本，请先在「对照」设置中选择一个版本'); return; }
+
+        this.results = this.plugin.searchEngine.search(query, types, rangeValue, bookIds, primaryKey);
         this.selectCounter = 0;
+        this.compareSelections = {};  // 清空对照经文选中状态
+        this.cmpOrder = [];
+
+        // 保存搜索条件，用于版本顺序改变后重新搜索
+        this.lastSearchQuery = query;
+        this.lastSearchTypes = types;
+        this.lastRangeValue = rangeValue;
+        this.lastBookIds = bookIds;
 
         const parsed = this.plugin.searchEngine.parseQuery(query);
         this.keywords = parsed.keywords;
@@ -1930,18 +1988,8 @@ class BibleSearchView extends ItemView {
             const jumpWrapper = pageNav.createDiv({ cls: 'bible-page-jump' });
             jumpWrapper.createEl('span', { cls: 'bible-page-jump-label', text: '跳转' });
             const jumpInput = jumpWrapper.createEl('input', { cls: 'bible-page-jump-input', attr: { type: 'text', placeholder: '' } });
-            jumpInput.style.width = '36px';
-            jumpInput.style.textAlign = 'center';
-            jumpInput.style.padding = '2px 4px';
-            jumpInput.style.fontSize = '12px';
-            jumpInput.style.border = '1px solid var(--bible-card-border)';
-            jumpInput.style.borderRadius = '4px';
-            jumpInput.style.background = 'var(--background-primary)';
-            jumpInput.style.color = 'var(--text-normal)';
             jumpWrapper.createEl('span', { cls: 'bible-page-jump-label', text: '/' + totalPages });
             const jumpBtn = jumpWrapper.createEl('button', { cls: 'bible-page-btn', text: 'Go' });
-            jumpBtn.style.minWidth = '28px';
-            jumpBtn.style.height = '28px';
             const doJump = () => {
                 const page = parseInt(jumpInput.value);
                 if (!isNaN(page) && page >= 1 && page <= totalPages) {
@@ -1997,10 +2045,107 @@ class BibleSearchView extends ItemView {
 
             checkbox.addEventListener('click', () => this.toggleSelection(globalIdx));
             card.addEventListener('click', (e) => {
+                // 如果点击的是对照行区域，不触发主版本选中
+                if (e.target.closest('.bible-compare-row')) return;
                 if (e.target.closest('.bible-result-checkbox') || e.target.closest('.bible-side-tag') || e.target.closest('.bible-result-ref')) return;
                 this.toggleSelection(globalIdx);
             });
+
+            if (this.hasCompareMode() && item.type === 'verse') {
+                const compares = this.findCompareItems(item.bookId, item.chapter, item.verse, item.type);
+                for (const cmp of compares) {
+                    const cmpKey = `cmp-${globalIdx}-${cmp.versionKey}`;
+                    const cmpSelection = this.compareSelections[cmpKey];
+                    
+                    // 对照行容器：左列(复选框+并列标签) + 右列(经文文字)
+                    const cmpRow = card.createDiv({ cls: 'bible-compare-row' + (cmpSelection && cmpSelection.selected ? ' selected' : '') });
+                    
+                    // 左列：复选框 + 并列标签上下排列
+                    const cmpLeftCol = cmpRow.createDiv({ cls: 'bible-compare-left-col' });
+                    
+                    // 复选框（与主版本相同的样式）
+                    const cmpCb = cmpLeftCol.createDiv({ cls: 'bible-result-checkbox' + (cmpSelection && cmpSelection.selected ? ' checked' : '') });
+                    if (cmpSelection && cmpSelection.selected) {
+                        cmpCb.setText(String(cmpSelection.order));
+                    }
+                    
+                    // 点击复选框切换选中
+                    cmpCb.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.toggleCompareSelection(globalIdx, cmp);
+                    });
+                    
+                    // 并列标签（仅在选中时显示，与主版本卡片一致）
+                    if (cmpSelection && cmpSelection.selected) {
+                        const cmpSideTag = cmpLeftCol.createDiv({ cls: 'bible-side-tag' + (cmpSelection.sideBySide ? ' active' : '') });
+                        cmpSideTag.setText(cmpSelection.sideBySide ? '✓ 并列' : '并');
+                        cmpSideTag.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            this.toggleCompareSideBySide(globalIdx, cmp);
+                        });
+                    }
+                    
+                    // 经文内容（右列）
+                    const cmpText = cmpRow.createDiv({ cls: 'bible-compare-text' });
+                    cmpText.setText(cmp.item.content);
+                    
+                    // 点击整行切换选中
+                    cmpRow.addEventListener('click', (e) => {
+                        if (e.target === cmpRow || e.target.closest('.bible-compare-text') || e.target.closest('.bible-result-checkbox')) {
+                            this.toggleCompareSelection(globalIdx, cmp);
+                        }
+                    });
+                }
+            }
         }
+    }
+
+    toggleCompareSelection(parentIdx, cmp) {
+        const cmpKey = `cmp-${parentIdx}-${cmp.versionKey}`;
+        const parentResult = this.results[parseInt(parentIdx)];
+        
+        // 切换对照经文的选中状态（独立存储，不添加到 results）
+        if (this.compareSelections[cmpKey]) {
+            delete this.compareSelections[cmpKey];
+            // 从顺序数组中移除
+            const idx = this.cmpOrder.indexOf(cmpKey);
+            if (idx !== -1) this.cmpOrder.splice(idx, 1);
+        } else {
+            // 新选中时记录当前选中计数作为顺序
+            this.compareSelections[cmpKey] = { selected: true, sideBySide: false, order: this.selectCounter + 1 };
+            this.cmpOrder.push(cmpKey);  // 记录插入顺序
+            this.selectCounter++;
+        }
+        
+        // 重新计算所有选中项的连续序号
+        this.recalcOrders();
+        this.renderResults();
+    }
+
+    recalcOrders() {
+        // 按用户选中顺序重新编号（不重排）
+        const selected = [];
+        for (const r of this.results) {
+            if (r.selected) selected.push({ result: r, type: 'main', order: r.order });
+        }
+        // 使用 cmpOrder 数组保持插入顺序
+        for (const cmpKey of this.cmpOrder) {
+            const cmp = this.compareSelections[cmpKey];
+            if (cmp && cmp.selected) {
+                selected.push({ cmpKey, type: 'compare', order: cmp.order });
+            }
+        }
+        // 按原始顺序重新编号
+        selected.sort((a, b) => a.order - b.order);
+        for (let i = 0; i < selected.length; i++) {
+            const entry = selected[i];
+            if (entry.type === 'main') {
+                entry.result.order = i + 1;
+            } else {
+                this.compareSelections[entry.cmpKey].order = i + 1;
+            }
+        }
+        this.selectCounter = selected.length;
     }
 
     highlightKeywords(element, text, keywords) {
@@ -2008,7 +2153,6 @@ class BibleSearchView extends ItemView {
             element.setText(text);
             return;
         }
-        // 找到所有匹配位置
         const matches = [];
         for (const kw of keywords) {
             const textLower = text.toLowerCase();
@@ -2020,7 +2164,6 @@ class BibleSearchView extends ItemView {
             }
         }
         matches.sort((a, b) => a.start - b.start);
-        // 合并重叠区间
         const merged = [];
         for (const m of matches) {
             if (merged.length === 0 || m.start >= merged[merged.length - 1].end) {
@@ -2029,7 +2172,6 @@ class BibleSearchView extends ItemView {
                 merged[merged.length - 1].end = m.end;
             }
         }
-        // 构建 DOM
         let lastEnd = 0;
         for (const seg of merged) {
             if (seg.start > lastEnd) {
@@ -2050,13 +2192,15 @@ class BibleSearchView extends ItemView {
         const result = this.results[index];
         if (!result) return;
         if (result.selected) {
-            result.selected = false; result.sideBySide = false;
-            const oldOrder = result.order; result.order = 0;
-            for (const r of this.results) { if (r.selected && r.order > oldOrder) r.order--; }
-            this.selectCounter--;
+            result.selected = false;
+            result.sideBySide = false;
+            result.order = 0;
         } else {
-            this.selectCounter++; result.selected = true; result.order = this.selectCounter;
+            this.selectCounter++;
+            result.selected = true;
+            result.order = this.selectCounter;
         }
+        this.recalcOrders();
         this.renderResults();
     }
 
@@ -2065,15 +2209,35 @@ class BibleSearchView extends ItemView {
         if (result && result.selected) { result.sideBySide = !result.sideBySide; this.renderResults(); }
     }
 
+    toggleCompareSideBySide(parentIdx, cmp) {
+        const cmpKey = `cmp-${parentIdx}-${cmp.versionKey}`;
+        const cmpSelection = this.compareSelections[cmpKey];
+        if (cmpSelection && cmpSelection.selected) {
+            cmpSelection.sideBySide = !cmpSelection.sideBySide;
+            this.renderResults();
+        }
+    }
+
     selectAll() {
         this.selectCounter = 0;
         for (const result of this.results) { result.selected = true; result.sideBySide = false; this.selectCounter++; result.order = this.selectCounter; }
+        // 全选对照经文
+        for (const cmpKey of this.cmpOrder) {
+            this.compareSelections[cmpKey].selected = true;
+        }
+        // 重新计算所有选中项的连续序号
+        this.recalcOrders();
         this.renderResults();
     }
 
     deselectAll() {
         for (const result of this.results) { result.selected = false; result.sideBySide = false; result.order = 0; }
         this.selectCounter = 0;
+        // 取消全选对照经文
+        for (const cmpKey of this.cmpOrder) {
+            delete this.compareSelections[cmpKey];
+        }
+        this.cmpOrder = [];
         this.renderResults();
     }
 
@@ -2094,29 +2258,118 @@ class BibleSearchView extends ItemView {
         const lines = [];
         for (const r of selected) {
             const item = r.item;
-            if (item.type === 'theme') lines.push(item.bookFullName + ' 主题：' + item.content);
+            if (r._isCompare) {
+                lines.push(`⌈${item.versionKey.toLowerCase()}⌋${item.bookShortName}${item.chapter}:${item.verse} ${item.content}`);
+            } else if (item.type === 'theme') lines.push(item.bookFullName + ' 主题：' + item.content);
             else if (item.type === 'outline') lines.push('> ' + item.content);
             else lines.push(item.bookShortName + item.chapter + ':' + item.verse + ' ' + item.content);
         }
-        navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条内容'); }).catch(() => new Notice('复制失败'));
+        this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条内容'); }).catch(() => new Notice('复制失败'));
     }
 
-    copyAll() { this.copySelected(this.results); }
-    copyPageAll() { this.copySelected(this.getPagedResults()); }
+    copyAll() {
+        const selected = [...this.results.filter(r => r.selected).sort((a, b) => a.order - b.order), ...this.getCompareSelected()];
+        selected.sort((a, b) => a.order - b.order);
+        this.copySelected(selected);
+    }
+    
+    getCompareSelected() {
+        const selected = [];
+        // 使用 cmpOrder 数组保持插入顺序
+        for (const cmpKey of this.cmpOrder) {
+            const cmpSel = this.compareSelections[cmpKey];
+            if (cmpSel && cmpSel.selected) {
+                // 正确解析 cmpKey: "cmp-${parentIdx}-${versionKey}"
+                // versionKey 可能包含 "-"，所以需要从第一个数字后的位置截取
+                const prefix = 'cmp-';
+                if (!cmpKey.startsWith(prefix)) continue;
+                const afterPrefix = cmpKey.slice(prefix.length);
+                // 找到第一个非数字字符的位置（即 parentIdx 后的 "-"）
+                let i = 0;
+                while (i < afterPrefix.length && /\d/.test(afterPrefix[i])) i++;
+                if (i === 0 || afterPrefix[i] !== '-') continue;
+                const parentIdx = parseInt(afterPrefix.slice(0, i));
+                const versionKey = afterPrefix.slice(i + 1);
+                
+                const parentResult = this.results[parseInt(parentIdx)];
+                if (parentResult) {
+                    const compares = this.findCompareItems(parentResult.item.bookId, parentResult.item.chapter, parentResult.item.verse, parentResult.item.type);
+                    const cmp = compares.find(c => c.versionKey === versionKey);
+                    if (cmp) {
+                        selected.push({ item: cmp.item, selected: true, order: cmpSel.order, sideBySide: cmpSel.sideBySide, _isCompare: true, _cmpKey: cmpKey, versionKey: versionKey });
+                    }
+                }
+            }
+        }
+        return selected;
+    }
+
+
+    async copyToClipboard(text) {
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-9999px';
+                textarea.style.top = '0';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                const success = document.execCommand('copy');
+                document.body.removeChild(textarea);
+                if (!success) throw new Error('execCommand failed');
+            }
+        } catch (e) {
+            new Notice('复制失败：' + e.message);
+            throw e;
+        }
+    }
+
+    copyPageAll() {
+        const paged = this.getPagedResults();
+        const pageCompareSelected = [];
+        const startOffset = this.currentPage * this.pageSize;
+        for (let i = 0; i < paged.length; i++) {
+            const globalIdx = startOffset + i;
+            const result = paged[i];
+            const compares = this.findCompareItems(result.item.bookId, result.item.chapter, result.item.verse, result.item.type);
+            for (const cmp of compares) {
+                const cmpKey = `cmp-${globalIdx}-${cmp.versionKey}`;
+                if (this.compareSelections[cmpKey] && this.compareSelections[cmpKey].selected) {
+                    const order = this.compareSelections[cmpKey].order;
+                    pageCompareSelected.push({ item: cmp.item, selected: true, order: order, sideBySide: this.compareSelections[cmpKey].sideBySide, _isCompare: true, _cmpKey: cmpKey, versionKey: cmp.versionKey });
+                }
+            }
+        }
+        const selected = [...paged.filter(r => r.selected), ...pageCompareSelected];
+        selected.sort((a, b) => a.order - b.order);
+        this.copySelected(selected);
+    }
 
     openProjection(mode) {
-        const selected = this.results.filter(r => r.selected);
+        const selected = [...this.results.filter(r => r.selected), ...this.getCompareSelected()];
+        selected.sort((a, b) => a.order - b.order);
         if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-        const overlay = new BibleProjectionOverlay(this.app, this.results, mode, true);
+        const overlay = new BibleProjectionOverlay(this.app, selected, mode, true);
         overlay.open();
     }
 
     renderReader() {
         this.readerContent.empty();
         this.readerFixedTop.empty();
-        if (this.readerState === 'books') this.renderBookList();
-        else if (this.readerState === 'chapters') this.renderChapterList();
-        else if (this.readerState === 'content') this.renderChapterContent();
+        if (this.readerState === 'books') {
+            this.renderBookList();
+        }
+        else if (this.readerState === 'chapters') {
+            this.renderChapterList();
+        }
+        else if (this.readerState === 'content') {
+            this.renderChapterContent();
+        }
     }
 
     renderBookList() {
@@ -2153,19 +2406,18 @@ class BibleSearchView extends ItemView {
     async renderChapterContent() {
         this.readerContent.empty();
         this.readerFixedTop.empty();
-        // 切换章节时清空上一章的选中状态
-        this.readerResults = [];
-        this.readerSelectCounter = 0;
         const book = this.readerBook;
         const chapter = this.readerChapter;
         if (!book) { this.readerState = 'books'; this.renderReader(); return; }
+
+        const compareVersions = this.getCompareVersions();
+        const hasCompare = compareVersions.length > 0;
 
         const nav = this.readerFixedTop.createDiv({ cls: 'bible-reader-nav-row' });
         const backBtn = nav.createEl('button', { cls: 'bible-reader-nav-btn', text: '← 返回章节' });
         backBtn.addEventListener('click', () => { this.readerState = 'chapters'; this.renderReader(); });
         nav.createEl('span', { cls: 'bible-reader-nav-title', text: book.fullName + ' 第' + chapter + '章' });
 
-        // 快速跳转
         const jumpRow = this.readerFixedTop.createDiv({ cls: 'bible-reader-jump-row' });
         jumpRow.createEl('span', { cls: 'bible-reader-jump-label', text: '快速跳转：' });
         const bookSelect = jumpRow.createEl('select', { cls: 'bible-reader-jump-select' });
@@ -2192,7 +2444,8 @@ class BibleSearchView extends ItemView {
             this.renderReader();
         });
 
-        // 字体控制
+
+        // 字体调节行（上一章/下一章放在右边）
         const fontRow = this.readerFixedTop.createDiv({ cls: 'bible-reader-font-row' });
         fontRow.createEl('span', { cls: 'bible-reader-font-label', text: '字体：' });
         const fontSmaller = fontRow.createEl('button', { cls: 'bible-reader-font-btn', text: '−' });
@@ -2208,198 +2461,215 @@ class BibleSearchView extends ItemView {
             fontSizeDisplay.setText(this.readerFontSize + 'px');
             this.updateReaderFontSize();
         });
-
-        // 操作按钮
-        const contentNav = this.readerFixedTop.createDiv({ cls: 'bible-reader-content-nav' });
-        const prevChBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '◀ 上一章' });
-        const nextChBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '下一章 ▶' });
-        const selectAllBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '全选' });
-        const deselectAllBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '取消全选' });
-        const copyVersesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '复制经文' });
-        const copyOutlinesBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '复制纲目' });
-        const copySelectedBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '复制选中' });
-        const focusProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '逐节投影' });
-        const parallelProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '并列投影' });
-        const mixedProjBtn = contentNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '混合投影' });
-
+        // 上一章/下一章放在字体调节右边
+        const prevChBtn = fontRow.createEl('button', { cls: 'bible-reader-nav-btn', text: '◀ 上一章' });
+        const nextChBtn = fontRow.createEl('button', { cls: 'bible-reader-nav-btn', text: '下一章 ▶' });
         prevChBtn.disabled = chapter <= 1;
         nextChBtn.disabled = chapter >= book.maxChapters;
         prevChBtn.addEventListener('click', () => { if (chapter > 1) { this.readerChapter--; this.renderReader(); } });
-               nextChBtn.addEventListener('click', () => { if (chapter < book.maxChapters) { this.readerChapter++; this.renderReader(); } });
+        nextChBtn.addEventListener('click', () => { if (chapter < book.maxChapters) { this.readerChapter++; this.renderReader(); } });
+
+        // 全局操作区块（模仿搜索视图的折叠区块）
+        const actionSection = this.readerFixedTop.createDiv({ cls: 'bible-section bible-action-section' });
+        const actionHeader = actionSection.createDiv({ cls: 'bible-section-header' });
+        const actionIcon = actionHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
+        actionHeader.createEl('span', { text: '全局操作' });
+        const actionBody = actionSection.createDiv({ cls: 'bible-action-grid' });
+        actionHeader.addEventListener('click', () => {
+            const isCollapsed = actionBody.style.display === 'none';
+            actionBody.style.display = isCollapsed ? 'grid' : 'none';
+            actionIcon.textContent = isCollapsed ? '▼' : '▶';
+        });
+        const selectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局全选' });
+        const deselectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局取消' });
+        const copySelectedBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局复制' });
+        const focusProjBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '逐节投影' });
+        const parallelProjBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '并列投影' });
+        const mixedProjBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '混合投影' });
 
         if (this.plugin.allItems.length === 0) await this.plugin.loadBibleData();
 
-        // 获取该章所有内容
+        const primaryKey = this.getReaderPrimaryVersion();
+        // 当前章内容
         const items = this.plugin.allItems
-            .filter(i => i.bookId === book.id && i.chapter === chapter)
+            .filter(i => i.versionKey === primaryKey && i.bookId === book.id && i.chapter === chapter)
             .sort((a, b) => a.lineIndex - b.lineIndex);
+        // 全书卷内容（用于全局全选）
+        const allBookItems = this.plugin.allItems
+            .filter(i => i.versionKey === primaryKey && i.bookId === book.id)
+            .sort((a, b) => a.lineIndex - b.lineIndex);
+        const themeItems = this.plugin.allItems.filter(i => i.versionKey === primaryKey && i.bookId === book.id && i.type === 'theme');
+        const allBookThemeItems = this.plugin.allItems.filter(i => i.versionKey === primaryKey && i.bookId === book.id && i.type === 'theme');
 
-        // 获取该书卷所有主题（固定显示在顶部）
-        const themeItems = this.plugin.allItems.filter(i => i.bookId === book.id && i.type === 'theme');
-        if (themeItems.length > 0) {
-            const themeEl = this.readerFixedTop.createDiv({ cls: 'bible-reader-book-theme' });
-            themeEl.createEl('div', { cls: 'bible-reader-book-theme-title', text: '书卷主题' });
-            for (const t of themeItems) {
-                this.renderReaderItemCard(themeEl, t);
-            }
-        }
+        this.currentChapterItems = items;
+        this.currentChapterThemeItems = themeItems;
+
+        // 章节标题行（单独一行，不占按钮空间）
+        const chapterTitleRow = this.readerFixedTop.createDiv({ cls: 'bible-reader-nav-title' });
+        chapterTitleRow.style.textAlign = 'center';
+        chapterTitleRow.style.marginBottom = '8px';
+        chapterTitleRow.style.fontSize = '14px';
+        chapterTitleRow.setText(book.fullName + ' 第' + chapter + '章');
+
+        // 本页操作按钮行放在全局操作区块下方（readerFixedTop 中）
+        const pageActionRow = this.readerFixedTop.createDiv({ cls: 'bible-results-header' });
+        const pageSelectAllBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '本页全选' });
+        const pageCopyBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '📋 本页复制' });
+        const copyVersesBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '复制经文' });
+        const copyOutlinesBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '复制纲目' });
 
         const contentEl = this.readerContent.createDiv({ cls: 'bible-reader-content-list' });
         contentEl.style.fontSize = this.readerFontSize + 'px';
 
-        // 渲染内容（纲目和经文）
+        // 主题直接显示在内容区域开头（去掉"书卷主题"标题）
+        if (themeItems.length > 0) {
+            for (const t of themeItems) {
+                this.renderReaderItemCard(contentEl, t);
+            }
+        }
+
+        let prevVerseKey = null;
         for (const item of items) {
             if (item.type === 'theme') continue;
+            const currentVerseKey = `${item.bookId}-${item.chapter}-${item.verse}`;
+            if (prevVerseKey !== null && currentVerseKey !== prevVerseKey) {
+                contentEl.createDiv({ cls: 'bible-reader-divider' });
+            }
+            prevVerseKey = currentVerseKey;
             this.renderReaderItemCard(contentEl, item);
         }
 
-        // 全选：第一章包含主题，其他章节不包含主题
-        selectAllBtn.addEventListener('click', () => {
-            const allItems = this.readerChapter === 1 ? [...themeItems, ...items] : [...items];
+        // ========== 全局操作函数 ==========
+        const doGlobalSelectAll = () => {
+            // 按顺序选中此卷书所有章节的主版本内容
+            const allItems = [...allBookThemeItems, ...allBookItems];
             for (const item of allItems) {
                 const existingIdx = this.readerResults.findIndex(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
+                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
                 );
                 if (existingIdx === -1) {
-                    this.readerSelectCounter++;
-                    this.readerResults.push({ item: item, selected: true, order: this.readerSelectCounter, sideBySide: false });
-                } else if (!this.readerResults[existingIdx].selected) {
-                    this.readerSelectCounter++;
+                    this.readerResults.push({ item: item, selected: true, order: 0, sideBySide: false });
+                } else {
                     this.readerResults[existingIdx].selected = true;
-                    this.readerResults[existingIdx].order = this.readerSelectCounter;
+                    this.readerResults[existingIdx].sideBySide = false;
+                    this.readerResults[existingIdx].order = 0;
                 }
             }
-            for (const item of allItems) {
-                this.refreshReaderItemCard(item);
-            }
-            new Notice('已将本章全部内容选中');
-        });
+            this.recalcReaderOrders();
+            this.refreshAllReaderCards();
+            new Notice(`已将《${book.fullName}》全部主版本内容选中`);
+        };
 
-        // 取消全选（主题+纲目+经文）
-        deselectAllBtn.addEventListener('click', () => {
-            const allItems = [...themeItems, ...items];
-            for (const item of allItems) {
-                const existingIdx = this.readerResults.findIndex(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
-                );
-                if (existingIdx !== -1 && this.readerResults[existingIdx].selected) {
-                    const result = this.readerResults[existingIdx];
-                    const oldOrder = result.order;
-                    result.selected = false;
-                    result.sideBySide = false;
-                    result.order = 0;
-                    for (const r of this.readerResults) { if (r.selected && r.order > oldOrder) r.order--; }
-                    this.readerSelectCounter--;
-                }
+        const doGlobalDeselectAll = () => {
+            for (const r of this.readerResults) {
+                r.selected = false;
+                r.sideBySide = false;
+                r.order = 0;
             }
-            for (const item of allItems) {
-                this.refreshReaderItemCard(item);
-            }
-            new Notice('已取消本章所有选中');
-        });
+            this.readerSelectCounter = 0;
+            this.refreshAllReaderCards();
+            new Notice('已取消全部选中');
+        };
 
-        // 复制经文（此页全部经文，无论是否选中）
-        copyVersesBtn.addEventListener('click', () => {
-            const verses = items.filter(i => i.type === 'verse');
-            if (verses.length === 0) { new Notice('本章没有经文内容'); return; }
-            const lines = verses.map(v => v.bookShortName + v.chapter + ':' + v.verse + ' ' + v.content);
-            navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + verses.length + ' 节经文'); });
-        });
-
-        // 复制纲目（此页全部纲目，无论是否选中）
-        copyOutlinesBtn.addEventListener('click', () => {
-            const outlines = items.filter(i => i.type === 'outline');
-            if (outlines.length === 0) { new Notice('本章没有纲目内容'); return; }
-            const lines = outlines.map(o => '> ' + o.content);
-            navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + outlines.length + ' 条纲目'); });
-        });
-
-        // 复制选中项（只复制选中的主题+纲目+经文）
-        copySelectedBtn.addEventListener('click', () => {
-            const allItems = [...themeItems, ...items];
-            const selected = [];
-            for (const item of allItems) {
-                const r = this.readerResults.find(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
-                );
-                if (r) selected.push(r);
-            }
-            selected.sort((a, b) => a.order - b.order);
+        const doGlobalCopy = () => {
+            const selected = this.readerResults.filter(r => r.selected).sort((a, b) => a.order - b.order);
             if (selected.length === 0) { new Notice('请先选择要复制的内容'); return; }
             const lines = [];
             for (const r of selected) {
                 const item = r.item;
-                if (item.type === 'theme') lines.push(item.bookFullName + ' 主题：' + item.content);
+                if (r._isCompare) {
+                    lines.push(`⌈${item.versionKey.toLowerCase()}⌋${item.bookShortName}${item.chapter}:${item.verse} ${item.content}`);
+                } else if (item.type === 'theme') lines.push(item.bookFullName + ' 主题：' + item.content);
                 else if (item.type === 'outline') lines.push('> ' + item.content);
                 else lines.push(item.bookShortName + item.chapter + ':' + item.verse + ' ' + item.content);
             }
-            navigator.clipboard.writeText(lines.join('\n\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条选中项'); });
+            this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条选中项'); });
+        };
+
+        // ========== 本页操作函数 ==========
+        const doPageSelectAll = () => {
+            // 按顺序选中当前章的主版本内容；第一章额外选中主题
+            const pageItems = this.readerChapter === 1 ? [...themeItems, ...items] : [...items];
+            for (const item of pageItems) {
+                const existingIdx = this.readerResults.findIndex(r =>
+                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
+                );
+                if (existingIdx === -1) {
+                    this.readerResults.push({ item: item, selected: true, order: 0, sideBySide: false });
+                } else {
+                    this.readerResults[existingIdx].selected = true;
+                    this.readerResults[existingIdx].sideBySide = false;
+                    this.readerResults[existingIdx].order = 0;
+                }
+            }
+            this.recalcReaderOrders();
+            this.refreshAllReaderCards();
+            new Notice('已将本章主版本内容选中');
+        };
+
+        const doPageCopy = () => {
+            const pageSelected = this.readerResults.filter(r => {
+                if (!r.selected) return false;
+                const item = r.item;
+                return item.bookId === book.id && item.chapter === chapter;
+            }).sort((a, b) => a.order - b.order);
+            if (pageSelected.length === 0) { new Notice('本章没有选中的内容'); return; }
+            const lines = [];
+            for (const r of pageSelected) {
+                const item = r.item;
+                if (r._isCompare) {
+                    lines.push(`⌈${item.versionKey.toLowerCase()}⌋${item.bookShortName}${item.chapter}:${item.verse} ${item.content}`);
+                } else if (item.type === 'theme') lines.push(item.bookFullName + ' 主题：' + item.content);
+                else if (item.type === 'outline') lines.push('> ' + item.content);
+                else lines.push(item.bookShortName + item.chapter + ':' + item.verse + ' ' + item.content);
+            }
+            this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + pageSelected.length + ' 条本章选中项'); });
+        };
+
+        // ========== 事件绑定 ==========
+        selectAllBtn.addEventListener('click', doGlobalSelectAll);
+        deselectAllBtn.addEventListener('click', doGlobalDeselectAll);
+        copySelectedBtn.addEventListener('click', doGlobalCopy);
+        focusProjBtn.addEventListener('click', () => this.openReaderProjection('focus'));
+        parallelProjBtn.addEventListener('click', () => this.openReaderProjection('parallel'));
+        mixedProjBtn.addEventListener('click', () => this.openReaderProjection('mixed'));
+
+        pageSelectAllBtn.addEventListener('click', doPageSelectAll);
+        pageCopyBtn.addEventListener('click', doPageCopy);
+
+        copyVersesBtn.addEventListener('click', () => {
+            const verses = items.filter(i => i.type === 'verse');
+            if (verses.length === 0) { new Notice('本章没有经文内容'); return; }
+            const lines = verses.map(v => v.bookShortName + v.chapter + ':' + v.verse + ' ' + v.content);
+            this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + verses.length + ' 节经文'); });
         });
 
-        // 聚焦投影（当前章选中的内容）
-        focusProjBtn.addEventListener('click', () => {
-            const allItems = [...themeItems, ...items];
-            const selected = [];
-            for (const item of allItems) {
-                const r = this.readerResults.find(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
-                );
-                if (r) selected.push(r);
-            }
-            selected.sort((a, b) => a.order - b.order);
-            if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-            const overlay = new BibleProjectionOverlay(this.app, selected, 'focus', false);
-            overlay.open();
+        copyOutlinesBtn.addEventListener('click', () => {
+            const outlines = items.filter(i => i.type === 'outline');
+            if (outlines.length === 0) { new Notice('本章没有纲目内容'); return; }
+            const lines = outlines.map(o => '> ' + o.content);
+            this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + outlines.length + ' 条纲目'); });
         });
+    }
 
-        // 并列投影（当前章选中的内容）
-        parallelProjBtn.addEventListener('click', () => {
-            const allItems = [...themeItems, ...items];
-            const selected = [];
-            for (const item of allItems) {
-                const r = this.readerResults.find(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
-                );
-                if (r) selected.push(r);
-            }
-            selected.sort((a, b) => a.order - b.order);
-            if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-            const overlay = new BibleProjectionOverlay(this.app, selected, 'parallel', false);
-            overlay.open();
-        });
-
-        // 混合投影（当前章选中的内容）
-        mixedProjBtn.addEventListener('click', () => {
-            const allItems = [...themeItems, ...items];
-            const selected = [];
-            for (const item of allItems) {
-                const r = this.readerResults.find(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && r.selected
-                );
-                if (r) selected.push(r);
-            }
-            selected.sort((a, b) => a.order - b.order);
-            if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-            const overlay = new BibleProjectionOverlay(this.app, selected, 'mixed', false);
-            overlay.open();
-        });
+    openReaderProjection(mode) {
+        const selected = this.readerResults.filter(r => r.selected);
+        if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
+        const overlay = new BibleProjectionOverlay(this.app, selected, mode, false);
+        overlay.open();
     }
 
     renderReaderItemCard(container, item) {
         const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
+            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
         );
         const isSelected = existingIdx !== -1 && this.readerResults[existingIdx].selected;
         const result = existingIdx !== -1 ? this.readerResults[existingIdx] : null;
 
-        const card = container.createDiv({ cls: 'bible-reader-verse-card' + (isSelected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : '') });
-        card.setAttribute('data-line-index', String(item.lineIndex));
-        if (item.type === 'verse') {
-            card.style.borderBottom = '1px solid var(--background-modifier-border)';
-        }
+        // 主版本卡片（不设置分隔线）
+        const card = container.createDiv({ cls: 'bible-reader-verse-card' + (isSelected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : ''), attr: { 'data-line-index': item.lineIndex } });
 
         if (item.type === 'outline') {
-            // 纲目：checkbox 与内容放在同一行，不单独显示 header
             const contentRow = card.createDiv({ cls: 'bible-reader-verse-content-row' });
             contentRow.style.cssText = 'display:flex;align-items:flex-start;gap:8px;';
 
@@ -2415,30 +2685,145 @@ class BibleSearchView extends ItemView {
                 if (e.target === card || e.target === textEl) this.toggleReaderItemSelection(item);
             });
         } else {
-            // 主题和经文：保持原有 header + text 结构
+            // 主版本：候选框 + 出处 + 内容
             const header = card.createDiv({ cls: 'bible-reader-verse-header' });
             const checkbox = header.createDiv({ cls: 'bible-reader-verse-checkbox' + (isSelected ? ' checked' : '') });
             if (isSelected) checkbox.setText(String(result.order));
+            checkbox.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleReaderItemSelection(item);
+            });
 
             let refText = '';
             if (item.type === 'theme') refText = item.bookFullName + ' 主题';
             else refText = item.bookShortName + item.chapter + ':' + item.verse;
             header.createEl('span', { cls: 'bible-reader-verse-ref', text: refText });
 
-            let displayText = item.content;
-            if (item.type === 'theme') displayText = '主题：' + item.content;
-            card.createDiv({ cls: 'bible-reader-verse-text', text: displayText });
+            // 经文内容
+            const textEl = card.createDiv({ cls: 'bible-reader-verse-text', text: item.content });
 
-            checkbox.addEventListener('click', () => this.toggleReaderItemSelection(item));
             card.addEventListener('click', (e) => {
-                if (e.target === card || e.target.closest('.bible-reader-verse-text')) this.toggleReaderItemSelection(item);
+                // 排除对照行区域，避免点击对照行时误触发主版本选中
+                if (e.target.closest('.bible-reader-compare-row')) return;
+                if (e.target === card || e.target.closest('.bible-reader-verse-text') || e.target === checkbox || e.target.classList.contains('bible-reader-verse-ref')) {
+                    this.toggleReaderItemSelection(item);
+                }
             });
         }
 
-        if (isSelected) {
-            const sideTag = card.createDiv({ cls: 'bible-reader-side-tag' + (result.sideBySide ? ' active' : '') });
-            sideTag.setText(result.sideBySide ? '✓ 并列' : '并');
-            sideTag.addEventListener('click', (e) => { e.stopPropagation(); this.toggleReaderSideBySide(item); });
+        // 主版本的并列标签（总是创建，初始隐藏）
+        const sideTag = card.createDiv({ cls: 'bible-reader-side-tag' + (isSelected && result && result.sideBySide ? ' active' : '') });
+        sideTag.setText(isSelected && result && result.sideBySide ? '✓ 并列' : '并');
+        sideTag.style.display = isSelected ? 'block' : 'none';
+        sideTag.addEventListener('click', (e) => { e.stopPropagation(); this.toggleReaderSideBySide(item); });
+        
+        // 对照经文（在主版本卡片下方，同一容器内）
+        if (this.hasCompareMode() && item.type === 'verse') {
+            const compares = this.findCompareItems(item.bookId, item.chapter, item.verse, item.type);
+            
+            for (const cmp of compares) {
+                const cmpKey = `rd-cmp-${item.lineIndex}-${cmp.versionKey}`;
+                const cmpResultIdx = this.readerResults.findIndex(r => r._cmpKey === cmpKey);
+                const cmpSelected = cmpResultIdx !== -1 && this.readerResults[cmpResultIdx].selected;
+                const cmpResult = cmpResultIdx !== -1 ? this.readerResults[cmpResultIdx] : null;
+                
+                // 创建独立的对照行（作为 card 的子元素，便于查询和样式控制）
+                const cmpRow = card.createDiv({ cls: 'bible-reader-compare-row' });
+                cmpRow.setAttribute('data-version-key', cmp.versionKey);
+
+                // 左列：候选框 + 并列标签（纵向排列）
+                const cmpLeftCol = cmpRow.createDiv({ cls: 'bible-reader-compare-left-col' });
+                const cmpCb = cmpLeftCol.createDiv({ cls: 'bible-reader-verse-checkbox' + (cmpSelected ? ' checked' : '') });
+                if (cmpSelected) cmpCb.setText(String(cmpResult.order));
+
+                // 并列标签（仅在选中时显示，放在候选框下方）
+                if (cmpSelected) {
+                    const cmpSideTag = cmpLeftCol.createDiv({ cls: 'bible-reader-side-tag' + (cmpResult.sideBySide ? ' active' : '') });
+                    cmpSideTag.setText(cmpResult.sideBySide ? '✓ 并列' : '并');
+                    cmpSideTag.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.toggleReaderCompareSideBySide(item, cmp, cmpKey);
+                    });
+                }
+
+                // 经文内容（淡化颜色）
+                const cmpText = cmpRow.createDiv({ cls: 'bible-reader-compare-text' });
+                cmpText.setText(cmp.item.content);
+
+                // 点击候选框切换选中
+                cmpCb.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.toggleReaderCompareSelection(item, cmp, cmpKey);
+                });
+
+                // 点击行切换选中
+                cmpRow.addEventListener('click', (e) => {
+                    if (e.target === cmpRow || e.target.closest('.bible-reader-compare-text')) {
+                        this.toggleReaderCompareSelection(item, cmp, cmpKey);
+                    }
+                });
+            }
+        }
+
+    }
+
+        toggleReaderCompareSelection(parentItem, cmp, cmpKey) {
+        const existingIdx = this.readerResults.findIndex(r => r._cmpKey === cmpKey);
+        if (existingIdx !== -1 && this.readerResults[existingIdx].selected) {
+            this.readerResults[existingIdx].selected = false;
+            this.readerResults[existingIdx].sideBySide = false;
+            this.readerResults[existingIdx].order = 0;
+        } else {
+            this.readerSelectCounter++;
+            if (existingIdx !== -1) {
+                this.readerResults[existingIdx].selected = true;
+                this.readerResults[existingIdx].order = this.readerSelectCounter;
+            } else {
+                this.readerResults.push({
+                    item: cmp.item,
+                    selected: true,
+                    order: this.readerSelectCounter,
+                    sideBySide: false,
+                    _isCompare: true,
+                    _versionName: cmp.versionName,
+                    _cmpKey: cmpKey,
+                    versionKey: cmp.versionKey
+                });
+            }
+        }
+        this.recalcReaderOrders();
+        this.refreshAllReaderCards();
+    }
+
+    recalcReaderOrders() {
+        // 按用户选中顺序重新编号（不重排）
+        const selected = this.readerResults.filter(r => r.selected);
+        selected.sort((a, b) => a.order - b.order);
+        for (let i = 0; i < selected.length; i++) {
+            selected[i].order = i + 1;
+        }
+        this.readerSelectCounter = selected.length;
+    }
+
+    refreshAllReaderCards() {
+        // 刷新当前章节所有可见经文卡片的选中状态
+        const allItems = [...(this.currentChapterThemeItems || []), ...(this.currentChapterItems || [])];
+        const cards = this.readerContent.querySelectorAll('.bible-reader-verse-card');
+        for (const card of cards) {
+            const lineIndex = parseInt(card.dataset.lineIndex);
+            if (isNaN(lineIndex)) continue;
+            const item = allItems.find(i => i.lineIndex === lineIndex);
+            if (item) {
+                this.refreshReaderItemCard(item);
+            }
+        }
+    }
+
+    toggleReaderCompareSideBySide(parentItem, cmp, cmpKey) {
+        const existingIdx = this.readerResults.findIndex(r => r._cmpKey === cmpKey);
+        if (existingIdx !== -1 && this.readerResults[existingIdx].selected) {
+            this.readerResults[existingIdx].sideBySide = !this.readerResults[existingIdx].sideBySide;
+            this.refreshReaderItemCard(parentItem);
         }
     }
 
@@ -2447,7 +2832,7 @@ class BibleSearchView extends ItemView {
         if (!card) return;
 
         const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
+            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
         );
         const isSelected = existingIdx !== -1 && this.readerResults[existingIdx].selected;
         const result = existingIdx !== -1 ? this.readerResults[existingIdx] : null;
@@ -2466,36 +2851,72 @@ class BibleSearchView extends ItemView {
             }
         }
 
-        let sideTag = card.querySelector('.bible-reader-side-tag');
-        if (isSelected) {
-            if (!sideTag) {
-                sideTag = card.createDiv({ cls: 'bible-reader-side-tag' + (result.sideBySide ? ' active' : '') });
-                sideTag.setText(result.sideBySide ? '✓ 并列' : '并');
-                sideTag.addEventListener('click', (e) => { e.stopPropagation(); this.toggleReaderSideBySide(item); });
-            } else {
+        const sideTag = card.querySelector('.bible-reader-side-tag');
+        if (sideTag) {
+            if (isSelected && result) {
                 sideTag.style.display = 'block';
                 if (result.sideBySide) sideTag.classList.add('active');
                 else sideTag.classList.remove('active');
                 sideTag.textContent = result.sideBySide ? '✓ 并列' : '并';
+            } else {
+                sideTag.style.display = 'none';
             }
-        } else {
-            if (sideTag) sideTag.style.display = 'none';
         }
-    }
 
-    toggleReaderItemSelection(item) {
+        // 更新对照版本的选中状态
+        if (this.hasCompareMode() && item.type === 'verse') {
+            const compares = this.findCompareItems(item.bookId, item.chapter, item.verse, item.type);
+            for (const cmp of compares) {
+                const cmpKey = `rd-cmp-${item.lineIndex}-${cmp.versionKey}`;
+                const cmpRow = card.querySelector(`.bible-reader-compare-row[data-version-key="${cmp.versionKey}"]`);
+                if (cmpRow) {
+                    const cmpLeftCol = cmpRow.querySelector('.bible-reader-compare-left-col');
+                    const cmpCb = cmpLeftCol ? cmpLeftCol.querySelector('.bible-reader-verse-checkbox') : null;
+                    const existingCmp = this.readerResults.findIndex(r => r._cmpKey === cmpKey && r.selected);
+                    if (cmpCb) {
+                        if (existingCmp !== -1) {
+                            cmpCb.classList.add('checked');
+                            cmpCb.textContent = String(this.readerResults[existingCmp].order);
+                        } else {
+                            cmpCb.classList.remove('checked');
+                            cmpCb.textContent = '';
+                        }
+                    }
+
+                    // 更新并列标签（在左列中）
+                    let cmpSideTag = cmpLeftCol ? cmpLeftCol.querySelector('.bible-reader-side-tag') : null;
+                    if (existingCmp !== -1) {
+                        if (!cmpSideTag && cmpLeftCol) {
+                            cmpSideTag = cmpLeftCol.createDiv({ cls: 'bible-reader-side-tag' + (this.readerResults[existingCmp].sideBySide ? ' active' : '') });
+                            cmpSideTag.setText(this.readerResults[existingCmp].sideBySide ? '✓ 并列' : '并');
+                            cmpSideTag.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                this.toggleReaderCompareSideBySide(item, cmp, cmpKey);
+                            });
+                        } else if (cmpSideTag) {
+                            cmpSideTag.style.display = 'block';
+                            if (this.readerResults[existingCmp].sideBySide) {
+                                cmpSideTag.classList.add('active');
+                            } else {
+                                cmpSideTag.classList.remove('active');
+                            }
+                            cmpSideTag.textContent = this.readerResults[existingCmp].sideBySide ? '✓ 并列' : '并';
+                        }
+                    } else {
+                        if (cmpSideTag) cmpSideTag.style.display = 'none';
+                    }
+                }
+            }
+        }
+    }    toggleReaderItemSelection(item) {
         const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
+            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
         );
 
         if (existingIdx !== -1 && this.readerResults[existingIdx].selected) {
-            const result = this.readerResults[existingIdx];
-            const oldOrder = result.order;
-            result.selected = false;
-            result.sideBySide = false;
-            result.order = 0;
-            for (const r of this.readerResults) { if (r.selected && r.order > oldOrder) r.order--; }
-            this.readerSelectCounter--;
+            this.readerResults[existingIdx].selected = false;
+            this.readerResults[existingIdx].sideBySide = false;
+            this.readerResults[existingIdx].order = 0;
         } else {
             this.readerSelectCounter++;
             if (existingIdx !== -1) {
@@ -2505,12 +2926,13 @@ class BibleSearchView extends ItemView {
                 this.readerResults.push({ item: item, selected: true, order: this.readerSelectCounter, sideBySide: false });
             }
         }
-        this.refreshReaderItemCard(item);
+        this.recalcReaderOrders();
+        this.refreshAllReaderCards();
     }
 
     toggleReaderSideBySide(item) {
         const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content
+            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
         );
         if (existingIdx !== -1 && this.readerResults[existingIdx].selected) {
             this.readerResults[existingIdx].sideBySide = !this.readerResults[existingIdx].sideBySide;
@@ -2524,64 +2946,47 @@ class BibleSearchView extends ItemView {
         const themeEl = this.readerFixedTop.querySelector('.bible-reader-book-theme');
         if (themeEl) themeEl.style.fontSize = this.readerFontSize + 'px';
     }
+
     async openVerseLocation(item) {
         const book = BOOK_ID_MAP[item.bookId];
         if (!book) {
             new Notice('未知书卷');
             return;
         }
-
-        // 设置阅读状态：主题/纲目若 chapter 为 0 则默认到第 1 章
         this.readerBook = book;
         this.readerChapter = item.chapter > 0 ? item.chapter : 1;
         this.readerState = 'content';
-
-        // 切换到阅读标签（手动控制，避免触发未 await 的 renderReader）
         this.activeTab = 'reader';
         this.tabSearch.classList.remove('active');
         this.tabReader.classList.add('active');
         if (this.searchPanel) this.searchPanel.style.display = 'none';
         if (this.readerPanel) this.readerPanel.style.display = 'flex';
-
-        // 清空旧内容，避免残留
         if (this.readerContent) this.readerContent.empty();
         if (this.readerFixedTop) this.readerFixedTop.empty();
-
-        // 渲染目标章节并等待完成（确保 DOM 已构建）
         await this.renderChapterContent();
-
-        // 高亮并滚动到目标项
         this.scrollToReaderItem(item);
-
-        // 同步专注模式按钮状态
         this.updateFocusModeBtn();
     }
 
     scrollToReaderItem(item) {
-        // 在整个阅读面板中查找对应 lineIndex 的卡片（主题在顶部固定区，纲目/经文在滚动区）
         const card = this.readerPanel.querySelector('.bible-reader-verse-card[data-line-index="' + item.lineIndex + '"]');
         if (!card) {
-            // 若找不到（如 chapter=0 的纲目已被章节过滤），则滚动到顶部
             if (this.readerScrollArea) this.readerScrollArea.scrollTop = 0;
             return;
         }
-
-        // 添加高亮样式并平滑滚动到视野中央
         card.classList.add('bible-jump-highlight');
         card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        // 3 秒后自动移除高亮
         setTimeout(() => {
             card.classList.remove('bible-jump-highlight');
         }, 3000);
     }
-
 }
 
 // ==================== 插件主类 ====================
 class BibleSearchPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
+        await this.syncScannedVersions();
         this.parser = new BibleParser(this.app, this.settings, this.manifest.dir);
         this.searchEngine = new BibleSearchEngine();
         this.allItems = [];
@@ -2592,6 +2997,7 @@ class BibleSearchPlugin extends Plugin {
         this.addCommand({ id: 'open-bible-search', name: '打开圣经检索', callback: () => this.activateSearchView() });
         this.addSettingTab(new BibleSettingTab(this.app, this));
 
+        await this.migrateOldData();
         await this.loadBibleData();
 
         this.registerEvent(this.app.workspace.onLayoutReady(() => {
@@ -2609,128 +3015,178 @@ class BibleSearchPlugin extends Plugin {
         for (const leaf of leaves) {
             try { leaf.detach(); } catch (e) {}
         }
-        // 清理所有圣经相关的 DOM 元素
         document.querySelectorAll('.bible-projection-fullscreen').forEach(el => el.remove());
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, {
-            dataSource: 'builtin',
-            oldTestamentPath: '圣经/旧约',
-            newTestamentPath: '圣经/新约',
+        const defaults = {
+            versions: [],
             hasSetup: false,
             autoCheckUpdate: true,
-            lastVersion: ''
-        }, await this.loadData());
-        if (!this.settings.dataSource) {
-            this.settings.dataSource = 'external';
-        }
+            lastVersion: '',
+            readerResults: [],
+            readerSelectCounter: 0
+        };
+        const loaded = await this.loadData() || {};
+        this.settings = Object.assign({}, defaults, loaded);
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
     }
 
-    async getBuiltinDataInfo() {
-        const info = { available: false, foundItems: [], triedPaths: [] };
+    async migrateOldData() {
         try {
             const pluginId = this.manifest?.id || 'bible-search-reader';
-            const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
-            let allPaths = [adapterPath];
+            const oldFile = `.obsidian/plugins/${pluginId}/bible-data.json`;
+            const newFile = `.obsidian/plugins/${pluginId}/bible-crv-data.json`;
+
+            if (await this.app.vault.adapter.exists(oldFile)) {
+                if (!(await this.app.vault.adapter.exists(newFile))) {
+                    const data = await this.app.vault.adapter.read(oldFile);
+                    await this.app.vault.adapter.write(newFile, data);
+                }
+                if (!this.settings.versions.find(v => v.key === 'CRV')) {
+                    this.settings.versions.push({
+                        key: 'CRV',
+                        name: '恢复本（推荐）',
+                        file: 'bible-crv-data.json',
+                        enabled: true,
+                        isPrimary: this.settings.versions.length === 0,
+                        installed: true
+                    });
+                    await this.saveSettings();
+                }
+            }
+        } catch (e) {
+            console.error('[Bible] 迁移旧数据失败:', e);
+        }
+    }
+
+    async syncScannedVersions() {
+        const scanned = await this.scanBibleVersions();
+
+        // 先去重：按 key 保留第一个出现的版本
+        const deduped = [];
+        const seenKeys = new Set();
+        for (const ver of this.settings.versions) {
+            if (!seenKeys.has(ver.key)) {
+                seenKeys.add(ver.key);
+                deduped.push(ver);
+            }
+        }
+        this.settings.versions = deduped;
+
+        // 如果没有任何版本，初始化默认版本列表（优先选中恢复本）
+        if (this.settings.versions.length === 0) {
+            // 按 DEFAULT_VERSIONS 顺序：CRV 优先，CUVS 次之
+            for (let i = 0; i < DEFAULT_VERSIONS.length; i++) {
+                const dv = DEFAULT_VERSIONS[i];
+                const found = scanned.find(s => s.key === dv.key);
+                // 第一个找到的版本设为已启用并作为主版本
+                this.settings.versions.push({
+                    key: dv.key,
+                    name: dv.name,
+                    file: dv.file,
+                    enabled: found ? (i === 0) : false,  // 第一个找到的启用
+                    isPrimary: found ? (i === 0) : false,
+                    installed: !!found
+                });
+            }
+        }
+
+        // 建立已有版本 Map
+        const existingMap = new Map(this.settings.versions.map(v => [v.key, v]));
+
+        // 更新现有版本的 installed 状态
+        for (const ver of this.settings.versions) {
+            const found = scanned.find(s => s.key === ver.key);
+            if (found) {
+                ver.installed = true;
+                if (!ver.file) ver.file = found.file;
+            }
+        }
+
+        // 添加新扫描到的版本（去重）
+        for (const s of scanned) {
+            if (!existingMap.has(s.key)) {
+                this.settings.versions.push({
+                    key: s.key,
+                    name: VERSION_MAP[s.key] || s.name,
+                    file: s.file,
+                    enabled: false,
+                    isPrimary: false,
+                    installed: true
+                });
+            }
+        }
+
+        // 确保主版本正确
+        const firstEnabled = this.settings.versions.find(v => v.enabled && v.installed);
+        for (const v of this.settings.versions) v.isPrimary = false;
+        if (firstEnabled) firstEnabled.isPrimary = true;
+
+        await this.saveSettings();
+    }
+
+    async scanBibleVersions() {
+        const versions = [];
+        try {
+            const pluginId = this.manifest?.id || 'bible-search-reader';
+            const pluginDir = `.obsidian/plugins/${pluginId}`;
 
             if (Platform.isDesktop) {
                 const fs = window.require('fs');
                 const path = window.require('path');
-                // 桌面端将相对路径转为绝对路径，便于后续去重
+                let dirPath = '';
                 try {
                     const basePath = this.app.vault.adapter.getBasePath();
-                    allPaths[0] = path.join(basePath, adapterPath);
-                } catch (e) {}
-                if (this.manifest && this.manifest.dir) {
-                    allPaths.push(path.join(this.manifest.dir, 'bible-data.json'));
-                }
-                try {
-                    const basePath = this.app.vault.adapter.getBasePath();
-                    allPaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, 'bible-data.json'));
-                } catch (e) {}
-                // 路径规范化并去重
-                allPaths = [...new Set(allPaths.map(p => path.normalize(p)))];
-            }
-
-            for (const dataPath of allPaths) {
-                info.triedPaths.push(dataPath);
-                let exists = false;
-                let raw = null;
-
-                if (Platform.isDesktop) {
-                    const fs = window.require('fs');
-                    if (fs.existsSync(dataPath)) {
-                        exists = true;
-                        raw = fs.readFileSync(dataPath, 'utf-8');
-                    }
-                } else {
-                    // 移动端只能通过 vault adapter 访问
-                    const relPath = dataPath;
-                    if (await this.app.vault.adapter.exists(relPath)) {
-                        exists = true;
-                        raw = await this.app.vault.adapter.read(relPath);
+                    dirPath = path.join(basePath, pluginDir);
+                } catch (e) {
+                    if (this.manifest && this.manifest.dir) {
+                        dirPath = this.manifest.dir;
                     }
                 }
-
-                if (exists && raw) {
-                    try {
-                        const data = JSON.parse(raw);
-                        if (Array.isArray(data)) {
-                            const bookIds = new Set();
-                            for (const item of data) { if (item.bookId) bookIds.add(item.bookId); }
-                            info.foundItems.push({
-                                path: dataPath,
-                                itemCount: data.length,
-                                bookCount: bookIds.size
-                            });
-                            info.available = true;
+                if (dirPath && fs.existsSync(dirPath)) {
+                    const files = fs.readdirSync(dirPath);
+                    for (const file of files) {
+                        const match = file.match(/^bible-([a-z0-9]+)-data\.json$/i);
+                        if (match) {
+                            const key = match[1].toUpperCase();
+                            const name = VERSION_MAP[key] || key;
+                            versions.push({ key, name, file, installed: true });
                         }
-                    } catch (e) {}
+                    }
+                }
+            } else {
+                if (await this.app.vault.adapter.exists(pluginDir)) {
+                    const list = await this.app.vault.adapter.list(pluginDir);
+                    for (const file of list.files) {
+                        const basename = file.split('/').pop();
+                        const match = basename.match(/^bible-([a-z0-9]+)-data\.json$/i);
+                        if (match) {
+                            const key = match[1].toUpperCase();
+                            const name = VERSION_MAP[key] || key;
+                            versions.push({ key, name, file: basename, installed: true });
+                        }
+                    }
                 }
             }
         } catch (e) {
-            console.error('[Bible] 检查内置数据失败:', e);
-            info.error = e.message;
+            console.error('[Bible] 扫描版本失败:', e);
         }
-        return info;
+        return versions;
     }
 
-    async deleteBuiltinData(dataPath) {
-        try {
-            if (Platform.isDesktop) {
-                const fs = window.require('fs');
-                if (fs.existsSync(dataPath)) {
-                    fs.unlinkSync(dataPath);
-                    return true;
-                }
-            }
-            // 移动端或 fs 删除失败时，尝试通过 vault adapter 删除（相对路径）
-            const relPath = dataPath;
-            if (await this.app.vault.adapter.exists(relPath)) {
-                await this.app.vault.adapter.remove(relPath);
-                return true;
-            }
-        } catch (e) {
-            console.error('[Bible] 删除内置数据失败:', e);
-            throw e;
-        }
-        return false;
-    }
-
-    async downloadBuiltinData() {
+    async downloadVersionData(versionConfig) {
         const pluginId = this.manifest?.id || 'bible-search-reader';
-        const adapterPath = `.obsidian/plugins/${pluginId}/bible-data.json`;
-        let savedPath = adapterPath;
+        const file = versionConfig.file;
+        const adapterPath = `.obsidian/plugins/${pluginId}/${file}`;
 
-        const notice = new Notice('正在下载内置数据...', 0);
+        const notice = new Notice(`正在下载 ${versionConfig.name}...`, 0);
         const startTime = Date.now();
         try {
-            const response = await requestUrl({ url: BIBLE_DATA_URL, method: 'GET' });
+            const response = await requestUrl({ url: versionConfig.url, method: 'GET' });
             if (response.status !== 200) {
                 throw new Error('HTTP ' + response.status);
             }
@@ -2746,86 +3202,55 @@ class BibleSearchPlugin extends Plugin {
                 if (!fs.existsSync(targetDir)) {
                     fs.mkdirSync(targetDir, { recursive: true });
                 }
-                const targetPath = path.join(targetDir, 'bible-data.json');
+                const targetPath = path.join(targetDir, file);
                 fs.writeFileSync(targetPath, Buffer.from(response.arrayBuffer));
-                savedPath = targetPath;
-                console.log('[Bible] 内置数据下载完成:', targetPath);
             } else {
                 const dirPath = `.obsidian/plugins/${pluginId}`;
                 if (!(await this.app.vault.adapter.exists(dirPath))) {
                     await this.app.vault.adapter.mkdir(dirPath);
                 }
                 await this.app.vault.adapter.writeBinary(adapterPath, response.arrayBuffer);
-                console.log('[Bible] 内置数据下载完成:', adapterPath);
             }
 
             notice.hide();
-            new Notice('下载完成！' + sizeMB + 'MB，速度 ' + speed + 'MB/s\n保存位置: ' + savedPath, 6000);
+            new Notice(`${versionConfig.name} 下载完成！${sizeMB}MB，速度 ${speed}MB/s`, 6000);
         } catch (e) {
             notice.hide();
             throw e;
         }
     }
 
-    async downloadAndExtractBible(url) {
-        if (!Platform.isDesktop) {
-            new Notice('移动端暂不支持自动解压，请手动下载 ZIP 文件并解压到 Vault 目录，然后在设置中配置圣经目录路径。', 8000);
-            return;
-        }
-        const fs = window.require('fs');
-        const path = window.require('path');
-        const { execSync } = window.require('child_process');
-        const vaultBasePath = this.app.vault.adapter.getBasePath();
-
-        const notice = new Notice('正在下载圣经文档...', 0);
-        const startTime = Date.now();
-        let response;
+    async deleteVersionData(versionConfig) {
         try {
-            response = await requestUrl({ url: url, method: 'GET' });
-            if (response.status !== 200) {
-                throw new Error('HTTP ' + response.status);
+            const pluginId = this.manifest?.id || 'bible-search-reader';
+            const file = versionConfig.file;
+            const adapterPath = `.obsidian/plugins/${pluginId}/${file}`;
+
+            if (Platform.isDesktop) {
+                const fs = window.require('fs');
+                const path = window.require('path');
+                const basePath = this.app.vault.adapter.getBasePath();
+                const filePath = path.join(basePath, '.obsidian', 'plugins', pluginId, file);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    return true;
+                }
+            }
+            if (await this.app.vault.adapter.exists(adapterPath)) {
+                await this.app.vault.adapter.remove(adapterPath);
+                return true;
             }
         } catch (e) {
-            notice.hide();
+            console.error(`[Bible] 删除版本 ${versionConfig.key} 失败:`, e);
             throw e;
         }
-        const elapsed = (Date.now() - startTime) / 1000;
-        const sizeMB = (response.arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
-        const speed = (sizeMB / elapsed).toFixed(2);
-        notice.setMessage('下载完成 ' + sizeMB + 'MB (' + speed + 'MB/s)，正在解压...');
-
-        const tempZip = path.join(vaultBasePath, '.obsidian', 'temp-bible-download.zip');
-        if (!fs.existsSync(path.dirname(tempZip))) {
-            fs.mkdirSync(path.dirname(tempZip), { recursive: true });
-        }
-        fs.writeFileSync(tempZip, Buffer.from(response.arrayBuffer));
-
-        const extractTarget = path.join(vaultBasePath, '圣经');
-        if (!fs.existsSync(extractTarget)) fs.mkdirSync(extractTarget, { recursive: true });
-
-        if (process.platform === 'win32') {
-            execSync(`PowerShell -Command "Expand-Archive -Path '${tempZip}' -DestinationPath '${extractTarget}' -Force"`, { timeout: 60000 });
-        } else {
-            execSync(`unzip -o "${tempZip}" -d "${extractTarget}"`, { timeout: 60000 });
-        }
-
-        fs.unlinkSync(tempZip);
-
-        this.settings.oldTestamentPath = '圣经/旧约';
-        this.settings.newTestamentPath = '圣经/新约';
-        this.settings.dataSource = 'external';
-        await this.saveSettings();
-
-        notice.hide();
-        new Notice('解压完成！共 ' + sizeMB + 'MB');
-        console.log('[Bible] 外置圣经数据下载并解压完成');
+        return false;
     }
 
     async loadBibleData() {
         try {
             this.allItems = await this.parser.parseAllBooks();
             if (this.searchEngine) this.searchEngine.setItems(this.allItems);
-            console.log('[Bible] 数据加载完成，共 ' + this.allItems.length + ' 条');
         } catch (e) {
             console.error('[Bible] 加载失败:', e);
             new Notice('加载圣经数据失败，请检查设置: ' + e.message);
@@ -2926,31 +3351,17 @@ class BibleSearchPlugin extends Plugin {
             notice.setMessage('下载完成 ' + totalMB + 'MB (' + speed + 'MB/s)，正在安装...');
 
             const pluginId = this.manifest?.id || 'bible-search-reader';
-            const pluginDir = '.obsidian/plugins/' + pluginId;
+            const pluginDir = `.obsidian/plugins/${pluginId}`;
 
-            if (Platform.isDesktop) {
-                const fs = window.require('fs');
-                const path = window.require('path');
-                const basePath = this.app.vault.adapter.getBasePath();
-                const absPluginDir = path.join(basePath, pluginDir);
-                if (!fs.existsSync(absPluginDir)) {
-                    fs.mkdirSync(absPluginDir, { recursive: true });
-                }
-                fs.writeFileSync(path.join(absPluginDir, 'main.js'), Buffer.from(mainResp.arrayBuffer));
-                fs.writeFileSync(path.join(absPluginDir, 'manifest.json'), Buffer.from(manifestResp.arrayBuffer));
-                if (stylesResp.status === 200) {
-                    fs.writeFileSync(path.join(absPluginDir, 'styles.css'), Buffer.from(stylesResp.arrayBuffer));
-                }
-            } else {
-                // 移动端通过 vault adapter 写入
-                if (!(await this.app.vault.adapter.exists(pluginDir))) {
-                    await this.app.vault.adapter.mkdir(pluginDir);
-                }
-                await this.app.vault.adapter.writeBinary(pluginDir + '/main.js', mainResp.arrayBuffer);
-                await this.app.vault.adapter.writeBinary(pluginDir + '/manifest.json', manifestResp.arrayBuffer);
-                if (stylesResp.status === 200) {
-                    await this.app.vault.adapter.writeBinary(pluginDir + '/styles.css', stylesResp.arrayBuffer);
-                }
+            // 使用 vault.adapter 跨平台写入文件
+            if (!(await this.app.vault.adapter.exists(pluginDir))) {
+                await this.app.vault.adapter.mkdir(pluginDir);
+            }
+
+            await this.app.vault.adapter.writeBinary(`${pluginDir}/main.js`, mainResp.arrayBuffer);
+            await this.app.vault.adapter.writeBinary(`${pluginDir}/manifest.json`, manifestResp.arrayBuffer);
+            if (stylesResp.status === 200) {
+                await this.app.vault.adapter.writeBinary(`${pluginDir}/styles.css`, stylesResp.arrayBuffer);
             }
 
             this.settings.lastVersion = targetVersion;
