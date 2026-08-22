@@ -686,12 +686,13 @@
 .bible-reader-jump-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 10px;
-    padding: 8px;
+    padding: 6px 8px;
     background: var(--background-secondary);
     border-radius: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow: hidden;
 }
 .bible-reader-jump-label {
     font-size: 12px;
@@ -700,14 +701,20 @@
     white-space: nowrap;
 }
 .bible-reader-jump-select {
-    padding: 4px 8px;
+    padding: 4px 6px;
     border: 1px solid var(--background-modifier-border);
     border-radius: 4px;
     background: var(--background-primary);
     color: var(--text-normal);
     font-size: 12px;
     cursor: pointer;
-    min-width: 100px;
+    min-width: 50px;
+    max-width: 120px;
+    width: auto;
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .bible-reader-jump-select:focus {
     border-color: var(--bible-accent);
@@ -980,7 +987,9 @@
 .bible-reader-fixed-top.focus-mode .bible-reader-jump-row,
 .bible-reader-fixed-top.focus-mode .bible-reader-font-row,
 .bible-reader-fixed-top.focus-mode .bible-reader-content-nav,
-.bible-reader-fixed-top.focus-mode .bible-reader-book-theme {
+.bible-reader-fixed-top.focus-mode .bible-reader-book-theme,
+.bible-reader-fixed-top.focus-mode .bible-section,
+.bible-reader-fixed-top.focus-mode .bible-results-header {
     display: none !important;
 }
 
@@ -1554,3 +1563,24 @@
     margin-top: 2px;
 }
 
+
+/* ===== 对照按钮样式（与专注按钮一致） ===== */
+.bible-compare-toggle-btn {
+    padding: 3px 10px;
+    border: 1px solid var(--bible-accent);
+    border-radius: 4px;
+    background: var(--bible-accent);
+    color: var(--text-on-accent);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: auto;
+}
+.bible-compare-toggle-btn:hover {
+    opacity: 0.9;
+}
+.bible-compare-toggle-btn.active {
+    background: var(--text-on-accent);
+    color: var(--bible-accent);
+}

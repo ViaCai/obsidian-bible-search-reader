@@ -261,7 +261,8 @@ class FirstRunModal extends Modal {
             checkbox.style.height = '18px';
             checkbox.style.cursor = 'pointer';
             checkbox.checked = ver.enabled;
-            if (!ver.installed) checkbox.disabled = true;
+            // 未安装的版本也可以勾选，确认时会自动下载
+            // if (!ver.installed) checkbox.disabled = true;
 
             const info = row.createDiv();
             info.style.flex = '1';
@@ -1864,9 +1865,9 @@ class BibleSearchView extends ItemView {
     updateFocusModeBtn() {
         if (!this.focusModeBtn) return;
         if (this.activeTab === 'search') {
-            this.focusModeBtn.textContent = this.searchFocusMode ? '退出专注' : '专注';
+            this.focusModeBtn.textContent = this.searchFocusMode ? '取消' : '专注';
         } else {
-            this.focusModeBtn.textContent = this.readerFocusMode ? '退出专注' : '专注';
+            this.focusModeBtn.textContent = this.readerFocusMode ? '取消' : '专注';
         }
     }
 
@@ -3001,7 +3002,8 @@ class BibleSearchPlugin extends Plugin {
         await this.loadBibleData();
 
         this.registerEvent(this.app.workspace.onLayoutReady(() => {
-            if (!this.settings.hasSetup) {
+            const hasInstalledVersion = this.settings.versions.some(v => v.installed);
+            if (!this.settings.hasSetup || !hasInstalledVersion) {
                 new FirstRunModal(this.app, this).open();
             }
             if (this.settings.autoCheckUpdate) {
@@ -3098,12 +3100,17 @@ class BibleSearchPlugin extends Plugin {
         // 建立已有版本 Map
         const existingMap = new Map(this.settings.versions.map(v => [v.key, v]));
 
-        // 更新现有版本的 installed 状态
+        // 更新现有版本的 installed 状态（真实反映文件是否存在）
         for (const ver of this.settings.versions) {
             const found = scanned.find(s => s.key === ver.key);
             if (found) {
                 ver.installed = true;
                 if (!ver.file) ver.file = found.file;
+            } else {
+                // 文件已被删除，标记为未安装
+                ver.installed = false;
+                ver.enabled = false;
+                ver.isPrimary = false;
             }
         }
 
