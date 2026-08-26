@@ -1,4 +1,4 @@
-# 圣经检索与阅读 (Bible Search and Reader) v2.1.1
+# 圣经检索与阅读 (Bible Search and Reader) v2.1.2
 
 ![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -35,6 +35,10 @@
 ### 数据缺失自动检测
 
 插件每次启动时都会真实扫描插件目录下的圣经数据文件。如果数据文件被删除或从未下载，会自动弹出版本选择引导窗口，确保始终至少有一个可用的圣经版本。
+
+### 跨书卷选中管理
+
+阅读视图中，选中内容仅在当前书卷内有效。切换书卷时会自动过滤掉旧书卷的选中项，避免计数跨书卷累加。同一书卷内跨章节选中不受影响，方便投影连续章节内容。
 
 ### 版本管理
 
@@ -206,3 +210,11 @@
 ## 许可证
 
 MIT License
+
+## ☕ 如果觉得这款插件对您有帮助，也可以支持我的项目，
+
+加6:10 所以我们有了时机，就当向众人行善，尤其是向信仰之家的人。
+
+<img src="images/wechat-pay.png" alt="微信收款码" width="240" />
+
+
