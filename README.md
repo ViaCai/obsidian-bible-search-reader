@@ -1,4 +1,4 @@
-# 圣经检索与阅读 (Bible Search and Reader) v2.1.1
+# 圣经检索与阅读 (Bible Search and Reader) v2.1.2
 
 ![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
