@@ -215,6 +215,6 @@ MIT License
 
 加6:10 所以我们有了时机，就当向众人行善，尤其是向信仰之家的人。
 
-<img src="images/wechat-pay.png" alt="微信收款码" width="240" />
+<img src="https://raw.githubusercontent.com/ViaCai/bitiful-helper/main/images/wechat-pay.png" alt="微信收款码" width="240" />
 
 
