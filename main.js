@@ -79,10 +79,172 @@ for (const book of BIBLE_BOOKS) {
 }
 BOOK_MAP['约二'] = BOOK_MAP['约贰'];
 BOOK_MAP['约三'] = BOOK_MAP['约叁'];
+// 书卷别名映射（用于引用识别）
+const BOOK_ALIASES = {
+    // 福音书别名
+    '路加': '路', '马太': '太', '马可': '可', '约翰': '约',
+    '路加福音': '路', '马太福音': '太', '马可福音': '可', '约翰福音': '约',
+    // 书信别名
+    '彼得前书': '彼前', '彼得后书': '彼后',
+    '约翰一书': '约壹', '约翰二书': '约贰', '约翰三书': '约叁',
+    '提摩太前书': '提前', '提摩太后书': '提后',
+    // 历史书别名
+    '撒母耳记上': '撒上', '撒母耳记下': '撒下',
+    '列王纪上': '王上', '列王纪下': '王下',
+    '历代志上': '代上', '历代志下': '代下',
+    // 其他常见别名
+    '创世': '创', '出埃及': '出', '利未': '利', '民数': '民',
+    '申命': '申', '约书亚': '书', '士师': '士', '路得': '得',
+    '以斯拉': '拉', '尼希米': '尼', '以斯帖': '斯',
+    '约伯': '伯', '诗篇': '诗', '箴言': '箴', '传道': '传', '雅歌': '歌',
+    '以赛亚': '赛', '耶利米': '耶', '哀歌': '哀', '以西结': '结',
+    '但以理': '但', '何西阿': '何', '约珥': '珥', '阿摩司': '摩',
+    '俄巴底亚': '俄', '约拿': '拿', '弥迦': '弥', '那鸿': '鸿',
+    '哈巴谷': '哈', '西番雅': '番', '哈该': '该', '撒迦利亚': '亚',
+    '玛拉基': '玛', '罗马': '罗', '哥林多前': '林前', '哥林多后': '林后',
+    '加拉太': '加', '以弗所': '弗', '腓立比': '腓', '歌罗西': '西',
+    '帖撒罗尼迦前': '帖前', '帖撒罗尼迦后': '帖后',
+    '提多': '多', '腓利门': '门', '希伯来': '来', '雅各': '雅',
+    '犹大': '犹', '启示': '启', '启示录': '启',
+    // 英文别名
+    'Gen': '创', 'Genesis': '创',
+    'Ex': '出', 'Exodus': '出',
+    'Lev': '利', 'Leviticus': '利',
+    'Num': '民', 'Numbers': '民',
+    'Deut': '申', 'Deuteronomy': '申',
+    'Josh': '书', 'Joshua': '书',
+    'Judg': '士', 'Judges': '士',
+    'Ruth': '得',
+    '1Sam': '撒上', '1 Samuel': '撒上', '1Sa': '撒上',
+    '2Sam': '撒下', '2 Samuel': '撒下', '2Sa': '撒下',
+    '1Ki': '王上', '1 Kings': '王上',
+    '2Ki': '王下', '2 Kings': '王下',
+    '1Ch': '代上', '1 Chronicles': '代上',
+    '2Ch': '代下', '2 Chronicles': '代下',
+    'Ezra': '拉', 'Neh': '尼', 'Nehemiah': '尼',
+    'Esth': '斯', 'Esther': '斯',
+    'Job': '伯', 'Ps': '诗', 'Psa': '诗', 'Psalms': '诗',
+    'Prov': '箴', 'Proverbs': '箴',
+    'Eccl': '传', 'Ecclesiastes': '传', 'Song': '歌', 'Song of Solomon': '歌',
+    'Isa': '赛', 'Isaiah': '赛',
+    'Jer': '耶', 'Jeremiah': '耶', 'Lam': '哀', 'Lamentations': '哀',
+    'Ezek': '结', 'Ezekiel': '结',
+    'Dan': '但', 'Daniel': '但',
+    'Hos': '何', 'Hosea': '何', 'Joel': '珥', 'Amos': '摩',
+    'Obad': '俄', 'Jonah': '拿', 'Mic': '弥', 'Micah': '弥',
+    'Nah': '鸿', 'Hab': '哈', 'Zeph': '番', 'Hag': '该',
+    'Zech': '亚', 'Zechariah': '亚', 'Mal': '玛', 'Malachi': '玛',
+    'Matt': '太', 'Matthew': '太',
+    'Mark': '可', 'Mk': '可',
+    'Luke': '路', 'Lk': '路',
+    'John': '约', 'Jn': '约',
+    'Acts': '徒', 'Ac': '徒',
+    'Rom': '罗', 'Romans': '罗',
+    '1Cor': '林前', '1 Cor': '林前', '1Co': '林前',
+    '2Cor': '林后', '2 Cor': '林后', '2Co': '林后',
+    'Gal': '加', 'Galatians': '加',
+    'Eph': '弗', 'Ephesians': '弗',
+    'Phil': '腓', 'Philippians': '腓',
+    'Col': '西', 'Colossians': '西',
+    '1Thess': '帖前', '1 Thess': '帖前', '1Th': '帖前',
+    '2Thess': '帖后', '2 Thess': '帖后', '2Th': '帖后',
+    '1Tim': '提前', '1 Tim': '提前', '1Ti': '提前',
+    '2Tim': '提后', '2 Tim': '提后', '2Ti': '提后',
+    'Titus': '多', 'Tit': '多',
+    'Philem': '门', 'Philemon': '门',
+    'Heb': '来', 'Hebrews': '来',
+    'Jas': '雅', 'James': '雅',
+    '1Pet': '彼前', '1 Pet': '彼前', '1Pe': '彼前',
+    '2Pet': '彼后', '2 Pet': '彼后', '2Pe': '彼后',
+    '1John': '约壹', '1 Jn': '约壹', '1Jn': '约壹',
+    '2John': '约贰', '2 Jn': '约贰', '2Jn': '约贰',
+    '3John': '约叁', '3 Jn': '约叁', '3Jn': '约叁',
+    'Jude': '犹',
+    'Rev': '启', 'Revelation': '启',
+};
+for (const [alias, target] of Object.entries(BOOK_ALIASES)) {
+    if (BOOK_MAP[target] && !BOOK_MAP[alias]) {
+        BOOK_MAP[alias] = BOOK_MAP[target];
+    }
+}
+
+
 const BOOK_SHORT_NAMES = BIBLE_BOOKS.map(b => b.shortName);
 if (BOOK_MAP['约二'] && !BOOK_SHORT_NAMES.includes('约二')) BOOK_SHORT_NAMES.push('约二');
 if (BOOK_MAP['约三'] && !BOOK_SHORT_NAMES.includes('约三')) BOOK_SHORT_NAMES.push('约三');
 BOOK_SHORT_NAMES.sort((a, b) => b.length - a.length);
+
+
+// ===== 智能连写解析 =====
+// 正确区分章节，特别是中文数字
+function parseConnectedChapterVerse(text, pos, book) {
+    const remaining = text.slice(pos);
+    
+    // 模式1: 中文数字章节 + 阿拉伯数字节 (如 "加五22" → 第五章第22节)
+    const m1 = remaining.match(/^([一二三四五六七八九十百零]+)(\d+)/);
+    if (m1) {
+        const chapter = parseNumber(m1[1]);
+        const verse = parseInt(m1[2]);
+        if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters && 
+            !isNaN(verse) && verse >= 1 && verse <= 100) {
+            return { chapter, verse, consumed: m1[0].length };
+        }
+    }
+    
+    // 模式2: 阿拉伯数字章节 + 中文数字节 (如 "约3十二" → 第三章第12节)
+    const m2 = remaining.match(/^(\d+)([一二三四五六七八九十百零]+)/);
+    if (m2) {
+        const chapter = parseInt(m2[1]);
+        const verse = parseNumber(m2[2]);
+        if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters && 
+            !isNaN(verse) && verse >= 1 && verse <= 100) {
+            return { chapter, verse, consumed: m2[0].length };
+        }
+    }
+    
+    // 模式3: 纯阿拉伯数字连写 (如 "约316" → 第三章第16节)
+    const m3 = remaining.match(/^(\d+)(\d+)/);
+    if (m3) {
+        const allDigits = m3[0];
+        // 尝试不同分割方式
+        for (let i = 1; i < allDigits.length; i++) {
+            const chapter = parseInt(allDigits.substring(0, i));
+            const verse = parseInt(allDigits.substring(i));
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters && 
+                !isNaN(verse) && verse >= 1 && verse <= 150) {
+                return { chapter, verse, consumed: i };
+            }
+        }
+    }
+    
+    // 模式4: 纯中文数字连写 (如 "约五十二" → 第五章第十二节)
+    const m4 = remaining.match(/^([一二三四五六七八九十百零]+)([一二三四五六七八九十百零]+)/);
+    if (m4) {
+        const chapter = parseNumber(m4[1]);
+        const verse = parseNumber(m4[2]);
+        if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters && 
+            !isNaN(verse) && verse >= 1 && verse <= 100) {
+            return { chapter, verse, consumed: m4[0].length };
+        }
+    }
+    
+    return null;
+}
+
+// ===== 引导词处理 =====
+const REFERENCE_GUIDE_WORDS = [
+    '论到', '说到', '提及', '提到', '说', '讲', '道', 
+    '经上记着', '经上写着', '圣经说', '先知说', '主说'
+];
+
+function skipGuideWords(text, pos) {
+    for (const word of REFERENCE_GUIDE_WORDS) {
+        if (text.slice(pos).startsWith(word)) {
+            return pos + word.length;
+        }
+    }
+    return pos;
+}
 
 // ==================== 版本数据配置 ====================
 const VERSION_MAP = {
@@ -3046,7 +3208,28 @@ class BibleSearchPlugin extends Plugin {
         this.searchEngine = new BibleSearchEngine();
         this.allItems = [];
 
-        this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => new BibleSearchView(leaf, this));
+        this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => new BibleSearchView(leaf, this))
+
+        // 构建书卷名列表（用于引用识别）
+        this.allBookNames = this.buildBookNameList();
+        this.verseIndex = new Map();
+
+        // 注册文章内圣经引用自动高亮
+        this.registerMarkdownPostProcessor((element, context) => {
+            try {
+                if (this.allItems.length === 0) {
+                    this.loadBibleData().then(() => {
+                        this.buildVerseIndex();
+                        this.highlightBibleReferences(element);
+                    });
+                } else {
+                    if (this.verseIndex.size === 0) this.buildVerseIndex();
+                    this.highlightBibleReferences(element);
+                }
+            } catch (e) {
+                console.error('[Bible] PostProcessor error:', e);
+            }
+        });;
 
         this.addRibbonIcon('book-plus', '圣经检索', () => { this.activateSearchView(); });
         this.addCommand({ id: 'open-bible-search', name: '打开圣经检索', callback: () => this.activateSearchView() });
@@ -3449,7 +3632,784 @@ class BibleSearchPlugin extends Plugin {
         }
         return 0;
     }
+
+    // ==================== 文章内圣经引用高亮 ====================
+
+    buildBookNameList() {
+        const names = new Set();
+        for (const book of BIBLE_BOOKS) {
+            names.add(book.fullName);
+            names.add(book.shortName);
+        }
+        if (BOOK_MAP['约二']) names.add('约二');
+        if (BOOK_MAP['约三']) names.add('约三');
+        for (const alias of Object.keys(BOOK_ALIASES)) {
+            if (BOOK_MAP[alias]) names.add(alias);
+        }
+        return Array.from(names).sort((a, b) => b.length - a.length);
+    }
+
+    buildVerseIndex() {
+        this.verseIndex.clear();
+        const primaryKey = this.getPrimaryVersionKey();
+        if (!primaryKey) return;
+        for (const item of this.allItems) {
+            if (item.versionKey !== primaryKey || item.type !== 'verse') continue;
+            const key = `${item.bookId}-${item.chapter}-${item.verse}`;
+            this.verseIndex.set(key, item);
+        }
+    }
+
+    getPrimaryVersionKey() {
+        const pv = this.settings.versions.find(v => v.isPrimary && v.enabled && v.installed);
+        return pv ? pv.key : null;
+    }
+
+    highlightBibleReferences(element) {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+        const textNodes = [];
+        let node;
+        while ((node = walker.nextNode()) !== null) {
+            if (this.shouldSkipNode(node)) continue;
+            textNodes.push(node);
+        }
+        let globalLastBookId = null;
+        let globalLastChapter = null;
+        let globalLastStrongChapter = null;
+        for (const textNode of textNodes) {
+            const text = textNode.textContent;
+            if (!text || text.trim().length === 0) continue;
+            const matches = this.findBibleReferences(text, globalLastBookId, globalLastChapter);
+            if (matches.length === 0) continue;
+            const fragment = document.createDocumentFragment();
+            let lastIndex = 0;
+            for (const match of matches) {
+                if (match.start > lastIndex) {
+                    fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.start)));
+                }
+                const span = document.createElement('span');
+                span.className = 'bible-inline-ref';
+                span.textContent = match.text;
+                span.dataset.bookId = match.bookId;
+                span.dataset.chapter = match.allRefs[0].chapter;
+                span.dataset.verse = match.allRefs[0].verse || '';
+                span.dataset.verseEnd = match.allRefs[0].verseEnd || '';
+                span.dataset.suffix = match.allRefs[0].suffix || '';
+                span.addEventListener('mouseenter', (e) => { this.showVerseTooltip(e.target, match); });
+                span.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.jumpToBibleReader(match); });
+                fragment.appendChild(span);
+                lastIndex = match.end;
+            }
+            if (lastIndex < text.length) {
+                fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+            if (textNode.parentNode) {
+                textNode.parentNode.replaceChild(fragment, textNode);
+            }
+            const lastMatch = matches[matches.length - 1];
+            globalLastBookId = lastMatch.bookId;
+            globalLastChapter = lastMatch.allRefs[lastMatch.allRefs.length - 1].chapter;
+            // 如果是强引用（有 bookName），更新强引用上下文
+            if (lastMatch.bookName) {
+                globalLastStrongChapter = lastMatch.allRefs[lastMatch.allRefs.length - 1].chapter;
+            }
+            // 如果文本以句号/问号/感叹号结束，重置上下文（新句子）
+            if (/[。！？]/.test(text.trim().slice(-1))) {
+                globalLastBookId = null;
+                globalLastChapter = null;
+                globalLastStrongChapter = null;
+            }
+        }
+    }
+
+    shouldSkipNode(node) {
+        const parent = node.parentElement;
+        if (!parent) return false;
+        const tag = parent.tagName.toLowerCase();
+        if (tag === 'code' || tag === 'pre' || tag === 'a') return true;
+        if (parent.classList.contains('bible-inline-ref')) return true;
+        if (parent.closest('code') || parent.closest('pre')) return true;
+        return false;
+    }
+
+    isCovered(pos, ranges) {
+        for (const r of ranges) {
+            if (pos >= r[0] && pos < r[1]) return true;
+        }
+        return false;
+    }
+
+    findBibleReferences(text, lastBookId, lastChapter, lastStrongChapter) {
+        const matches = [];
+        const coveredRanges = [];
+        // 阶段1: 强引用（带书卷名）
+        for (const name of this.allBookNames) {
+            let idx = 0;
+            while (true) {
+                idx = text.indexOf(name, idx);
+                if (idx === -1) break;
+                if (this.isCovered(idx, coveredRanges)) { idx++; continue; }
+                const cluster = this.parseRefCluster(text, idx, name);
+                if (cluster) {
+                    matches.push(cluster);
+                    coveredRanges.push([cluster.start, cluster.end]);
+                    idx = cluster.end;
+                } else {
+                    idx += name.length;
+                }
+            }
+        }
+        // 阶段2: 括号内弱引用
+        const bracketMatches = this.findBracketRefs(text, coveredRanges, matches, lastBookId, lastStrongChapter !== null ? lastStrongChapter : lastChapter);
+        for (const m of bracketMatches) {
+            matches.push(m);
+            coveredRanges.push([m.start, m.end]);
+        }
+        // 阶段3: 行首弱引用
+        const effectiveLastChapter = lastStrongChapter !== null ? lastStrongChapter : lastChapter;
+        if (lastBookId !== null) {
+            const weakMatches = this.findLineStartRefs(text, coveredRanges, lastBookId, effectiveLastChapter);
+            for (const m of weakMatches) {
+                matches.push(m);
+                coveredRanges.push([m.start, m.end]);
+            }
+        }
+        // 同一 text node 内，阶段1 已出现的书卷也作为后续行内弱引用的上下文
+        let localBookId = lastBookId;
+        let localChapter = effectiveLastChapter;
+        if (matches.length > 0) {
+            const last = matches[matches.length - 1];
+            if (last.bookId) localBookId = last.bookId;
+            if (last.allRefs && last.allRefs.length > 0) localChapter = last.allRefs[last.allRefs.length - 1].chapter;
+        }
+        // 阶段4: 句中“X章Y节”及其顿号延续（如“三章三节、七节”“四章一节”）
+        if (localBookId !== null) {
+            const chVerseMatches = this.findChapterVersePatternRefs(text, coveredRanges, localBookId, localChapter);
+            for (const m of chVerseMatches) {
+                matches.push(m);
+                coveredRanges.push([m.start, m.end]);
+            }
+        }
+        // 阶段5: 行内空白后的连写延续（如纲目行末“　一2”依附前一个书卷/章）
+        if (localBookId !== null) {
+            const contMatches = this.findInlineContinuationRefs(text, coveredRanges, localBookId, localChapter);
+            for (const m of contMatches) {
+                matches.push(m);
+                coveredRanges.push([m.start, m.end]);
+            }
+        }
+        matches.sort((a, b) => a.start - b.start);
+        return matches;
+    }
+
+    parseRefCluster(text, startPos, bookName) {
+        const book = BOOK_MAP[bookName];
+        if (!book) return null;
+        let pos = startPos + bookName.length;
+        while (pos < text.length && /\s/.test(text[pos])) pos++;
+        const first = this.parseSingleRef(text, pos, book);
+        if (!first) return null;
+        const refs = [{ chapter: first.chapter, verse: first.verse, verseEnd: first.verseEnd, suffix: first.suffix, endChapter: first.endChapter, endVerse: first.endVerse }];
+        pos = first.endPos;
+        while (true) {
+            // 跳过引导词（如“说”），支持“约壹四章十七节说……三章三节”这类写法
+            pos = skipGuideWords(text, pos);
+            // 检查范围分隔符
+            const rangeSep = text.slice(pos).match(/^\s*[~～\-－]\s*/);
+            if (rangeSep) {
+                pos += rangeSep[0].length;
+                const rangeEnd = this.parseRangeEnd(text, pos, book, refs[refs.length - 1].chapter);
+                if (rangeEnd) {
+                    const lastRef = refs[refs.length - 1];
+                    if (rangeEnd.crossChapter) {
+                        lastRef.endChapter = rangeEnd.chapter;
+                        lastRef.endVerse = rangeEnd.verse;
+                    } else {
+                        lastRef.verseEnd = rangeEnd.verse;
+                    }
+                    pos = rangeEnd.endPos;
+                    continue;
+                }
+            }
+            // 检查并列分隔符（含省略号 …；不跨行）；记录分隔前位置，后续解析失败时回退，避免把标点包进高亮
+            const sepStart = pos;
+            const listSep = text.slice(pos).match(/^[，、,;；…· \u3000]+/);
+            if (!listSep) break;
+            pos += listSep[0].length;
+            const next = this.parseContinuationItem(text, pos, book, refs[refs.length - 1].chapter);
+            if (!next) { pos = sepStart; break; }
+            refs.push({ chapter: next.chapter, verse: next.verse, verseEnd: next.verseEnd, suffix: next.suffix, endChapter: null, endVerse: null });
+            pos = next.endPos;
+        }
+        return {
+            text: text.slice(startPos, pos),
+            start: startPos, end: pos,
+            bookId: book.id, bookName: book.fullName, bookShortName: book.shortName,
+            allRefs: refs
+        };
+    }
+
+    parseSingleRef(text, pos, book) {
+        const startPos = pos;
+        // 格式1: chapter:verse
+        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        if (m1) {
+            const chapter = parseNumber(m1[1]);
+            const verse = parseNumber(m1[2]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters && !isNaN(verse) && verse >= 1) {
+                pos += m1[0].length;
+                const suffixMatch = text.slice(pos).match(/^[上中下]半?/);
+                let suffix = suffixMatch ? suffixMatch[0] : null;
+                if (suffix) pos += suffix.length;
+                return { chapter, verse, verseEnd: null, suffix, endChapter: null, endVerse: null, endPos: pos };
+            }
+        }
+        // 格式2: chapter章[第]verse节
+        const m2 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[章篇]/);
+        if (m2) {
+            const chapter = parseNumber(m2[1]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
+                pos += m2[0].length;
+                while (pos < text.length && /\s/.test(text[pos])) pos++;
+                const vm = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零]+|\d+)[节]?/);
+                if (vm) {
+                    const verse = parseNumber(vm[1]);
+                    if (!isNaN(verse) && verse >= 1) {
+                        pos += vm[0].length;
+                        const suffixMatch = text.slice(pos).match(/^[上中下]半?/);
+                        let suffix = suffixMatch ? suffixMatch[0] : null;
+                        if (suffix) pos += suffix.length;
+                        return { chapter, verse, verseEnd: null, suffix, endChapter: null, endVerse: null, endPos: pos };
+                    }
+                }
+                return { chapter, verse: null, verseEnd: null, suffix: null, endChapter: null, endVerse: null, endPos: pos };
+            }
+        }
+        // 格式3: chapterverse 连写（智能区分章节）
+        const m3 = parseConnectedChapterVerse(text, pos, book);
+        if (m3) {
+            pos += m3.consumed;
+            const suffixMatch = text.slice(pos).match(/^[上中下]半?/);
+            let suffix = suffixMatch ? suffixMatch[0] : null;
+            if (suffix) pos += suffix.length;
+            return { chapter: m3.chapter, verse: m3.verse, verseEnd: null, suffix, endChapter: null, endVerse: null, endPos: pos };
+        }
+        // 格式4: 只有章号
+        const m4 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)/);
+        if (m4) {
+            const chapter = parseNumber(m4[1]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
+                return { chapter, verse: null, verseEnd: null, suffix: null, endChapter: null, endVerse: null, endPos: pos + m4[0].length };
+            }
+        }
+        return null;
+    }
+
+    parseContinuationItem(text, pos, book, lastChapter) {
+        // 跳过引导词（如"论到这事说"等）
+        pos = skipGuideWords(text, pos);
+        
+        // 模式A: 章:节
+        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        if (m1) {
+            const chapter = parseNumber(m1[1]);
+            const verse = parseNumber(m1[2]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters && !isNaN(verse) && verse >= 1) {
+                let p = pos + m1[0].length;
+                const suffixMatch = text.slice(p).match(/^[上中下]半?/);
+                let suffix = suffixMatch ? suffixMatch[0] : null;
+                if (suffix) p += suffix.length;
+                const rangeMatch = text.slice(p).match(/^\s*[~～\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+                let verseEnd = null;
+                if (rangeMatch) {
+                    verseEnd = parseNumber(rangeMatch[1]);
+                    if (!isNaN(verseEnd) && verseEnd >= verse) p += rangeMatch[0].length;
+                    else verseEnd = null;
+                }
+                return { chapter, verse, verseEnd, suffix, endPos: p };
+            }
+        }
+        // 模式B: 只有节号（优先当 lastChapter 已知时）
+        // 注意：数字后若紧跟 章/篇/节 或另一个数字，则不是纯节号，应让位给“X章X节”或“章+节连写”
+        if (lastChapter !== null) {
+            const afterSeparator = /^[章节篇\d一二三四五六七八九十百零]/;
+            // digitStr 仅用于解析数字；consumedLen 为实际消耗长度（含可选的“节”字等）
+            const applyVerse = (digitStr, consumedLen) => {
+                const verse = parseNumber(digitStr);
+                if (isNaN(verse) || verse < 1) return null;
+                let p = pos + consumedLen;
+                const suffixMatch = text.slice(p).match(/^[上中下]半?/);
+                let suffix = suffixMatch ? suffixMatch[0] : null;
+                if (suffix) p += suffix.length;
+                const rangeMatch = text.slice(p).match(/^\s*[~～\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+                let verseEnd = null;
+                if (rangeMatch) {
+                    verseEnd = parseNumber(rangeMatch[1]);
+                    if (!isNaN(verseEnd) && verseEnd >= verse) p += rangeMatch[0].length;
+                    else verseEnd = null;
+                }
+                return { chapter: lastChapter, verse, verseEnd, suffix, endPos: p };
+            };
+            const mNum = text.slice(pos).match(/^(?:第\s*)?(\d+)[节]?/);
+            if (mNum && !afterSeparator.test(text.slice(pos + mNum[0].length))) {
+                const r = applyVerse(mNum[1], mNum[0].length);
+                if (r) return r;
+            }
+            const mCn = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零]+)[节]?/);
+            if (mCn && !afterSeparator.test(text.slice(pos + mCn[0].length))) {
+                const r = applyVerse(mCn[1], mCn[0].length);
+                if (r) return r;
+            }
+        }
+        // 模式C: 连写 chapter+verse（使用智能解析）
+        const m3 = parseConnectedChapterVerse(text, pos, book);
+        if (m3) {
+            let p = pos + m3.consumed;
+            const suffixMatch = text.slice(p).match(/^[上中下]半?/);
+            let suffix = suffixMatch ? suffixMatch[0] : null;
+            if (suffix) p += suffix.length;
+            const rangeMatch = text.slice(p).match(/^\s*[～~\\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+            let verseEnd = null;
+            if (rangeMatch) {
+                verseEnd = parseNumber(rangeMatch[1]);
+                if (!isNaN(verseEnd) && verseEnd >= m3.verse) p += rangeMatch[0].length;
+                else verseEnd = null;
+            }
+            return { chapter: m3.chapter, verse: m3.verse, verseEnd, suffix, endPos: p };
+        }
+        // 模式D: 章节节（中文量词）
+        const m2 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[章篇]/);
+        if (m2) {
+            const chapter = parseNumber(m2[1]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
+                let p = pos + m2[0].length;
+                while (p < text.length && /\s/.test(text[p])) p++;
+                const vm = text.slice(p).match(/^(?:第\s*)?([一二三四五六七八九十百零]+|\d+)[节]?/);
+                if (vm) {
+                    const verse = parseNumber(vm[1]);
+                    if (!isNaN(verse) && verse >= 1) {
+                        p += vm[0].length;
+                        const suffixMatch = text.slice(p).match(/^[上中下]半?/);
+                        let suffix = suffixMatch ? suffixMatch[0] : null;
+                        if (suffix) p += suffix.length;
+                        return { chapter, verse, verseEnd: null, suffix, endPos: p };
+                    }
+                }
+                return { chapter, verse: null, verseEnd: null, suffix: null, endPos: p };
+            }
+        }
+        return null;
+    }
+
+    parseRangeEnd(text, pos, book, currentChapter) {
+        // 尝试跨章: chapter:verse
+        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        if (m1) {
+            const chapter = parseNumber(m1[1]);
+            const verse = parseNumber(m1[2]);
+            if (!isNaN(chapter) && chapter > currentChapter && chapter <= book.maxChapters && !isNaN(verse) && verse >= 1) {
+                return { crossChapter: true, chapter, verse, endPos: pos + m1[0].length };
+            }
+        }
+        // 尝试跨章: chapterverse
+        const m2 = text.slice(pos).match(/^(([一二三四五六七八九十百零]+)(\d+)|(\d+)([一二三四五六七八九十百零]+)|(\d+)(\d+)|([一二三四五六七八九十百零]+)([一二三四五六七八九十百零]+))/);
+        if (m2) {
+            // 捕获组：1=外层；2/3=中文章+阿拉伯节；4/5=阿拉伯章+中文节；6/7=阿拉伯+阿拉伯；8/9=中文+中文
+            const cStr = m2[2] || m2[4] || m2[6] || m2[8];
+            const vStr = m2[3] || m2[5] || m2[7] || m2[9];
+            const chapter = parseNumber(cStr);
+            const verse = parseNumber(vStr);
+            if (!isNaN(chapter) && chapter > currentChapter && chapter <= book.maxChapters && !isNaN(verse) && verse >= 1) {
+                return { crossChapter: true, chapter, verse, endPos: pos + m2[0].length };
+            }
+        }
+        // 同章范围: 只有节号
+        const m3 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)/);
+        if (m3) {
+            const verse = parseNumber(m3[1]);
+            if (!isNaN(verse) && verse >= 1) {
+                return { crossChapter: false, verse, endPos: pos + m3[0].length };
+            }
+        }
+        return null;
+    }
+
+    findBracketRefs(text, coveredRanges, strongMatches, lastBookId, lastChapter) {
+        const matches = [];
+        const pattern = /[（〔(]([^）〕)]+)[）〕)]/g;
+        let m;
+        while ((m = pattern.exec(text)) !== null) {
+            const start = m.index;
+            const end = m.index + m[0].length;
+            if (this.isCovered(start, coveredRanges)) continue;
+            // 括号内容若本身以书卷名开头（允许前面有“参/参看”），说明其中包含强引用，
+            // 交给阶段1按书卷名解析；这里只处理依附前一个强引用的纯弱引用括号
+            if (this.bracketHasBookName(m[1])) continue;
+            const lastStrong = this.findLastStrongRef(start, strongMatches);
+            if (!lastStrong) continue;
+            const book = BOOK_ID_MAP[lastStrong.bookId];
+            if (!book) continue;
+            // 用前一个强引用所在的章作为初始章（如“约壹四16”后接“（18）”应解释为 4:18），
+            // 其次才用跨 text node 传入的上下文
+            const strongRefs = lastStrong.allRefs || [];
+            const strongChapter = strongRefs.length ? strongRefs[strongRefs.length - 1].chapter : null;
+            const initialChapter = strongChapter !== null ? strongChapter : lastChapter;
+            const refContent = m[1];
+            const refs = this.parseWeakRefList(refContent, book, initialChapter);
+            if (refs && refs.length > 0) {
+                matches.push({
+                    text: m[0], start, end,
+                    bookId: lastStrong.bookId,
+                    bookName: book.fullName,
+                    bookShortName: book.shortName,
+                    allRefs: refs
+                });
+            }
+        }
+        return matches;
+    }
+
+    // 判断括号内容去掉“参/参看/参考”后是否以某个书卷短名开头
+    bracketHasBookName(content) {
+        let s = content;
+        const gs = s.match(/^(?:参看|参考|参)/);
+        if (gs) s = s.slice(gs[0].length);
+        for (const bn of BOOK_SHORT_NAMES) {
+            if (s.startsWith(bn)) return true;
+        }
+        return false;
+    }
+
+    findLastStrongRef(pos, strongMatches) {
+        let lastRef = null;
+        for (const sm of strongMatches) {
+            if (sm.end <= pos) lastRef = sm;
+        }
+        return lastRef;
+    }
+
+    parseWeakRefList(content, book, initialLastChapter) {
+        const refs = [];
+        const parts = content.split(/[，、,;]/);
+        let lastChapter = initialLastChapter !== undefined ? initialLastChapter : null;
+        let currentBook = book;
+        for (const part of parts) {
+            const trimmed = part.trim();
+            if (!trimmed) continue;
+            const ref = this.parseWeakRef(trimmed, currentBook, lastChapter);
+            if (ref) {
+                refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix });
+                lastChapter = ref.chapter;
+                // 段首识别到新书卷时切换上下文（如括号内“赛四二4…参约四13…可九7”）
+                if (ref.book) currentBook = ref.book;
+            }
+        }
+        // 如果分割后没有结果，尝试整体解析（处理 "四34，十七4" 这种整体格式）
+        if (refs.length === 0) {
+            const ref = this.parseWeakRef(content, currentBook, lastChapter);
+            if (ref) {
+                refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix });
+            }
+        }
+        return refs;
+    }
+
+    parseWeakRef(text, book, lastChapter) {
+        let pos = 0;
+        while (pos < text.length && /\s/.test(text[pos])) pos++;
+        let remaining = text.slice(pos);
+        // 跳过“参/参看/参考”等前缀
+        const guideSkip = remaining.match(/^(?:参看|参考|参)/);
+        if (guideSkip) { pos += guideSkip[0].length; remaining = text.slice(pos); }
+        // 段首若为书卷名（如“赛四二4”“可九7”），切换到对应书卷
+        let currentBook = book;
+        for (const bn of BOOK_SHORT_NAMES) {
+            if (remaining.startsWith(bn) && BOOK_MAP[bn]) {
+                currentBook = BOOK_MAP[bn];
+                pos += bn.length;
+                remaining = text.slice(pos);
+                break;
+            }
+        }
+        // 纯节号后若紧跟 章/篇/节 或另一个数字，则不是纯节号，让位给 X章 / 连写
+        const afterSeparator = /^[章节篇\d一二三四五六七八九十百零]/;
+        // 模式A: 章:节
+        const m1 = remaining.match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        if (m1) {
+            const chapter = parseNumber(m1[1]);
+            const verse = parseNumber(m1[2]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= currentBook.maxChapters && !isNaN(verse) && verse >= 1) {
+                return { chapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m1[0].length };
+            }
+        }
+        // 模式B: 章节节（中文量词）
+        const m2 = remaining.match(/^([一二三四五六七八九十百零]+|\d+)[章篇]\s*(?:第\s*)?([一二三四五六七八九十百零]+|\d+)[节]?/);
+        if (m2) {
+            const chapter = parseNumber(m2[1]);
+            const verse = parseNumber(m2[2]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= currentBook.maxChapters && !isNaN(verse) && verse >= 1) {
+                return { chapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m2[0].length };
+            }
+        }
+        // 模式C: 只有节号（优先当 lastChapter 已知）
+        if (lastChapter !== null) {
+            // 纯数字（如 "18"）应被视为节号
+            const m4 = remaining.match(/^(\d+)/);
+            if (m4 && !afterSeparator.test(remaining.slice(m4[0].length))) {
+                const verse = parseInt(m4[1]);
+                if (!isNaN(verse) && verse >= 1 && verse <= 200) {
+                    return { chapter: lastChapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m4[0].length };
+                }
+            }
+            // 中文数字节号
+            const m5 = remaining.match(/^(?:第\s*)?([一二三四五六七八九十百零]+)[节]?/);
+            if (m5 && !afterSeparator.test(remaining.slice(m5[0].length))) {
+                const verse = parseNumber(m5[1]);
+                if (!isNaN(verse) && verse >= 1) {
+                    return { chapter: lastChapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m5[0].length };
+                }
+            }
+        }
+        // 模式D: 连写（使用智能解析）。remaining 已是切片，offset 传 0
+        const m6 = parseConnectedChapterVerse(remaining, 0, currentBook);
+        if (m6) {
+            let p = pos + m6.consumed;
+            const rangeMatch = remaining.substring(m6.consumed).match(/^[～~\\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+            let verseEnd = null;
+            if (rangeMatch) {
+                verseEnd = parseNumber(rangeMatch[1]);
+                if (!isNaN(verseEnd) && verseEnd >= m6.verse) p += rangeMatch[0].length;
+                else verseEnd = null;
+            }
+            return { chapter: m6.chapter, verse: m6.verse, verseEnd, suffix: null, book: currentBook, consumed: p };
+        }
+    }
+
+    findLineStartRefs(text, coveredRanges, lastBookId, lastChapter) {
+        const matches = [];
+        const book = BOOK_ID_MAP[lastBookId];
+        if (!book) return matches;
+        const lines = text.split('\n');
+        let pos = 0;
+        for (const line of lines) {
+            const trimmed = line.trimStart();
+            const offset = line.length - trimmed.length;
+            const lineStart = pos + offset;
+            if (!this.isCovered(lineStart, coveredRanges) && trimmed.length > 0) {
+                let p = 0;
+                const ref = this.parseWeakRef(trimmed.slice(p), book, lastChapter);
+                if (ref) {
+                    p += ref.consumed;
+                    // 检查范围
+                    const rangeMatch = trimmed.slice(p).match(/^\s*[~～\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+                    if (rangeMatch) {
+                        const verseEnd = parseNumber(rangeMatch[1]);
+                        if (!isNaN(verseEnd) && verseEnd >= ref.verse) {
+                            ref.verseEnd = verseEnd;
+                            p += rangeMatch[0].length;
+                        }
+                    }
+                    matches.push({
+                        text: text.slice(lineStart, lineStart + p),
+                        start: lineStart, end: lineStart + p,
+                        bookId: lastBookId,
+                        bookName: book.fullName,
+                        bookShortName: book.shortName,
+                        allRefs: [{ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix }]
+                    });
+                }
+            }
+            pos += line.length + 1;
+        }
+        return matches;
+    }
+
+    // 阶段4：句中“X章Y节”及其顿号延续，如“三章三节、七节”“四章一节”
+    findChapterVersePatternRefs(text, coveredRanges, bookId, lastChapter) {
+        const matches = [];
+        const book = BOOK_ID_MAP[bookId];
+        if (!book) return matches;
+        const pattern = /([一二三四五六七八九十百零\d]+)章(?:第)?([一二三四五六七八九十百零\d]+)节/g;
+        let m;
+        while ((m = pattern.exec(text)) !== null) {
+            const start = m.index;
+            if (this.isCovered(start, coveredRanges)) continue;
+            const chapter = parseNumber(m[1]);
+            const verse = parseNumber(m[2]);
+            if (!(chapter >= 1 && chapter <= book.maxChapters && verse >= 1)) continue;
+            let p = start + m[0].length;
+            const refs = [{ chapter, verse, verseEnd: null, suffix: null }];
+            // 向后扩展 “、X章Y节” 或 “、X节”（同章延续）
+            while (true) {
+                const sep = text.slice(p).match(/^[，、,;；]\s*/);
+                if (!sep) break;
+                const q = p + sep[0].length;
+                const nextCh = text.slice(q).match(/^([一二三四五六七八九十百零\d]+)章(?:第)?([一二三四五六七八九十百零\d]+)节/);
+                if (nextCh) {
+                    const ch = parseNumber(nextCh[1]);
+                    const v = parseNumber(nextCh[2]);
+                    if (ch >= 1 && ch <= book.maxChapters && v >= 1) {
+                        refs.push({ chapter: ch, verse: v, verseEnd: null, suffix: null });
+                        p = q + nextCh[0].length;
+                        continue;
+                    }
+                }
+                const nextV = text.slice(q).match(/^(?:第)?([一二三四五六七八九十百零\d]+)节/);
+                if (nextV) {
+                    const v = parseNumber(nextV[1]);
+                    if (v >= 1) {
+                        refs.push({ chapter, verse: v, verseEnd: null, suffix: null });
+                        p = q + nextV[0].length;
+                        continue;
+                    }
+                }
+                break;
+            }
+            matches.push({
+                text: text.slice(start, p), start, end: p,
+                bookId, bookName: book.fullName, bookShortName: book.shortName,
+                allRefs: refs
+            });
+            coveredRanges.push([start, p]);
+            pattern.lastIndex = p;
+        }
+        return matches;
+    }
+
+    // 阶段5：行内空白（或行首）后的“中文章+阿拉伯节”连写，如纲目行末“　一2”依附前一个书卷/章
+    findInlineContinuationRefs(text, coveredRanges, bookId, lastChapter) {
+        const matches = [];
+        const book = BOOK_ID_MAP[bookId];
+        if (!book) return matches;
+        // 前面必须是行首或空白；中文数字章 + 阿拉伯节；后面不跟数字（避免吃掉更长连写）
+        const re = /(^|[\s　])([一二三四五六七八九十百零]+)(\d+)(?![\d一二三四五六七八九十百零])/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            const start = m.index + m[1].length;
+            if (this.isCovered(start, coveredRanges)) continue;
+            const ch = parseNumber(m[2]);
+            const v = parseNumber(m[3]);
+            if (!(ch >= 1 && ch <= book.maxChapters && v >= 1 && v <= 176)) continue;
+            // 章号与已知章一致时按同章处理，否则用解析出的章号
+            const usedChapter = (lastChapter !== null && ch === lastChapter) ? lastChapter : ch;
+            const end = start + m[2].length + m[3].length;
+            matches.push({
+                text: text.slice(start, end), start, end,
+                bookId, bookName: book.fullName, bookShortName: book.shortName,
+                allRefs: [{ chapter: usedChapter, verse: v, verseEnd: null, suffix: null }]
+            });
+            coveredRanges.push([start, end]);
+            re.lastIndex = end;
+        }
+        return matches;
+    }
+
+    showVerseTooltip(targetEl, match) {
+        document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
+        if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; }
+        const tooltip = document.createElement('div');
+        tooltip.className = 'bible-inline-tooltip';
+        const refs = match.allRefs || [{ chapter: match.chapter, verse: match.verse, verseEnd: match.verseEnd, suffix: match.suffix, endChapter: match.endChapter, endVerse: match.endVerse }];
+        let contentHtml = '';
+        for (const ref of refs) {
+            const chapter = ref.chapter;
+            const verse = ref.verse;
+            const verseEnd = ref.verseEnd;
+            const endChapter = ref.endChapter;
+            const endVerse = ref.endVerse;
+            if (endChapter && endVerse) {
+                for (let ch = chapter; ch <= endChapter; ch++) {
+                    const startV = (ch === chapter) ? (verse || 1) : 1;
+                    const endV = (ch === endChapter) ? endVerse : 999;
+                    for (let v = startV; v <= endV; v++) {
+                        const key = `${match.bookId}-${ch}-${v}`;
+                        const item = this.verseIndex.get(key);
+                        if (item) {
+                            contentHtml += `<div class="bible-inline-tooltip-verse"><span class="bible-inline-tooltip-verse-num">${ch}:${v}</span><span class="bible-inline-tooltip-verse-text">${item.content}</span></div>`;
+                        }
+                    }
+                }
+            } else if (verse && verseEnd && verseEnd >= verse) {
+                for (let v = verse; v <= verseEnd; v++) {
+                    const key = `${match.bookId}-${chapter}-${v}`;
+                    const item = this.verseIndex.get(key);
+                    if (item) {
+                        contentHtml += `<div class="bible-inline-tooltip-verse"><span class="bible-inline-tooltip-verse-num">${chapter}:${v}</span><span class="bible-inline-tooltip-verse-text">${item.content}</span></div>`;
+                    }
+                }
+            } else if (verse) {
+                const key = `${match.bookId}-${chapter}-${verse}`;
+                const item = this.verseIndex.get(key);
+                if (item) {
+                    contentHtml += `<div class="bible-inline-tooltip-verse"><span class="bible-inline-tooltip-verse-num">${chapter}:${verse}</span><span class="bible-inline-tooltip-verse-text">${item.content}</span></div>`;
+                }
+            } else {
+                for (let v = 1; v <= 3; v++) {
+                    const key = `${match.bookId}-${chapter}-${v}`;
+                    const item = this.verseIndex.get(key);
+                    if (item) {
+                        contentHtml += `<div class="bible-inline-tooltip-verse"><span class="bible-inline-tooltip-verse-num">${chapter}:${v}</span><span class="bible-inline-tooltip-verse-text">${item.content}</span></div>`;
+                    }
+                }
+                contentHtml += '<div class="bible-inline-tooltip-verse">...</div>';
+            }
+        }
+        if (!contentHtml) contentHtml = '<div class="bible-inline-tooltip-verse">未找到经文</div>';
+        let refText = match.bookShortName;
+        const first = refs[0];
+        refText += first.chapter;
+        if (first.verse) refText += `:${first.verse}`;
+        if (first.verseEnd) refText += `-${first.verseEnd}`;
+        if (first.endChapter && first.endVerse) refText += `～${first.endChapter}:${first.endVerse}`;
+        if (first.suffix) refText += first.suffix;
+        if (refs.length > 1) refText += ` 等${refs.length}处`;
+        tooltip.innerHTML = `<div class="bible-inline-tooltip-ref">${refText}</div><div class="bible-inline-tooltip-content">${contentHtml}</div>`;
+        document.body.appendChild(tooltip);
+        const rect = targetEl.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        let left = rect.left;
+        let top = rect.bottom + 8;
+        if (left + tooltipRect.width > window.innerWidth - 20) left = window.innerWidth - tooltipRect.width - 20;
+        if (left < 10) left = 10;
+        if (top + tooltipRect.height > window.innerHeight - 20) top = rect.top - tooltipRect.height - 8;
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+        const removeTooltip = () => { tooltip.remove(); if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; } };
+        const scheduleRemove = () => { this._tooltipTimer = setTimeout(removeTooltip, 300); };
+        const cancelRemove = () => { if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; } };
+        targetEl.addEventListener('mouseleave', scheduleRemove);
+        targetEl.addEventListener('mouseenter', cancelRemove);
+        tooltip.addEventListener('mouseleave', scheduleRemove);
+        tooltip.addEventListener('mouseenter', cancelRemove);
+    }
+
+    async jumpToBibleReader(match) {
+        await this.activateSearchView();
+        const leaves = this.app.workspace.getLeavesOfType(BIBLE_SEARCH_VIEW_TYPE);
+        if (leaves.length === 0) return;
+        const view = leaves[0].view;
+        const book = BOOK_ID_MAP[match.bookId];
+        if (!book) return;
+        view.readerBook = book;
+        view.readerChapter = match.allRefs[0].chapter || 1;
+        view.readerState = 'content';
+        view.activeTab = 'reader';
+        view.tabSearch.classList.remove('active');
+        view.tabReader.classList.add('active');
+        if (view.searchPanel) view.searchPanel.style.display = 'none';
+        if (view.readerPanel) view.readerPanel.style.display = 'flex';
+        if (view.readerContent) view.readerContent.empty();
+        if (view.readerFixedTop) view.readerFixedTop.empty();
+        await view.renderChapterContent();
+        const firstRef = match.allRefs[0];
+        if (firstRef.verse) {
+            const item = this.allItems.find(i => i.versionKey === this.getPrimaryVersionKey() && i.bookId === match.bookId && i.chapter === firstRef.chapter && i.verse === firstRef.verse && i.type === 'verse');
+            if (item && view.scrollToReaderItem) view.scrollToReaderItem(item);
+        }
+    }
+
 }
 
 module.exports = BibleSearchPlugin;
 /* nosourcemap */
+//（注：内容由AI生成）
