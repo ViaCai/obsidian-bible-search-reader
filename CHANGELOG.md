@@ -2,6 +2,21 @@
 
 ---
 
+## [3.0.1] - 2026-09-24
+
+### 变更
+- **移除 Node.js `fs` 直接文件系统访问**：版本数据扫描、读取、下载与删除统一改用 Obsidian 的 Vault Adapter API（操作 vault 内 `.obsidian/plugins/bible-search-reader/` 目录），桌面端与移动端共用同一代码路径，插件不再直接访问系统文件系统（消除 Obsidian 插件市场 "Direct Filesystem Access" 警告）
+- **移除 `styles.css` 中全部 `!important`**：改用更高优先级的选择器覆盖样式（如 `.bible-reader-verse-card .bible-reader-compare-row`），投影模式主题/纲目引用颜色由 JS 内联样式改为 CSS 控制，显示效果保持不变
+
+### 文档
+- **README**：新增英文概述、安装步骤（社区插件市场 / GitHub 手动安装）和基本使用说明，满足 Obsidian 插件市场对安装/使用说明及英文文本的要求
+
+### 修复
+- 修复桌面端通过 `fs` 回退读取版本数据时与 vault adapter 路径重复的问题；统一后行为一致
+- 修复投影模式切换字体大小时，主题/纲目引用颜色可能被内联灰色覆盖的问题
+
+---
+
 ## [3.0.0] - 2026-09-01
 
 ### 新增

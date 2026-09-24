@@ -801,33 +801,7 @@ class BibleParser {
                 }
             }
 
-            if (Platform.isDesktop) {
-                const fs = window.require('fs');
-                const path = window.require('path');
-                const possiblePaths = [];
-                if (this.pluginDir) {
-                    possiblePaths.push(path.join(this.pluginDir, file));
-                }
-                try {
-                    const basePath = this.app.vault.adapter.getBasePath();
-                    possiblePaths.push(path.join(basePath, '.obsidian', 'plugins', pluginId, file));
-                } catch (e) {}
-
-                for (const dataPath of possiblePaths) {
-                    if (fs.existsSync(dataPath)) {
-                        const raw = fs.readFileSync(dataPath, 'utf-8');
-                        const data = JSON.parse(raw);
-                        if (Array.isArray(data)) {
-                            for (const item of data) {
-                                item.versionKey = key;
-                                items.push(item);
-                            }
-                            
-                            return items;
-                        }
-                    }
-                }
-            }
+            // 数据文件位于 vault 内的 .obsidian/plugins/ 目录，桌面端与移动端均通过 vault adapter 读取，无需直接访问文件系统
             console.warn(`[Bible] 未找到版本 ${key} 数据文件: ${file}`);
         } catch (e) {
             console.error(`[Bible] 读取版本 ${key} 数据失败:`, e);
@@ -1402,9 +1376,21 @@ class BibleProjectionOverlay {
         const fontSizeEl = this.overlay.querySelector('.bible-proj-font-size');
         if (fontSizeEl) fontSizeEl.textContent = this.fontSize + 'px';
         this.overlay.querySelectorAll('.bible-proj-focus-text').forEach(el => { el.style.fontSize = this.fontSize + 'px'; });
-        this.overlay.querySelectorAll('.bible-proj-focus-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; el.style.color = this.isDark ? '#a0a0a0' : '#666'; });
+        this.overlay.querySelectorAll('.bible-proj-focus-ref').forEach(el => {
+            el.style.fontSize = (this.fontSize * 0.6) + 'px';
+            // 主题/纲目引用的颜色由 CSS 控制（.bible-proj-focus-theme-ref / -outline-ref），不在此覆盖
+            if (!el.classList.contains('bible-proj-focus-theme-ref') && !el.classList.contains('bible-proj-focus-outline-ref')) {
+                el.style.color = this.isDark ? '#a0a0a0' : '#666';
+            }
+        });
         this.overlay.querySelectorAll('.bible-proj-parallel-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85) + 'px'; });
-        this.overlay.querySelectorAll('.bible-proj-parallel-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.55) + 'px'; el.style.color = this.isDark ? '#a0a0a0' : '#666'; });
+        this.overlay.querySelectorAll('.bible-proj-parallel-ref').forEach(el => {
+            el.style.fontSize = (this.fontSize * 0.55) + 'px';
+            // 主题/纲目引用（对照版）的颜色由 CSS 控制，不在此覆盖
+            if (!el.classList.contains('bible-proj-parallel-theme-ref') && !el.classList.contains('bible-proj-parallel-outline-ref')) {
+                el.style.color = this.isDark ? '#a0a0a0' : '#666';
+            }
+        });
         this.overlay.querySelectorAll('.bible-proj-focus-theme').forEach(el => { el.style.fontSize = (this.fontSize * 1.15) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-theme-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-outline').forEach(el => { el.style.fontSize = (this.fontSize * 0.95) + 'px'; });
@@ -3379,40 +3365,16 @@ class BibleSearchPlugin extends Plugin {
             const pluginId = this.manifest?.id || 'bible-search-reader';
             const pluginDir = `.obsidian/plugins/${pluginId}`;
 
-            if (Platform.isDesktop) {
-                const fs = window.require('fs');
-                const path = window.require('path');
-                let dirPath = '';
-                try {
-                    const basePath = this.app.vault.adapter.getBasePath();
-                    dirPath = path.join(basePath, pluginDir);
-                } catch (e) {
-                    if (this.manifest && this.manifest.dir) {
-                        dirPath = this.manifest.dir;
-                    }
-                }
-                if (dirPath && fs.existsSync(dirPath)) {
-                    const files = fs.readdirSync(dirPath);
-                    for (const file of files) {
-                        const match = file.match(/^bible-([a-z0-9]+)-data\.json$/i);
-                        if (match) {
-                            const key = match[1].toUpperCase();
-                            const name = VERSION_MAP[key] || key;
-                            versions.push({ key, name, file, installed: true });
-                        }
-                    }
-                }
-            } else {
-                if (await this.app.vault.adapter.exists(pluginDir)) {
-                    const list = await this.app.vault.adapter.list(pluginDir);
-                    for (const file of list.files) {
-                        const basename = file.split('/').pop();
-                        const match = basename.match(/^bible-([a-z0-9]+)-data\.json$/i);
-                        if (match) {
-                            const key = match[1].toUpperCase();
-                            const name = VERSION_MAP[key] || key;
-                            versions.push({ key, name, file: basename, installed: true });
-                        }
+            // 数据文件位于 vault 内的 .obsidian/plugins/ 目录，桌面端与移动端均通过 vault adapter 扫描
+            if (await this.app.vault.adapter.exists(pluginDir)) {
+                const list = await this.app.vault.adapter.list(pluginDir);
+                for (const file of list.files) {
+                    const basename = file.split('/').pop();
+                    const match = basename.match(/^bible-([a-z0-9]+)-data\.json$/i);
+                    if (match) {
+                        const key = match[1].toUpperCase();
+                        const name = VERSION_MAP[key] || key;
+                        versions.push({ key, name, file: basename, installed: true });
                     }
                 }
             }
@@ -3438,23 +3400,12 @@ class BibleSearchPlugin extends Plugin {
             const sizeMB = (response.arrayBuffer.byteLength / 1024 / 1024).toFixed(2);
             const speed = (sizeMB / elapsed).toFixed(2);
 
-            if (Platform.isDesktop) {
-                const fs = window.require('fs');
-                const path = window.require('path');
-                const basePath = this.app.vault.adapter.getBasePath();
-                const targetDir = path.join(basePath, '.obsidian', 'plugins', pluginId);
-                if (!fs.existsSync(targetDir)) {
-                    fs.mkdirSync(targetDir, { recursive: true });
-                }
-                const targetPath = path.join(targetDir, file);
-                fs.writeFileSync(targetPath, Buffer.from(response.arrayBuffer));
-            } else {
-                const dirPath = `.obsidian/plugins/${pluginId}`;
-                if (!(await this.app.vault.adapter.exists(dirPath))) {
-                    await this.app.vault.adapter.mkdir(dirPath);
-                }
-                await this.app.vault.adapter.writeBinary(adapterPath, response.arrayBuffer);
+            // 写入 vault 内 .obsidian/plugins/ 目录，桌面端与移动端均通过 vault adapter 完成
+            const dirPath = `.obsidian/plugins/${pluginId}`;
+            if (!(await this.app.vault.adapter.exists(dirPath))) {
+                await this.app.vault.adapter.mkdir(dirPath);
             }
+            await this.app.vault.adapter.writeBinary(adapterPath, response.arrayBuffer);
 
             notice.hide();
             new Notice(`${versionConfig.name} 下载完成！${sizeMB}MB，速度 ${speed}MB/s`, 6000);
@@ -3470,16 +3421,7 @@ class BibleSearchPlugin extends Plugin {
             const file = versionConfig.file;
             const adapterPath = `.obsidian/plugins/${pluginId}/${file}`;
 
-            if (Platform.isDesktop) {
-                const fs = window.require('fs');
-                const path = window.require('path');
-                const basePath = this.app.vault.adapter.getBasePath();
-                const filePath = path.join(basePath, '.obsidian', 'plugins', pluginId, file);
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                    return true;
-                }
-            }
+            // 删除 vault 内 .obsidian/plugins/ 目录下的文件，桌面端与移动端均通过 vault adapter 完成
             if (await this.app.vault.adapter.exists(adapterPath)) {
                 await this.app.vault.adapter.remove(adapterPath);
                 return true;

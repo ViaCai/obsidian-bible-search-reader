@@ -1,9 +1,9 @@
 {
   "id": "bible-search-reader",
   "name": "Bible Search and Reader",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "minAppVersion": "0.15.0",
-  "description": "Bible search and reading plugin with multi-version support, parallel comparison, built-in data, and inline Bible reference highlighting. Features theme/outline/verse search, focus/parallel/mixed projection, first-run setup wizard, auto-update, and smart reference parser.",
+  "description": "用于多版本圣经数据的检索、阅读与投影。支持内置恢复本和和合本圣经对照、智能检索语法和投影模式。",
   "author": "ViaCai",
   "authorUrl": "https://github.com/ViaCai",
   "isDesktopOnly": false

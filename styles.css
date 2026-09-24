@@ -806,13 +806,13 @@
     letter-spacing: 0.5px;
 }
 .bible-proj-focus-theme-ref {
-    color: #e0c060 !important;
+    color: #e0c060;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-focus-theme {
     color: #b8860b;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-focus-theme-ref {
-    color: #8b6914 !important;
+    color: #8b6914;
 }
 
 /* Focus 模式 - 纲目 */
@@ -822,13 +822,13 @@
     opacity: 0.9;
 }
 .bible-proj-focus-outline-ref {
-    color: #7aa0d0 !important;
+    color: #7aa0d0;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-focus-outline {
     color: #4a6fa5;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-focus-outline-ref {
-    color: #3a5f95 !important;
+    color: #3a5f95;
 }
 
 /* Parallel/Mixed 模式 - 主题 */
@@ -838,13 +838,13 @@
     letter-spacing: 0.3px;
 }
 .bible-proj-parallel-theme-ref {
-    color: #e0c060 !important;
+    color: #e0c060;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-parallel-theme-text {
     color: #b8860b;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-parallel-theme-ref {
-    color: #8b6914 !important;
+    color: #8b6914;
 }
 
 /* Parallel/Mixed 模式 - 纲目 */
@@ -854,13 +854,13 @@
     opacity: 0.9;
 }
 .bible-proj-parallel-outline-ref {
-    color: #7aa0d0 !important;
+    color: #7aa0d0;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-parallel-outline-text {
     color: #4a6fa5;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-parallel-outline-ref {
-    color: #3a5f95 !important;
+    color: #3a5f95;
 }
 
 
@@ -980,7 +980,7 @@
 .bible-search-fixed-top.focus-mode .bible-section,
 .bible-search-fixed-top.focus-mode .bible-input-row,
 .bible-search-fixed-top.focus-mode .bible-search-hint {
-    display: none !important;
+    display: none;
 }
 /* 阅读页面专注模式 */
 .bible-reader-fixed-top.focus-mode .bible-reader-nav-row,
@@ -990,7 +990,7 @@
 .bible-reader-fixed-top.focus-mode .bible-reader-book-theme,
 .bible-reader-fixed-top.focus-mode .bible-section,
 .bible-reader-fixed-top.focus-mode .bible-results-header {
-    display: none !important;
+    display: none;
 }
 
 /* ===== 纲目引用块样式 ===== */
@@ -1079,9 +1079,9 @@
 }
 
 /* ===== 跳转高亮 ===== */
-.bible-jump-highlight {
-    background: rgba(78, 205, 196, 0.2) !important;
-    border-left: 3px solid var(--bible-accent) !important;
+.bible-reader-verse-card.bible-jump-highlight {
+    background: rgba(78, 205, 196, 0.2);
+    border-left: 3px solid var(--bible-accent);
     transition: background 0.3s ease;
 }
 
@@ -1503,33 +1503,33 @@
 }
 
 /* ===== 阅读器对照版本样式 ===== */
-.bible-reader-compare-row {
-    display: flex !important;
-    align-items: flex-start !important;
-    gap: 8px !important;
-    padding: 6px 0 !important;
-    margin: 2px 0 !important;
-    cursor: pointer !important;
-    border-radius: 4px !important;
-    background: transparent !important;
-    transition: background 0.15s !important;
-    width: 100% !important;
-    position: relative !important;
-    margin-left: -28px !important; /* 抵消父容器的 padding */
-    padding-left: 28px !important; /* 与主版本对齐 */
+.bible-reader-verse-card .bible-reader-compare-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    margin: 2px 0;
+    cursor: pointer;
+    border-radius: 4px;
+    background: transparent;
+    transition: background 0.15s;
+    width: 100%;
+    position: relative;
+    margin-left: -28px; /* 抵消父容器的 padding */
+    padding-left: 28px; /* 与主版本对齐 */
 }
-.bible-reader-compare-row:hover {
-    background: var(--background-modifier-hover) !important;
+.bible-reader-verse-card .bible-reader-compare-row:hover {
+    background: var(--background-modifier-hover);
 }
-.bible-reader-compare-text {
-    flex: 1 !important;
-    font-size: 13px !important;
-    line-height: 1.6 !important;
-    color: var(--text-muted) !important;
-    white-space: normal !important;
-    word-wrap: break-word !important;
-    overflow: visible !important;
-    max-width: none !important;
+.bible-reader-verse-card .bible-reader-compare-text {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-muted);
+    white-space: normal;
+    word-wrap: break-word;
+    overflow: visible;
+    max-width: none;
 }
 /* 分隔线样式 */
 .bible-reader-divider {

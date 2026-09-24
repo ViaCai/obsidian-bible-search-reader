@@ -1,8 +1,46 @@
-# 圣经检索与阅读 (Bible Search and Reader) v3.0.0
+# 圣经检索与阅读 (Bible Search and Reader) v3.0.1
 
 ![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-> Obsidian 插件，用于多版本圣经数据的检索、阅读与投影。支持内置多版本对照、智能检索语法和投影模式。
+> Obsidian 插件，用于多版本圣经数据的检索、阅读与投影。支持内置恢复本和和合本对照、智能检索语法和投影模式。
+
+## Overview
+
+Bible Search and Reader is an Obsidian plugin for searching, reading, and projecting multiple Chinese Bible versions in parallel. It features built-in multi-version data, smart search syntax, side-by-side comparison reading, fullscreen projection modes, inline Bible reference highlighting inside your notes, and a first-run setup wizard.
+
+## Installation
+
+**Method 1 — Obsidian Community Plugins (recommended):**
+
+1. In Obsidian, open Settings → Community plugins → Browse
+2. Search for "Bible Search and Reader" and click **Install**
+3. Click **Enable** to activate the plugin
+
+**Method 2 — From GitHub Releases (manual):**
+
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release
+2. Create the folder `.obsidian/plugins/bible-search-reader/` in your vault
+3. Copy the three files into that folder
+4. Enable the plugin in Settings → Community plugins
+
+**First-run setup:**
+
+1. After enabling, a version selection wizard opens automatically
+2. Tick the Bible version(s) you want (multiple allowed), then click "Next"
+3. Missing data files are downloaded automatically from GitHub
+4. Once done, open the plugin via the 📖 icon in the left ribbon
+
+The plugin works on desktop and mobile. Data files are stored inside the vault at `.obsidian/plugins/bible-search-reader/`, so no external files are added to your vault.
+
+## Usage
+
+- **Search**: click the 📖 ribbon icon (or run the "Open Bible Search" command). Pick the search type (theme / outline / verse) and range, type a query, and search.
+- **Search syntax**: verse references like `太1:1`, `路一1～3`, `加1:1-2:5`, plus keyword matching. Space/`、` = AND, `，`/`,` = ordered AND, `；`/`;` = ordered OR, `。`/`.` = unordered OR.
+- **Comparison reading**: click the "对照" button to enable side-by-side versions. The top version is the primary one; drag to reorder. Each version's verses have independent checkboxes for copying and projection.
+- **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. Selected verses can be copied or projected.
+- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `T` to toggle theme, `ESC` to exit.
+- **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted; hover to see the verse, click to jump to the reader view.
+- **Version management**: in plugin settings, enable/disable versions, set the primary version, delete versions, or download new ones.
 
 ---
 
@@ -30,7 +68,7 @@
 4. **自动下载**：若选择的版本本地不存在，插件自动从 GitHub 下载对应数据文件
 5. **开箱即用**：下载完成后直接点击左侧 📖 图标开始使用
 
-> 📦 所有圣经数据以内置 JSON 形式存放在插件目录，仓库不会增加额外文件。
+> 📦 所有圣经数据以内置 JSON 形式存放在插件目录（vault 内 `.obsidian/plugins/bible-search-reader/`），仓库不会增加额外文件。
 
 ### 数据缺失自动检测
 
@@ -203,7 +241,7 @@
 ### 平台支持
 
 - 移动端与桌面端均支持
-- 自动下载功能在桌面端更稳定
+- 数据文件统一通过 Obsidian 的 Vault Adapter API 读写（vault 内 `.obsidian/plugins/bible-search-reader/`），桌面端与移动端行为一致
 
 ---
 
@@ -216,5 +254,3 @@ MIT License
 加6:10 所以我们有了时机，就当向众人行善，尤其是向信仰之家的人。
 
 <img src="https://raw.githubusercontent.com/ViaCai/bitiful-helper/main/images/wechat-pay.png" alt="微信收款码" width="240" />
-
-
