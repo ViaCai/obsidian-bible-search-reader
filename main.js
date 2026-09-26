@@ -180,8 +180,8 @@ BOOK_SHORT_NAMES.sort((a, b) => b.length - a.length);
 function parseConnectedChapterVerse(text, pos, book) {
     const remaining = text.slice(pos);
     
-    // 模式1: 中文数字章节 + 阿拉伯数字节 (如 "加五22" → 第五章第22节)
-    const m1 = remaining.match(/^([一二三四五六七八九十百零]+)(\d+)/);
+    // 模式1: 中文数字章节 + 阿拉伯数字节 (如 "加五22" → 第五章第22节；也支持空格分隔，如“一 1”)
+    const m1 = remaining.match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
     if (m1) {
         const chapter = parseNumber(m1[1]);
         const verse = parseInt(m1[2]);
@@ -3217,6 +3217,14 @@ class BibleSearchPlugin extends Plugin {
             }
         });;
 
+        // 移动端适配：点击经文弹窗以外区域时关闭弹窗（点击经文引用或弹窗内部不关闭）
+        this.registerDomEvent(document, 'click', (evt) => {
+            const t = evt && evt.target;
+            if (!t || !(t instanceof Element)) return;
+            if (t.closest('.bible-inline-ref') || t.closest('.bible-inline-tooltip')) return;
+            document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
+        });
+
         this.addRibbonIcon('book-plus', '圣经检索', () => { this.activateSearchView(); });
         this.addCommand({ id: 'open-bible-search', name: '打开圣经检索', callback: () => this.activateSearchView() });
         this.addSettingTab(new BibleSettingTab(this.app, this));
@@ -3637,8 +3645,18 @@ class BibleSearchPlugin extends Plugin {
                 span.dataset.verse = match.allRefs[0].verse || '';
                 span.dataset.verseEnd = match.allRefs[0].verseEnd || '';
                 span.dataset.suffix = match.allRefs[0].suffix || '';
-                span.addEventListener('mouseenter', (e) => { this.showVerseTooltip(e.target, match); });
-                span.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); this.jumpToBibleReader(match); });
+                // 移动端适配：单击打开经文弹窗；双击跳转到圣经阅读对应经文
+                span.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.showVerseTooltip(e.target, match);
+                });
+                span.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.removeCurrentTooltip();
+                    this.jumpToBibleReader(match);
+                });
                 fragment.appendChild(span);
                 lastIndex = match.end;
             }
@@ -3681,6 +3699,20 @@ class BibleSearchPlugin extends Plugin {
         return false;
     }
 
+    // 判断一段文字是否以纲目行首序号开头（如“壹　…”“1 神…”“（一）　…”），
+    // 这类序号不是经文出处，行首弱引用解析应跳过它们
+    looksLikeOutlineMarker(s) {
+        const m = s.match(/^([一二三四五六七八九十百零壹贰叁肆伍陆柒捌玖拾]+|[0-9]+|[a-zA-Z]+|[（(][一二三四五六七八九十百零0-9a-zA-Z]+[）)])[\s　]*[、．.、]?[\s　]*/);
+        if (!m) return false;
+        const rest = s.slice(m[0].length);
+        const next = rest[0];
+        if (!next) return false;
+        // 后续为数字/范围符/上中下后缀/章:节冒号/收尾标点/括号闭合 → 可能是经文引用，不作纲目标记
+        if (/[\d～~\-－上中下:：）〕)\],，。、；;]/.test(next)) return false;
+        // 其余（中文标题文字、字母等）视为纲目行首标记
+        return true;
+    }
+
     findBibleReferences(text, lastBookId, lastChapter, lastStrongChapter) {
         const matches = [];
         const coveredRanges = [];
@@ -3702,13 +3734,13 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         // 阶段2: 括号内弱引用
-        const bracketMatches = this.findBracketRefs(text, coveredRanges, matches, lastBookId, lastStrongChapter !== null ? lastStrongChapter : lastChapter);
+        const bracketMatches = this.findBracketRefs(text, coveredRanges, matches, lastBookId, lastStrongChapter != null ? lastStrongChapter : lastChapter);
         for (const m of bracketMatches) {
             matches.push(m);
             coveredRanges.push([m.start, m.end]);
         }
         // 阶段3: 行首弱引用
-        const effectiveLastChapter = lastStrongChapter !== null ? lastStrongChapter : lastChapter;
+        const effectiveLastChapter = lastStrongChapter != null ? lastStrongChapter : lastChapter;
         if (lastBookId !== null) {
             const weakMatches = this.findLineStartRefs(text, coveredRanges, lastBookId, effectiveLastChapter);
             for (const m of weakMatches) {
@@ -3732,7 +3764,16 @@ class BibleSearchPlugin extends Plugin {
                 coveredRanges.push([m.start, m.end]);
             }
         }
-        // 阶段5: 行内空白后的连写延续（如纲目行末“　一2”依附前一个书卷/章）
+        // 阶段6: 行内省略书卷名/章号的弱引用（如纲目行“　一 1”“　一1”“　一2上”“　24～25”“　一1～二3”），
+        // 依附本段或跨段落上下文；能完整吞并范围/后缀/跨章，须在阶段5之前运行
+        if (localBookId !== null) {
+            const weakCont = this.findWeakContinuationRefs(text, coveredRanges, localBookId, localChapter);
+            for (const m of weakCont) {
+                matches.push(m);
+                coveredRanges.push([m.start, m.end]);
+            }
+        }
+        // 阶段5: 行首/行内空白后的连写延续（如“　一2”），作为阶段6未覆盖的兜底（如行首起始处）
         if (localBookId !== null) {
             const contMatches = this.findInlineContinuationRefs(text, coveredRanges, localBookId, localChapter);
             for (const m of contMatches) {
@@ -3847,6 +3888,47 @@ class BibleSearchPlugin extends Plugin {
         return null;
     }
 
+    // 中文章 + 阿拉伯节（如“一 1”“一1”“一 20～23”“一1～二3”“一2上”“一2下～二3”），
+    // 支持后缀（上/中/下）与范围（同章～节、跨章～章节）
+    parseCnSpaceVerseRef(text, pos, book) {
+        const remaining = text.slice(pos);
+        const m = remaining.match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
+        if (!m) return null;
+        const chapter = parseNumber(m[1]);
+        const verse = parseNumber(m[2]);
+        if (!(chapter >= 1 && chapter <= book.maxChapters && verse >= 1 && verse <= 176)) return null;
+        let p = pos + m[0].length;
+        // 后缀 上/中/下（允许“　上”“ 上”等空格分隔，如“一 2 上”）
+        const sfx = text.slice(p).match(/^[\s　]*[上中下]半?/);
+        let suffix = sfx ? sfx[0].trim() : null;
+        if (suffix) p += sfx[0].length;
+        // 范围
+        let verseEnd = null, endChapter = null, endVerse = null;
+        const rangeSep = text.slice(p).match(/^[\s　]*[～~\-－][\s　]*/);
+        if (rangeSep) {
+            const q = p + rangeSep[0].length;
+            // 跨章：中文章 + 阿拉伯节（如“二 3”）
+            const rc = text.slice(q).match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
+            if (rc) {
+                const ch2 = parseNumber(rc[1]);
+                const v2 = parseNumber(rc[2]);
+                if (!isNaN(ch2) && ch2 > chapter && ch2 <= book.maxChapters && !isNaN(v2) && v2 >= 1) {
+                    endChapter = ch2; endVerse = v2;
+                    p = q + rc[0].length;
+                }
+            }
+            // 同章：纯节号
+            if (endChapter === null) {
+                const rv = text.slice(q).match(/^(\d+)/);
+                if (rv) {
+                    const v2 = parseNumber(rv[1]);
+                    if (!isNaN(v2) && v2 >= verse) { verseEnd = v2; p = q + rv[0].length; }
+                }
+            }
+        }
+        return { chapter, verse, verseEnd, suffix, endChapter, endVerse, endPos: p };
+    }
+
     parseContinuationItem(text, pos, book, lastChapter) {
         // 跳过引导词（如"论到这事说"等）
         pos = skipGuideWords(text, pos);
@@ -3870,6 +3952,11 @@ class BibleSearchPlugin extends Plugin {
                 }
                 return { chapter, verse, verseEnd, suffix, endPos: p };
             }
+        }
+        // 模式A2: 中文章 + 空格 + 阿拉伯节（如“，一 2 上”“，一 20～23”）
+        const cnSpace = this.parseCnSpaceVerseRef(text, pos, book);
+        if (cnSpace) {
+            return { chapter: cnSpace.chapter, verse: cnSpace.verse, verseEnd: cnSpace.verseEnd, suffix: cnSpace.suffix, endPos: cnSpace.endPos };
         }
         // 模式B: 只有节号（优先当 lastChapter 已知时）
         // 注意：数字后若紧跟 章/篇/节 或另一个数字，则不是纯节号，应让位给“X章X节”或“章+节连写”
@@ -3910,7 +3997,7 @@ class BibleSearchPlugin extends Plugin {
             const suffixMatch = text.slice(p).match(/^[上中下]半?/);
             let suffix = suffixMatch ? suffixMatch[0] : null;
             if (suffix) p += suffix.length;
-            const rangeMatch = text.slice(p).match(/^\s*[～~\\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+            const rangeMatch = text.slice(p).match(/^\s*[～~\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
             let verseEnd = null;
             if (rangeMatch) {
                 verseEnd = parseNumber(rangeMatch[1]);
@@ -3953,12 +4040,22 @@ class BibleSearchPlugin extends Plugin {
                 return { crossChapter: true, chapter, verse, endPos: pos + m1[0].length };
             }
         }
-        // 尝试跨章: chapterverse
-        const m2 = text.slice(pos).match(/^(([一二三四五六七八九十百零]+)(\d+)|(\d+)([一二三四五六七八九十百零]+)|(\d+)(\d+)|([一二三四五六七八九十百零]+)([一二三四五六七八九十百零]+))/);
-        if (m2) {
-            // 捕获组：1=外层；2/3=中文章+阿拉伯节；4/5=阿拉伯章+中文节；6/7=阿拉伯+阿拉伯；8/9=中文+中文
-            const cStr = m2[2] || m2[4] || m2[6] || m2[8];
-            const vStr = m2[3] || m2[5] || m2[7] || m2[9];
+        // 尝试跨章: 中文章 + 空格/无 + 阿拉伯节（如“二 25”“二25”）
+        const mCn2 = text.slice(pos).match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
+        if (mCn2) {
+            const chapter = parseNumber(mCn2[1]);
+            const verse = parseNumber(mCn2[2]);
+            if (!isNaN(chapter) && chapter > currentChapter && chapter <= book.maxChapters && !isNaN(verse) && verse >= 1) {
+                return { crossChapter: true, chapter, verse, endPos: pos + mCn2[0].length };
+            }
+        }
+        // 尝试跨章: chapterverse（仅限含中文数字的组合；纯阿拉伯数字“23”等按同章节号处理，
+        // 避免“创一20～23”被误拆为“1:20～2:3”）
+        const m2 = text.slice(pos).match(/^(([一二三四五六七八九十百零]+)(\d+)|(\d+)([一二三四五六七八九十百零]+)|([一二三四五六七八九十百零]+)([一二三四五六七八九十百零]+))/);
+        if (m2 && !/^\d+$/.test(m2[0])) {
+            // 捕获组：1=外层；2/3=中文章+阿拉伯节；4/5=阿拉伯章+中文节；8/9=中文+中文
+            const cStr = m2[2] || m2[4] || m2[8];
+            const vStr = m2[3] || m2[5] || m2[9];
             const chapter = parseNumber(cStr);
             const verse = parseNumber(vStr);
             if (!isNaN(chapter) && chapter > currentChapter && chapter <= book.maxChapters && !isNaN(verse) && verse >= 1) {
@@ -3985,23 +4082,29 @@ class BibleSearchPlugin extends Plugin {
             const end = m.index + m[0].length;
             if (this.isCovered(start, coveredRanges)) continue;
             // 括号内容若本身以书卷名开头（允许前面有“参/参看”），说明其中包含强引用，
-            // 交给阶段1按书卷名解析；这里只处理依附前一个强引用的纯弱引用括号
+            // 交给阶段1按书卷名解析；这里只处理依附上下文的弱引用括号
             if (this.bracketHasBookName(m[1])) continue;
-            const lastStrong = this.findLastStrongRef(start, strongMatches);
-            if (!lastStrong) continue;
-            const book = BOOK_ID_MAP[lastStrong.bookId];
+            // 跳过纲目序号括号（如“（一）”“（四）”）——裸中文数字视为结构标记，非经文出处
+            const bareCn = m[1].trim().replace(/^(?:参看|参考|参)/, '');
+            if (/^[一二三四五六七八九十百零]+$/.test(bareCn)) continue;
+            // 优先用本段内前一个强引用确定书卷；否则回退到跨段落传递的上下文（省略书卷名的段落）
+            let lastStrong = this.findLastStrongRef(start, strongMatches);
+            let book = null;
+            if (lastStrong) {
+                book = BOOK_ID_MAP[lastStrong.bookId];
+            } else if (lastBookId) {
+                book = BOOK_ID_MAP[lastBookId];
+            }
             if (!book) continue;
-            // 用前一个强引用所在的章作为初始章（如“约壹四16”后接“（18）”应解释为 4:18），
-            // 其次才用跨 text node 传入的上下文
-            const strongRefs = lastStrong.allRefs || [];
+            const strongRefs = lastStrong ? (lastStrong.allRefs || []) : [];
             const strongChapter = strongRefs.length ? strongRefs[strongRefs.length - 1].chapter : null;
-            const initialChapter = strongChapter !== null ? strongChapter : lastChapter;
+            const initialChapter = strongChapter !== null ? strongChapter : (lastChapter !== undefined ? lastChapter : null);
             const refContent = m[1];
             const refs = this.parseWeakRefList(refContent, book, initialChapter);
             if (refs && refs.length > 0) {
                 matches.push({
                     text: m[0], start, end,
-                    bookId: lastStrong.bookId,
+                    bookId: book.id,
                     bookName: book.fullName,
                     bookShortName: book.shortName,
                     allRefs: refs
@@ -4040,7 +4143,7 @@ class BibleSearchPlugin extends Plugin {
             if (!trimmed) continue;
             const ref = this.parseWeakRef(trimmed, currentBook, lastChapter);
             if (ref) {
-                refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix });
+                refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix, endChapter: ref.endChapter || null, endVerse: ref.endVerse || null });
                 lastChapter = ref.chapter;
                 // 段首识别到新书卷时切换上下文（如括号内“赛四二4…参约四13…可九7”）
                 if (ref.book) currentBook = ref.book;
@@ -4050,7 +4153,7 @@ class BibleSearchPlugin extends Plugin {
         if (refs.length === 0) {
             const ref = this.parseWeakRef(content, currentBook, lastChapter);
             if (ref) {
-                refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix });
+                refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix, endChapter: ref.endChapter || null, endVerse: ref.endVerse || null });
             }
         }
         return refs;
@@ -4093,6 +4196,11 @@ class BibleSearchPlugin extends Plugin {
                 return { chapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m2[0].length };
             }
         }
+        // 模式B2: 中文章 + 空格 + 阿拉伯节（如“一 1”“一 20～23”“一 1～二 3”“一 2 上”）
+        const cnSpace = this.parseCnSpaceVerseRef(text, pos, currentBook);
+        if (cnSpace) {
+            return { chapter: cnSpace.chapter, verse: cnSpace.verse, verseEnd: cnSpace.verseEnd, suffix: cnSpace.suffix, endChapter: cnSpace.endChapter, endVerse: cnSpace.endVerse, book: currentBook, consumed: cnSpace.endPos - pos };
+        }
         // 模式C: 只有节号（优先当 lastChapter 已知）
         if (lastChapter !== null) {
             // 纯数字（如 "18"）应被视为节号
@@ -4100,7 +4208,14 @@ class BibleSearchPlugin extends Plugin {
             if (m4 && !afterSeparator.test(remaining.slice(m4[0].length))) {
                 const verse = parseInt(m4[1]);
                 if (!isNaN(verse) && verse >= 1 && verse <= 200) {
-                    return { chapter: lastChapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m4[0].length };
+                    let p = pos + m4[0].length;
+                    const r4 = text.slice(p).match(/^[\s　]*[～~\-－][\s　]*(\d+)/);
+                    let verseEnd = null;
+                    if (r4) { const v2 = parseInt(r4[1]); if (!isNaN(v2) && v2 >= verse) { verseEnd = v2; p += r4[0].length; } }
+                    const s4 = text.slice(p).match(/^[上中下]半?/);
+                    let suffix = s4 ? s4[0] : null;
+                    if (suffix) p += suffix.length;
+                    return { chapter: lastChapter, verse, verseEnd, suffix, endChapter: null, endVerse: null, book: currentBook, consumed: p - pos };
                 }
             }
             // 中文数字节号
@@ -4108,7 +4223,14 @@ class BibleSearchPlugin extends Plugin {
             if (m5 && !afterSeparator.test(remaining.slice(m5[0].length))) {
                 const verse = parseNumber(m5[1]);
                 if (!isNaN(verse) && verse >= 1) {
-                    return { chapter: lastChapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m5[0].length };
+                    let p = pos + m5[0].length;
+                    const r5 = text.slice(p).match(/^[\s　]*[～~\-－][\s　]*(\d+)/);
+                    let verseEnd = null;
+                    if (r5) { const v2 = parseNumber(r5[1]); if (!isNaN(v2) && v2 >= verse) { verseEnd = v2; p += r5[0].length; } }
+                    const s5 = text.slice(p).match(/^[上中下]半?/);
+                    let suffix = s5 ? s5[0] : null;
+                    if (suffix) p += suffix.length;
+                    return { chapter: lastChapter, verse, verseEnd, suffix, endChapter: null, endVerse: null, book: currentBook, consumed: p - pos };
                 }
             }
         }
@@ -4116,7 +4238,7 @@ class BibleSearchPlugin extends Plugin {
         const m6 = parseConnectedChapterVerse(remaining, 0, currentBook);
         if (m6) {
             let p = pos + m6.consumed;
-            const rangeMatch = remaining.substring(m6.consumed).match(/^[～~\\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+            const rangeMatch = remaining.substring(m6.consumed).match(/^[～~\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
             let verseEnd = null;
             if (rangeMatch) {
                 verseEnd = parseNumber(rangeMatch[1]);
@@ -4137,6 +4259,8 @@ class BibleSearchPlugin extends Plugin {
             const trimmed = line.trimStart();
             const offset = line.length - trimmed.length;
             const lineStart = pos + offset;
+            // 跳过纲目行首序号（如“壹　…”“1 神…”“（一）　…”），避免把序号误判为经文出处
+            if (this.looksLikeOutlineMarker(trimmed)) { pos += line.length + 1; continue; }
             if (!this.isCovered(lineStart, coveredRanges) && trimmed.length > 0) {
                 let p = 0;
                 const ref = this.parseWeakRef(trimmed.slice(p), book, lastChapter);
@@ -4246,9 +4370,55 @@ class BibleSearchPlugin extends Plugin {
         return matches;
     }
 
+    // 阶段6：行内省略书卷名/章号的弱引用（如纲目行“　一 1”“　一 2 上”“　24～25”“　一 1～二 3”），
+    // 依附本段或跨段落上下文；边界为空白（含全角空格　）或左括号，不含行首（行首由 findLineStartRefs 负责）
+    findWeakContinuationRefs(text, coveredRanges, bookId, lastChapter) {
+        const matches = [];
+        const book = BOOK_ID_MAP[bookId];
+        if (!book) return matches;
+        const re = /([\s　（〔(])(?![\s　])/g;
+        let runningChapter = lastChapter;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            const start = m.index + m[1].length;
+            if (this.isCovered(start, coveredRanges)) { re.lastIndex = start + 1; continue; }
+            const ref = this.parseWeakRef(text.slice(start), book, runningChapter);
+            if (!ref || ref.consumed <= 0) { re.lastIndex = start + 1; continue; }
+            const end = start + ref.consumed;
+            const matchedSlice = text.slice(start, end);
+            // 若本弱引用的区间内部已包含某个更强引用（如“参弗四17、21”中“弗四17、21”已由阶段1解析）
+            // 的起点，说明这只是对已有书卷名的重复解析，跳过以免产生部分冗余高亮
+            if (coveredRanges.some(([s]) => s >= start && s < end)) { re.lastIndex = start + 1; continue; }
+            // 括号包裹的裸中文数字（纲目标记“（一）”“（四）”）不作经文出处
+            const isBareCn = /^[一二三四五六七八九十百零]+$/.test(matchedSlice);
+            const prevCh = start > 0 ? text[start - 1] : '';
+            if (isBareCn && /[（〔(]/.test(prevCh) && /^[\s　]*[）〕)]/.test(text.slice(end))) { re.lastIndex = start + 1; continue; }
+            // 纯数字（中文/阿拉伯，可带“第/节”前后缀，如“一”“（四）”“第五”）若未带范围/后缀，
+            // 视为结构标记或正文数字，必须后跟范围/后缀/收尾标点/行尾/括号闭合才认可，
+            // 避免误认纲目标记（“一”）与正文数字（“第五日”“31 岁”）
+            const bareNum = matchedSlice.replace(/^第/, '').replace(/节$/, '');
+            const pureNum = /^[一二三四五六七八九十百零]+$/.test(bareNum) || /^\d+$/.test(bareNum);
+            if (pureNum && !ref.verseEnd && !ref.suffix) {
+                const afterSlice = text.slice(end);
+                const skipSpace = afterSlice.match(/^[\s　]*/);
+                const nextChar = afterSlice.slice(skipSpace ? skipSpace[0].length : 0)[0];
+                if (nextChar && !/[\d～~\-－上中下）〕)\],，。、；;]/.test(nextChar)) { re.lastIndex = start + 1; continue; }
+            }
+            matches.push({
+                text: text.slice(start, end), start, end,
+                bookId, bookName: book.fullName, bookShortName: book.shortName,
+                allRefs: [{ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix, endChapter: ref.endChapter || null, endVerse: ref.endVerse || null }]
+            });
+            coveredRanges.push([start, end]);
+            if (ref.chapter) runningChapter = ref.chapter;
+            re.lastIndex = end;
+        }
+        return matches;
+    }
+
     showVerseTooltip(targetEl, match) {
+        // 同一时间只显示一个弹窗
         document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
-        if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; }
         const tooltip = document.createElement('div');
         tooltip.className = 'bible-inline-tooltip';
         const refs = match.allRefs || [{ chapter: match.chapter, verse: match.verse, verseEnd: match.verseEnd, suffix: match.suffix, endChapter: match.endChapter, endVerse: match.endVerse }];
@@ -4316,13 +4486,12 @@ class BibleSearchPlugin extends Plugin {
         if (top + tooltipRect.height > window.innerHeight - 20) top = rect.top - tooltipRect.height - 8;
         tooltip.style.left = left + 'px';
         tooltip.style.top = top + 'px';
-        const removeTooltip = () => { tooltip.remove(); if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; } };
-        const scheduleRemove = () => { this._tooltipTimer = setTimeout(removeTooltip, 300); };
-        const cancelRemove = () => { if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; } };
-        targetEl.addEventListener('mouseleave', scheduleRemove);
-        targetEl.addEventListener('mouseenter', cancelRemove);
-        tooltip.addEventListener('mouseleave', scheduleRemove);
-        tooltip.addEventListener('mouseenter', cancelRemove);
+        // 移动端适配：不再依赖悬停关闭，改为“点击弹窗以外区域”关闭
+        // （由 onload 中注册的 document 级 click 处理器统一处理）
+    }
+
+    removeCurrentTooltip() {
+        document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
     }
 
     async jumpToBibleReader(match) {
