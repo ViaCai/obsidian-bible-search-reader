@@ -4,7 +4,7 @@
 
 > Obsidian 插件，用于多版本圣经数据的检索、阅读与投影。支持内置恢复本和和合本对照、智能检索语法和投影模式。
 
-<img src="https://github.com/ViaCai/obsidian-bible-search-reader/blob/main/images/ScreenShot-new.png" alt="插件展示" width="240" />
+<img src="https://github.com/ViaCai/obsidian-bible-search-reader/blob/main/images/ScreenShot-new.png" alt="插件展示" />
 
 ## 功能特性
 
