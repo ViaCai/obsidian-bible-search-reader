@@ -6,7 +6,7 @@
 
 <img src="https://github.com/ViaCai/obsidian-bible-search-reader/blob/main/images/ScreenShot-new.png" alt="插件展示" />
 
-> 📖 使用完整教程（含演示视频）：[公众号教程](https://mp.weixin.qq.com/s/Ylzdu8Lr9hNePXNilQs4NQ)
+> 📖 使用教程（含演示视频）：[公众号教程](https://mp.weixin.qq.com/s/Ylzdu8Lr9hNePXNilQs4NQ)
 
 ## 功能特性
 
