@@ -17,7 +17,8 @@
 - **圣经搜索**：支持主题、纲目、经文三种检索类型；可按全部圣经或自定义书卷范围搜索
 - **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、关键词（多词组合匹配）、以及混合检索
 - **阅读模式**：书卷/章节网格浏览，快速跳转，字体调节，主题与纲目同屏显示
-- **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作
+- **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影
+- **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文，按顺序累计投影
 - **文章内圣经引用自动识别**：阅读笔记时，自动识别文中所出现的圣经引用，点击可查看经文内容，双击可查看经文上下文
 - **自动更新**：支持启动时自动检测新版本，一键下载并安装更新
 
@@ -142,6 +143,7 @@
 ### 全局操作与本页操作
 
 **全局操作**（作用于整个书卷或所有已选中内容）：
+- **保留候选**（标题右侧复选框）：两个标签页共用同一个开关。勾选后，选中的经文会**实时**进入候选池——每选中一处就立即按序加入，右侧的候选数量与经文序号即时刷新，重新搜索、切换书卷/章节、切换标签页都不会丢失（主版本与对照版本均保留）；取消勾选某处经文也会立即从候选池移除。刚勾选开关时已有的选中项会立即纳入候选池。默认关闭时保持原有行为（切换书卷会清空旧书卷选中项）。点击「清空」可一键清空保留的候选（「取消全选」也会一并清空）。取消勾选时会把已保留的候选按来源归还到检索页 / 阅读页，两个视图都从 1 重新开始编号
 - **全局全选**：按顺序选中当前书卷所有章节的主版本内容（含主题）
 - **全局取消**：取消所有已选中的内容（跨所有章节）
 - **全局复制**：复制所有已选中的内容
@@ -158,12 +160,39 @@
 - `←/→` 或 `空格`：翻页
 - `+/-`：调整字体大小
 - `T`：切换深色/浅色主题
+- `🔍 检索`（底部栏按钮）：在不关闭投影的情况下，把投影区宽度收窄、右侧空出侧边栏显示圣经检索；检索并选中新经文后点击「逐节/并列/混合投影」，投影内容会**原地更新**（尺寸不变），拖动侧边栏宽度时投影区自动跟随
+- `⛶ 全屏`（同一按钮切换）：把投影恢复为满屏
 - `ESC`：退出投影
 
 ### 自动识别文章中的圣经引用
 
-- **单击经文出处**：单击显示具体经文内容
+- **单击经文出处**：单击打开经文弹窗，显示具体经文内容
 - **双击经文出处**：双击跳转到圣经阅读区域中查看该经文的上下文
+
+**省略书卷名的写法（上下文继承）**：
+
+- 只写章节、没写书卷时，会自动沿用**本文档前文中最后出现的书卷**；跨行、跨段落都有效（换一篇笔记会重新开始）。例如：
+
+```
+壹　神的创造　创一1～二25
+一　神的心愿和目的　一1～二3      ← 创世记 1:1～2:3
+1神原初的创造　一1，路一1-二2     ← 创世记 1:1；路加福音 1:1～2:2
+2 神看一切都甚好　4              ← 路加福音 2:4（续接前一处范围的结束章）
+如在四章一节的内。约翰一章一节说到的话。  ← 路加福音 4:1；约翰福音 1:1
+二章一节                        ← 约翰福音 2:1
+```
+
+- 章上下文取前一处的**结束章**：`路一1-二2` 之后单写 `4` 即为路加福音 2:4
+- 同一行内的省略写法不会被后面才出现的书卷名带偏：`一1，路一1-二2` 中的 `一1` 仍按创世记解析
+- 成串的省略写法会一次高亮：`一2，一3，二4` 识别为一处引用（创世记 1:2、1:3、2:4）
+
+**经文弹窗操作**：
+
+- `A-` / `A+`：缩小 / 放大弹窗字体（调整后的字体大小会被记住，下次弹窗自动沿用）
+- `全选` / `取消`：勾选或取消勾选弹窗中全部经文
+- `复制`：复制弹窗中已勾选的经文（带出处）
+- 每处经文前都有候选框，可单独勾选后再点击「复制」
+- **双击弹窗中的经文出处**（顶部出处或每节前的 `章:节`）：跳转到圣经阅读页面对应的经文位置，方便查看上下文
 
 ---
 
@@ -249,8 +278,10 @@ The plugin works on desktop and mobile. Data files are stored inside the vault a
 - **Search syntax**: verse references like `太1:1`, `路一1～3`, `加1:1-2:5`, plus keyword matching. Space/`、` = AND, `，`/`,` = ordered AND, `；`/`;` = ordered OR, `。`/`.` = unordered OR.
 - **Comparison reading**: click the "对照" button to enable side-by-side versions. The top version is the primary one; drag to reorder. Each version's verses have independent checkboxes for copying and projection.
 - **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. Selected verses can be copied or projected.
-- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `T` to toggle theme, `ESC` to exit.
-- **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted; hover to see the verse, click to jump to the reader view.
+- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `T` to toggle theme, `ESC` to exit. The `🔍 检索` button shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and `⛶ 全屏` restores full screen.
+- **Projection search**: the 🔍 button in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
+- **Keep candidates**: the 「保留候选」 checkbox beside "全局操作" is shared by both tabs. Once ticked, every verse you select is added to the candidate pool **in real time** — the counter and verse numbers update immediately, and nothing is lost on re-search, book/chapter switch or tab switch. Unticking a verse removes it from the pool at once. A 「清空」 button clears the pool. Unticking the checkbox releases kept candidates back to the search/reader view and restarts numbering from 1.
+- **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted. References that omit the book name inherit the last book mentioned earlier in the same note (works across lines and paragraphs), and a bare verse number continues from the end chapter of the previous range. Single-click a reference to open the verse popup (font +/-, 全选/取消, 复制 with per-verse checkboxes, and remembered font size); double-click a reference (or a `章:节` inside the popup) to jump to the reader view.
 - **Version management**: in plugin settings, enable/disable versions, set the primary version, delete versions, or download new ones.
 
 ---
