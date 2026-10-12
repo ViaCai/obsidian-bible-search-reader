@@ -1,4 +1,4 @@
-# 圣经检索与阅读 (Bible Search and Reader) v3.0.2
+# 圣经检索与阅读 (Bible Search and Reader) 
 
 ![Version](https://img.shields.io/github/v/release/ViaCai/obsidian-bible-search-reader?label=version&color=blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -55,6 +55,17 @@
 ---
 
 ## 圣经版本
+
+| 文件 | 说明 |
+|------|------|
+| `main.js` | 插件主程序（必要） |
+| `manifest.json` | 插件清单（必要） |
+| `styles.css` | 插件样式（必要） |
+| `bible-crv-data.json` | 内置原注版圣经数据（中文原注版，约 14MB） |
+| `bible-cuvs-data.json` | 内置新标点和合本圣经数据（中文原注版，约 13MB） |
+
+> 💡 如需使用其他圣经版本，直接叫AI照着bible-crv-data.json的内容格式为模板，生成你所要的圣经版本，并照着下方的推荐命名表命名文件，比如思高本，就命名为bible-sgb-data.json
+
 
 ### 标准版本映射表
 
