@@ -270,9 +270,15 @@ const VERSION_MAP = {
     'CSB': '中文标准译本',
 };
 
+// 圣经数据托管在仓库 main 分支的 data/ 目录，通过 raw 地址分发。
+// 以后再修数据：只需更新 data/ 下的文件 + 改仓库根目录 bible-data-manifest.json 里的
+// dataVersion / size / sha256 / changes，然后 git push；用户端启动时会自动检测到并提示。
+const DATA_RAW_BASE = 'https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/data/';
+const DATA_MANIFEST_URL = 'https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/bible-data-manifest.json';
+
 const DEFAULT_VERSIONS = [
-    { key: 'CRV', name: '恢复本（推荐）', file: 'bible-crv-data.json', url: 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-crv-data.json' },
-    { key: 'CUVS', name: '简体新标点和合本（主流）', file: 'bible-cuvs-data.json', url: 'https://github.com/ViaCai/obsidian-bible-search-reader/releases/download/2.0.0/bible-cuvs-data.json' }
+    { key: 'CRV', name: '恢复本（推荐）', file: 'bible-crv-data.json', url: DATA_RAW_BASE + 'bible-crv-data.json' },
+    { key: 'CUVS', name: '简体新标点和合本（主流）', file: 'bible-cuvs-data.json', url: DATA_RAW_BASE + 'bible-cuvs-data.json' }
 ];
 
 // ==================== 工具函数 ====================
@@ -303,6 +309,19 @@ function parseNumber(s) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '3.1.2': `## [3.1.2] - 2026-10-12
+
+### 新增
+- **圣经数据更新检测与一键更新**：插件本体的自动更新只会下载 main.js / manifest.json / styles.css，不会带上十几 MB 的圣经数据文件，因此数据需要单独一套版本机制。启动时（自动检测开启，12 小时节流一次）拉取云端清单 bible-data-manifest.json，与本地已安装数据版本比对；发现修正版即弹出常驻通知，提供「查看详情 / 立即更新 / 稍后」。「查看详情」列出本次具体改了什么（如修复了哪些经文）。确认后自动下载覆盖，覆盖前把旧数据备份为 <file>.old，完成后自动重新加载圣经数据。
+- **手动检查数据更新**：新增「检查圣经数据更新」命令，以及「设置 → 圣经版本管理 → 🔍 检查数据更新」按钮，可随时联网检查。
+
+### 修复
+- **内置圣经数据下载地址过时**：修正恢复本 / 和合本两个默认版本的下载地址。原先写死指向 2.0.0 的 Release 附件，会下载到修复前的旧数据；现在统一指向仓库 main 分支的 data/ 目录。
+
+### 数据
+- **恢复本（bible-crv-data.json）**：修复 79 节经文正文被误并入上一节导致检索不到的问题（如林后5:7）；补齐林后6:17、6:18 与约叁1:15 等章末缺失经文；修正 2 处章号错标；补回诗49:8、诗104:8；补充 12 处「节合并」标注；清理 8 处行尾残留标记；规范化 rawLine 29 条。
+- **和合本（bible-cuvs-data.json）**：补入约书亚记、雅歌、阿摩司书、那鸿书 4 卷共 970 节（原文件仅 62 卷）；补写 71 处「节合并」说明；按恢复本分节边界修正 6 处（代上21/22、约7/8、启12/13、诗8、赛4）；全书按书卷顺序重排。
+`,
     '3.1.1': `## [3.1.1] - 2026-10-12
 
 ### 新增
@@ -732,6 +751,49 @@ class UpdateModal extends Modal {
     }
 }
 
+// ==================== 圣经数据更新弹窗 ====================
+// 列出每个待更新数据文件的版本号、大小与本次变更说明，由用户确认后再下载。
+class DataUpdateModal extends Modal {
+    constructor(app, plugin, pending) {
+        super(app);
+        this.plugin = plugin;
+        this.pending = pending;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.classList.add('bible-update-modal');
+        contentEl.createEl('h2', { text: '📖 圣经数据有可用更新' });
+        for (const item of this.pending) {
+            contentEl.createEl('h3', { text: item.name + '（' + item.key + '）' });
+            const meta = contentEl.createEl('div', { cls: 'setting-item-description' });
+            meta.setText('最新版本 ' + (item.dataVersion || '未知') + '　大小 ' + this.fmtSize(item.size));
+            const ul = contentEl.createEl('ul');
+            const chs = item.changes || [];
+            for (const c of chs) ul.createEl('li', { text: c });
+            if (!chs.length) ul.createEl('li', { text: '数据修正' });
+        }
+        const btnWrap = contentEl.createDiv();
+        btnWrap.style.display = 'flex';
+        btnWrap.style.gap = '8px';
+        btnWrap.style.marginTop = '16px';
+        const updateBtn = btnWrap.createEl('button', { text: '⬇️ 立即更新', cls: 'mod-cta' });
+        const cancelBtn = btnWrap.createEl('button', { text: '稍后' });
+        updateBtn.addEventListener('click', async () => {
+            this.close();
+            await this.plugin.updateBibleData(this.pending);
+        });
+        cancelBtn.addEventListener('click', () => this.close());
+    }
+    fmtSize(n) {
+        if (!n) return '未知';
+        return (n / 1024 / 1024).toFixed(1) + ' MB';
+    }
+    onClose() {
+        this.contentEl.empty();
+    }
+}
+
 // ==================== 设置标签页 ====================
 class BibleSettingTab extends PluginSettingTab {
     constructor(app, plugin) {
@@ -755,6 +817,18 @@ class BibleSettingTab extends PluginSettingTab {
             await this.plugin.syncScannedVersions();
             this.display();
             new Notice('版本识别已刷新');
+        });
+
+        const checkDataBtn = containerEl.createEl('button', { cls: 'bible-small-btn', text: '🔍 检查数据更新' });
+        checkDataBtn.style.marginBottom = '12px';
+        checkDataBtn.style.marginLeft = '8px';
+        checkDataBtn.title = '联网比对云端清单，检查已安装的圣经数据是否有修正版';
+        checkDataBtn.addEventListener('click', async () => {
+            checkDataBtn.setAttribute('disabled', 'true');
+            checkDataBtn.setText('检查中...');
+            await this.plugin.checkBibleDataUpdateAndNotify(true);
+            checkDataBtn.removeAttribute('disabled');
+            checkDataBtn.setText('🔍 检查数据更新');
         });
 
         const versionList = containerEl.createDiv({ cls: 'bible-version-list' });
@@ -4030,6 +4104,15 @@ class BibleSearchPlugin extends Plugin {
             name: '查看当前版本的更新说明',
             callback: () => this.showCurrentChangelog()
         });
+        this.addCommand({
+            id: 'check-bible-data-update',
+            name: '检查圣经数据更新',
+            callback: async () => {
+                const pending = await this.checkBibleDataUpdate();
+                if (pending && pending.length) new DataUpdateModal(this.app, this, pending).open();
+                else new Notice('圣经数据已是最新版本');
+            }
+        });
         this.addSettingTab(new BibleSettingTab(this.app, this));
 
         await this.migrateOldData();
@@ -4046,6 +4129,8 @@ class BibleSearchPlugin extends Plugin {
             if (this.settings.autoCheckUpdate) {
                 if (changelogShown) setTimeout(() => this.checkForUpdate(), 4000);
                 else this.checkForUpdate();
+                // 圣经数据更新单独检测，与插件更新提示错开，避免两个通知叠在一起
+                setTimeout(() => this.checkBibleDataUpdateAndNotify(), changelogShown ? 9000 : 5000);
             }
         }));
     }
@@ -4066,7 +4151,11 @@ class BibleSearchPlugin extends Plugin {
             lastVersion: '',
             readerResults: [],
             readerSelectCounter: 0,
-            tooltipFontSize: 14
+            tooltipFontSize: 14,
+            // 已安装圣经数据的版本记录：{ 'bible-crv-data.json': '2026.10.12', ... }
+            dataVersions: {},
+            // 上次检测数据更新的时间戳（节流用）
+            lastDataCheckAt: 0
         };
         const loaded = await this.loadData() || {};
         this.settings = Object.assign({}, defaults, loaded);
@@ -4227,6 +4316,19 @@ class BibleSearchPlugin extends Plugin {
             }
             await this.app.vault.adapter.writeBinary(adapterPath, response.arrayBuffer);
 
+            // 记录已安装的数据版本，供以后检测更新时比对
+            try {
+                const manifest = await this.fetchDataManifest();
+                const entry = (manifest.files || []).find(f => f.file === file);
+                if (entry) {
+                    this.settings.dataVersions = this.settings.dataVersions || {};
+                    this.settings.dataVersions[file] = entry.dataVersion;
+                    await this.saveSettings();
+                }
+            } catch (e) {
+                console.warn('[Bible] 记录数据版本失败:', e);
+            }
+
             notice.hide();
             new Notice(`${versionConfig.name} 下载完成！${sizeMB}MB，速度 ${speed}MB/s`, 6000);
         } catch (e) {
@@ -4339,6 +4441,160 @@ class BibleSearchPlugin extends Plugin {
             console.error('[Bible] 检查更新失败:', e);
             if (manual) new Notice('检查更新失败：' + e.message);
         }
+    }
+
+    // ==================== 圣经数据更新检测 ====================
+    // 插件本体的自动更新只会下载 main.js / manifest.json / styles.css，不会带上
+    // 十几 MB 的圣经数据文件。因此数据单独用一套版本机制：云端仓库根目录
+    // bible-data-manifest.json 记录 dataVersion / size / sha256 / changes，
+    // 本地 settings.dataVersions 记录已安装版本，启动时比对即可判断是否过期。
+    async fetchDataManifest() {
+        const resp = await requestUrl({ url: DATA_MANIFEST_URL, method: 'GET', timeout: 15000 });
+        if (resp.status !== 200) throw new Error('HTTP ' + resp.status);
+        const data = JSON.parse(resp.text);
+        if (!data || !Array.isArray(data.files)) throw new Error('数据清单格式错误');
+        return data;
+    }
+
+    async getLocalDataSize(file) {
+        const pluginId = this.manifest?.id || 'bible-search-reader';
+        const p = `.obsidian/plugins/${pluginId}/${file}`;
+        if (!(await this.app.vault.adapter.exists(p))) return null;
+        try {
+            const stat = await this.app.vault.adapter.stat(p);
+            return stat ? stat.size : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /** 返回需要更新的清单条目数组；出错一律返回空数组，绝不打断启动流程。 */
+    async checkBibleDataUpdate() {
+        try {
+            const manifest = await this.fetchDataManifest();
+            const pending = [];
+            for (const f of manifest.files) {
+                const localSize = await this.getLocalDataSize(f.file);
+                if (localSize === null) continue;   // 没装就不打扰
+                const recorded = (this.settings.dataVersions || {})[f.file] || '';
+                if (recorded) {
+                    // 有版本记录：直接比版本号
+                    if (this.compareVersion(f.dataVersion, recorded) > 0) pending.push(f);
+                } else if (localSize !== f.size) {
+                    // 老用户升级上来没有记录：用文件大小兜底判断
+                    pending.push(f);
+                }
+            }
+            return pending;
+        } catch (e) {
+            console.error('[Bible] 检查圣经数据更新失败:', e);
+            return [];
+        }
+    }
+
+    /** 下载并覆盖指定数据文件；覆盖前备份为 <file>.old，全部完成后重载数据。 */
+    async updateBibleData(items) {
+        const pluginId = this.manifest?.id || 'bible-search-reader';
+        const dirPath = `.obsidian/plugins/${pluginId}`;
+        if (!(await this.app.vault.adapter.exists(dirPath))) {
+            await this.app.vault.adapter.mkdir(dirPath);
+        }
+        let done = 0;
+        for (const item of items) {
+            const target = `${dirPath}/${item.file}`;
+            const notice = new Notice(`正在更新 ${item.name}（${done + 1}/${items.length}）...`, 0);
+            try {
+                const resp = await requestUrl({ url: item.url, method: 'GET' });
+                if (resp.status !== 200) throw new Error('HTTP ' + resp.status);
+
+                // 覆盖前先备份，出问题可以手工把 .old 改回来
+                if (await this.app.vault.adapter.exists(target)) {
+                    try {
+                        const oldBin = await this.app.vault.adapter.readBinary(target);
+                        await this.app.vault.adapter.writeBinary(target + '.old', oldBin);
+                    } catch (e) {
+                        console.warn('[Bible] 备份旧数据失败:', e);
+                    }
+                }
+
+                await this.app.vault.adapter.writeBinary(target, resp.arrayBuffer);
+
+                this.settings.dataVersions = this.settings.dataVersions || {};
+                this.settings.dataVersions[item.file] = item.dataVersion;
+                await this.saveSettings();
+                done++;
+                notice.hide();
+            } catch (e) {
+                notice.hide();
+                new Notice(`${item.name} 更新失败：${e.message}`, 6000);
+            }
+        }
+        if (done > 0) {
+            await this.loadBibleData();
+            new Notice(`✅ 已更新 ${done} 个圣经数据文件`, 6000);
+        }
+    }
+
+    /** 启动时调用；默认 12 小时节流，force=true 可强制（手动检查用）。 */
+    async checkBibleDataUpdateAndNotify(force = false) {
+        try {
+            if (!force && !this.settings.autoCheckUpdate) return;
+            const now = Date.now();
+            if (!force && now - (this.settings.lastDataCheckAt || 0) < 12 * 3600 * 1000) return;
+            this.settings.lastDataCheckAt = now;
+            await this.saveSettings();
+            const pending = await this.checkBibleDataUpdate();
+            if (pending && pending.length) this.showDataUpdateNotification(pending);
+            else if (force) new Notice('圣经数据已是最新版本');
+        } catch (e) {
+            console.error('[Bible] 数据更新通知失败:', e);
+        }
+    }
+
+    /** 右下角常驻通知（不自动消失），提供「查看详情 / 立即更新 / 稍后」。 */
+    showDataUpdateNotification(pending) {
+        const notice = new Notice('', 0);
+        const frag = document.createDocumentFragment();
+        const wrap = document.createElement('div');
+        wrap.style.padding = '8px';
+        wrap.style.minWidth = '300px';
+        const names = pending.map(p => p.name).join('、');
+        const total = pending.reduce((s, p) => s + (p.size || 0), 0);
+        wrap.innerHTML = '<div style="font-weight:600;margin-bottom:6px;">📖 圣经数据有可用更新</div>' +
+            '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">' +
+            names + '　约 ' + (total / 1024 / 1024).toFixed(0) + ' MB</div>';
+        const btnWrap = document.createElement('div');
+        btnWrap.style.display = 'flex';
+        btnWrap.style.gap = '8px';
+        const detailBtn = document.createElement('button');
+        detailBtn.textContent = '查看详情';
+        detailBtn.style.fontSize = '12px';
+        detailBtn.style.padding = '4px 12px';
+        const updateBtn = document.createElement('button');
+        updateBtn.className = 'mod-cta';
+        updateBtn.textContent = '立即更新';
+        updateBtn.style.fontSize = '12px';
+        updateBtn.style.padding = '4px 12px';
+        const laterBtn = document.createElement('button');
+        laterBtn.textContent = '稍后';
+        laterBtn.style.fontSize = '12px';
+        laterBtn.style.padding = '4px 12px';
+        btnWrap.appendChild(detailBtn);
+        btnWrap.appendChild(updateBtn);
+        btnWrap.appendChild(laterBtn);
+        wrap.appendChild(btnWrap);
+        frag.appendChild(wrap);
+        notice.setMessage(frag);
+
+        laterBtn.addEventListener('click', () => notice.hide());
+        detailBtn.addEventListener('click', () => {
+            notice.hide();
+            new DataUpdateModal(this.app, this, pending).open();
+        });
+        updateBtn.addEventListener('click', async () => {
+            notice.hide();
+            await this.updateBibleData(pending);
+        });
     }
 
     showUpdateNotification(latestVersion) {
