@@ -1668,6 +1668,15 @@
 }
 
 .bible-inline-tooltip {
+    /* 弹窗挂在 document.body 下，取不到 .bible-search-container 里定义的变量，必须在此自行声明。
+       浅色主题下换成更深的青色，保证选中框里的白色数字有足够对比度 */
+    --bible-accent: #1f7a6f;
+    --bible-accent-hover: #16645b;
+    --bible-success: #2e7d32;
+    --bible-box-border: #8a8f94;
+    /* 上面几个强调色都是中等偏深的颜色，选中数字统一用白色，避免个别主题的
+       --text-on-accent 与之不匹配导致选中状态看不清 */
+    --text-on-accent: #ffffff;
     position: fixed;
     z-index: 10000;
     max-width: 420px;
@@ -1683,18 +1692,44 @@
     animation: bible-tooltip-fade-in 0.15s ease;
 }
 
+/* 深色主题下沿用与圣经检索视图一致的亮青色 */
+.theme-dark .bible-inline-tooltip {
+    --bible-accent: #4ecdc4;
+    --bible-accent-hover: #3dbdb4;
+    --bible-success: #4caf50;
+    --bible-box-border: #6f7479;
+}
+
+/* 更新说明弹窗、文章内经文引用同样挂在检索容器之外，需要自带主题色 */
+.bible-update-modal,
+.bible-inline-ref {
+    --bible-accent: #1f7a6f;
+}
+.theme-dark .bible-update-modal,
+.theme-dark .bible-inline-ref {
+    --bible-accent: #4ecdc4;
+}
+
 @keyframes bible-tooltip-fade-in {
     from { opacity: 0; transform: translateY(-4px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* 标题行：经文出处 + 保留候选 + 计数 + 清空 */
+.bible-inline-tooltip-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
 .bible-inline-tooltip-ref {
     font-weight: 600;
     color: var(--bible-accent);
-    margin-bottom: 8px;
     font-size: 12px;
-    border-bottom: 1px solid var(--background-modifier-border);
-    padding-bottom: 4px;
 }
 
 .bible-inline-tooltip-content {
@@ -1729,7 +1764,7 @@
     font-size: 0.85em;
 }
 
-/* 经文弹窗：工具条（字体调节 / 全选 / 取消 / 复制） */
+/* 经文弹窗：工具条（字体调节 / 全选·取消 / 复制 / 投影 / 保留候选） */
 .bible-inline-tooltip-toolbar {
     display: flex;
     align-items: center;
@@ -1738,6 +1773,89 @@
     margin-bottom: 8px;
     padding-bottom: 6px;
     border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* 第二行工具条（保留候选）已合并到标题行 */
+.bible-inline-tooltip-keep {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.bible-inline-tooltip-keep input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+.bible-inline-tooltip-keep-count {
+    color: var(--text-accent);
+    font-weight: 600;
+}
+
+/* 标题行的「清空」按钮（选择器加重，避免被通用按钮样式覆盖） */
+.bible-inline-tooltip-keep .bible-inline-tooltip-clear {
+    padding: 1px 6px;
+    margin: 0 0 0 2px;
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+/* 弹窗中每处经文的「并」标签（与圣经搜索 / 圣经阅读的并标签一致） */
+.bible-inline-tooltip-side-tag {
+    position: static;
+    flex-shrink: 0;
+    margin: 1px 0 0 4px;
+    padding: 2px 8px;
+    border: 1px solid var(--bible-box-border);
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-faint);
+    background: var(--background-primary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.bible-inline-tooltip-side-tag.active {
+    background: var(--bible-success);
+    color: var(--text-on-accent);
+    border-color: var(--bible-success);
+}
+
+/* 弹出菜单（复制范围 / 投影模式） */
+.bible-tooltip-menu {
+    position: fixed;
+    z-index: 10001;
+    min-width: 120px;
+    padding: 4px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    font-size: 12px;
+}
+
+.bible-tooltip-menu-item {
+    padding: 5px 10px;
+    border-radius: 4px;
+    color: var(--text-normal);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.bible-tooltip-menu-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.bible-inline-tooltip-proj {
+    color: var(--text-accent);
+    border-color: var(--text-accent);
 }
 
 .bible-inline-tooltip-btn {
@@ -1781,10 +1899,28 @@
     background: var(--background-modifier-hover);
 }
 
+/* 弹窗中每处经文的候选框：与圣经搜索 / 圣经阅读一致——未选中为空框，选中后显示顺序数字 */
 .bible-inline-tooltip-checkbox {
-    margin: 4px 0 0 0;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--bible-box-border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
     flex-shrink: 0;
+    background: var(--background-primary);
     cursor: pointer;
+    user-select: none;
+}
+
+.bible-inline-tooltip-checkbox.checked {
+    background: var(--bible-accent);
+    border-color: var(--bible-accent);
+    color: var(--text-on-accent);
 }
 
 .bible-inline-tooltip-more {

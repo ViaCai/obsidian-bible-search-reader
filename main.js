@@ -303,6 +303,31 @@ function parseNumber(s) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '3.1.1': `## [3.1.1] - 2026-10-12
+
+### 新增
+- **经文弹窗「保留候选」**：弹窗工具条新增「保留候选」开关（默认关闭）。勾选后，弹窗中勾选的经文会实时进入候选池，可与其它经文弹窗、圣经搜索、圣经阅读的选中项一起按顺序投影；取消勾选某节也会即时移出候选池。
+- **弹窗显示选中顺序**：弹窗中每处经文前显示全局选中序号（候选池在前，其后是圣经搜索 / 圣经阅读及本弹窗的选中项），序号与投影顺序一致。
+- **弹窗投影按钮**：新增「投影」按钮，点击后给出「逐节 / 并列 / 混合」三种投影模式；投影内容为全局选中项（候选池 + 各页面选中），投影前自动关闭弹窗。
+- **复制范围选择**：当候选池或其它页面也有选中经文时，点击弹窗「复制」会弹出「本页复制 / 全局复制」选项；仅本弹窗有勾选时直接复制，不再多一步选择。
+
+### 修复
+- **三个窗口各自保留候选**：修复取消勾选「保留候选」后经文弹窗的选中项被清空的问题。现在经文弹窗、圣经搜索、圣经阅读三个窗口各自保留自己的候选：取消勾选时候选池中的弹窗候选项归还给弹窗（弹窗关闭后也不丢失，重新打开仍保持勾选与序号），检索页 / 阅读页的候选项各自留在原窗口。
+- **各窗口投影互不干扰**：未勾选「保留候选」时，在哪个窗口点「投影」就只投影哪个窗口的内容（原先在经文弹窗中点投影会把圣经搜索 / 圣经阅读的选中项一起投出来）；勾选「保留候选」后才按全局顺序合并投影。复制的范围同样按此规则处理。
+- **经文弹窗显示选中顺序**：修复弹窗中不显示选中顺序的问题。现在每处经文前都会显示顺序徽标——未勾选「保留候选」时按本弹窗独立编号（从 1 开始），勾选后按全局顺序编号，与投影顺序一致。
+- **弹窗「保留候选」计数与清空按钮逻辑**：修复弹窗标题栏候选数与「清空」按钮的出现逻辑，现在与圣经搜索 / 圣经阅读一致——勾选「保留候选」时按候选池总数显示（三个窗口看到同一个数字），未勾选时各窗口独立、只统计本弹窗自己的候选；有候选时才出现「清空」按钮。
+- **各经文弹窗独立统计**：修复未勾选「保留候选」时，多处经文引用的弹窗选中数字被累计的问题。现在每处经文引用（弹窗）各自独立编号、都从 1 开始，互不干扰，关闭再打开仍然保留。
+- **弹窗「清空」改为整体清空**：修复点击经文弹窗「清空」只清掉弹窗、却不清其它页面的问题。现在一次清空经文弹窗、圣经搜索、圣经阅读三个窗口的全部候选（含所有经文弹窗的候选库），并给出相应提示。
+- **浅色模式下弹窗看不清**：修复浅色主题下经文弹窗的候选框与选中状态几乎不可见的问题。弹窗挂在页面根节点，原先取不到检索视图作用域里的主题色，导致选中框背景变透明、白色顺序数字显示在白底上；现在弹窗自带一套随主题切换的颜色变量（浅色用更深的青色与更深的描边），选中框、顺序数字、「并」标签在浅色下都清晰可辨。
+- **任何方式更新都显示更新内容**：修复通过 Obsidian 第三方插件市场、BRAT 或手动覆盖安装更新后看不到新版本更新说明的问题。现在启动时会自动比对「上次记录的版本」与当前版本号，只要版本发生变化就弹出最新版的更新说明（内置更新日志优先，缺失时自动从 GitHub 拉取），与插件自带的更新功能互不冲突、也不会重复弹；全新安装仍只显示首次运行引导。
+
+### 改进
+- **全选 / 取消合并为一个按钮**：弹窗的「全选」「取消」合并为同一按钮，未全选时显示「全选」，已全选时自动切换为「取消」，节省工具条空间。
+- **弹窗标题栏集成候选操作**：「保留候选」复选框移到弹窗顶部经文出处后面，右侧显示候选数量，并在有候选时提供「清空」按钮（与圣经搜索 / 圣经阅读一致，整体清空三个窗口的候选）。
+- **弹窗选中状态与圣经搜索 / 圣经阅读一致**：候选框改用与两个页面相同的方框——未选中是空框，选中后在框内直接显示选中顺序数字，不再出现「打勾 + 数字」重复显示。
+- **弹窗新增「并」标签**：每节经文后面提供与圣经搜索 / 圣经阅读相同样式与交互的「并」标签，点击切换「✓ 并列」（混合投影时与前一节合并到同一页）；勾选「保留候选」时并列状态同步进候选池，取消勾选后仍保留在弹窗自己的候选里。
+- **可随时回看更新说明**：新增「查看当前版本的更新说明」命令，以及「设置 → 插件更新 → 📜 查看」按钮，随时可以再打开当前版本的更新内容；更新说明弹窗的小标题也修复了浅色 / 深色下取不到主题色的问题。
+`,
     '3.1.0': `
 ## [3.1.0] - 2026-10-12
 
@@ -634,18 +659,22 @@ class FirstRunModal extends Modal {
 
 // ==================== 更新日志模态框 ====================
 class UpdateModal extends Modal {
-    constructor(app, version, content) {
+    constructor(app, version, content, title) {
         super(app);
         this.version = version;
         this.content = content || CHANGELOG_CONTENT[this.version] || '';
+        // title 为空时按「已更新至 vX」显示（自动弹出场景）；手动查看时传入自定义标题
+        this.customTitle = title || '';
     }
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
+        // 弹窗挂在页面根节点，需自带主题色（否则小标题的强调色会失效）
+        if (contentEl.classList) contentEl.classList.add('bible-update-modal');
         contentEl.style.padding = '24px';
         contentEl.style.maxWidth = '600px';
 
-        contentEl.createEl('h2', { text: '🎉 Bible Search and Reader 已更新至 v' + this.version });
+        contentEl.createEl('h2', { text: this.customTitle || ('🎉 Bible Search and Reader 已更新至 v' + this.version) });
         const body = contentEl.createDiv();
         body.style.marginTop = '16px';
         body.style.lineHeight = '1.8';
@@ -820,6 +849,16 @@ class BibleSettingTab extends PluginSettingTab {
                     await this.plugin.checkForUpdate(true);
                     button.setDisabled(false);
                     button.setButtonText('🔍 检查更新');
+                }));
+        new Setting(containerEl)
+            .setName('查看更新说明')
+            .setDesc('随时查看当前版本 v' + (this.plugin.manifest?.version || '') + ' 的更新内容')
+            .addButton(button => button
+                .setButtonText('📜 查看')
+                .onClick(async () => {
+                    button.setDisabled(true);
+                    await this.plugin.showCurrentChangelog();
+                    button.setDisabled(false);
                 }));
 
     
@@ -1693,6 +1732,14 @@ class BibleProjectionOverlay {
 // ==================== 侧边栏圣经视图 ====================
 const BIBLE_SEARCH_VIEW_TYPE = 'bible-search-view';
 
+// 候选项的唯一标识：检索页 / 阅读页 / 经文弹窗三处共用同一套规则，
+// 保证同名经文在不同窗口之间能正确去重、同步。
+function verseIdentity(item, isCompare) {
+    if (!item) return '';
+    return (isCompare ? 'cmp|' : 'main|') + item.versionKey + '|' + item.bookId + '|' +
+        item.chapter + '|' + item.verse + '|' + item.type + '|' + item.content;
+}
+
 class BibleSearchView extends ItemView {
     constructor(leaf, plugin) {
         super(leaf);
@@ -2052,8 +2099,7 @@ class BibleSearchView extends ItemView {
     // 取消勾选时，候选池按来源归还到检索页 / 阅读页，并从 1 重新编号。
 
     identityOfItem(item, isCompare) {
-        if (!item) return '';
-        return (isCompare ? 'cmp|' : 'main|') + item.versionKey + '|' + item.bookId + '|' + item.chapter + '|' + item.verse + '|' + item.type + '|' + item.content;
+        return verseIdentity(item, isCompare);
     }
 
     getPoolEntry(item, isCompare) {
@@ -2066,11 +2112,14 @@ class BibleSearchView extends ItemView {
         return this.candidatePool.findIndex(p => p.key === key);
     }
 
-    poolAdd(item, isCompare, sideBySide, source) {
+    poolAdd(item, isCompare, sideBySide, source, sessionKey) {
         if (!item) return;
         const key = this.identityOfItem(item, !!isCompare);
         if (this.candidatePool.some(p => p.key === key)) return;
-        this.candidatePool.push({ key: key, item: item, isCompare: !!isCompare, sideBySide: !!sideBySide, source: source || 'search' });
+        this.candidatePool.push({
+            key: key, item: item, isCompare: !!isCompare, sideBySide: !!sideBySide,
+            source: source || 'search', sessionKey: sessionKey || null
+        });
         this._poolVersion++;
     }
 
@@ -2126,10 +2175,11 @@ class BibleSearchView extends ItemView {
     // ==================== 实时同步（勾选「保留候选」后，选中即入池）====================
 
     // 单项选中：勾选「保留候选」时立即进入候选池，序号与计数实时更新
-    poolSyncSelect(item, isCompare, sideBySide, source) {
+    // sessionKey：经文弹窗专用——记录该候选项属于哪一处引用（取消勾选时按引用归还）
+    poolSyncSelect(item, isCompare, sideBySide, source, sessionKey) {
         if (!this.keepCandidates || !item) return;
         const src = source || (this.activeTab === 'reader' ? 'reader' : 'search');
-        this.poolAdd(item, !!isCompare, !!sideBySide, src);
+        this.poolAdd(item, !!isCompare, !!sideBySide, src, sessionKey);
         this.updateKeepCandidatesUI();
     }
 
@@ -2137,6 +2187,15 @@ class BibleSearchView extends ItemView {
     poolSyncDeselect(item, isCompare) {
         const idx = this.poolIndexOf(item, !!isCompare);
         if (idx !== -1) this.poolRemoveAt(idx);
+    }
+
+    // 更新候选池已有项的「并」（并列）状态（经文弹窗的「并」标签用）
+    poolSetSideBySide(item, isCompare, sideBySide) {
+        const idx = this.poolIndexOf(item, !!isCompare);
+        if (idx === -1) return false;
+        this.candidatePool[idx].sideBySide = !!sideBySide;
+        this._poolVersion++;
+        return true;
     }
 
     // 批量同步：把指定视图当前的局部选中全部纳入候选池（全选 / 刚勾选开关时使用）
@@ -2221,6 +2280,11 @@ class BibleSearchView extends ItemView {
         let sOrder = 0;
         let rOrder = 0;
         for (const p of pool) {
+            if (p.source === 'tooltip') {
+                // 经文弹窗的候选项按引用归还给对应弹窗（弹窗关闭时也依然保留），并保留「并」状态
+                this.plugin.tooltipPoolAdd(p.item, p.sideBySide, p.sessionKey);
+                continue;
+            }
             if (p.source === 'reader') {
                 if (this.restoreReaderEntry(p)) rOrder++;
             } else {
@@ -2347,6 +2411,17 @@ class BibleSearchView extends ItemView {
             this.selectCounter = 0;
             this.renderResults();
         }
+        this.updateKeepCandidatesUI();
+    }
+
+    // 整体清空：候选池 + 圣经搜索 + 圣经阅读的选中项（经文弹窗的「清空」按钮用）
+    clearAllSelections() {
+        this.poolClear();
+        this.clearSearchLocalSelection();
+        this.clearReaderLocalSelection();
+        this.selectCounter = 0;
+        this.readerSelectCounter = 0;
+        this.refreshCurrentView();
         this.updateKeepCandidatesUI();
     }
 
@@ -3154,9 +3229,14 @@ class BibleSearchView extends ItemView {
 
     openProjection(mode) {
         // 候选池中保留的候选项排在前面，其后是当前视图选中的项
-        const selected = this.getAllSelections();
+        this.projectSelections(this.getAllSelections(), mode);
+    }
+
+    // 投影一组指定的选中项（供经文弹窗等外部入口调用）
+    projectSelections(list, mode) {
+        const selected = (list || []).filter(r => r && r.selected).sort((a, b) => (a.order || 0) - (b.order || 0));
         if (selected.length === 0) { new Notice('请先选择要投影的内容'); return; }
-        // 若已有投影（例如通过「打开检索」进入的预览模式），直接复用并更新内容，避免叠加覆盖层
+        // 若已有投影（例如通过「检索」进入的分屏模式），直接复用并更新内容，避免叠加覆盖层
         if (this.plugin.currentProjection) {
             this.plugin.currentProjection.reloadResults(selected, mode);
             return;
@@ -3882,7 +3962,31 @@ class BibleSearchPlugin extends Plugin {
         this.allItems = [];
         this.currentProjection = null;  // 当前打开的投影覆盖层引用（用于投影内打开检索并复用）
 
-        this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => new BibleSearchView(leaf, this))
+        this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => {
+            const view = new BibleSearchView(leaf, this);
+            this.searchViewRef = view;
+            return view;
+        })
+
+        // 获取当前（或最近一次创建的）圣经检索视图实例
+        // 经文弹窗要借助它访问「候选池」，才能与圣经搜索 / 圣经阅读的选中项一起投影
+        this.getSearchView = () => {
+            if (this.searchViewRef && typeof this.searchViewRef.getAllSelections === 'function') return this.searchViewRef;
+            const leaves = this.app.workspace.getLeavesOfType(BIBLE_SEARCH_VIEW_TYPE);
+            for (const leaf of leaves) {
+                const v = leaf.view;
+                if (v && typeof v.getAllSelections === 'function') { this.searchViewRef = v; return v; }
+            }
+            return null;
+        };
+
+        // 确保存在一个可用于候选池的检索视图（必要时打开插件侧边栏）
+        this.ensureSearchView = async () => {
+            const v = this.getSearchView();
+            if (v) return v;
+            await this.activateSearchView();
+            return this.getSearchView();
+        };
 
         // 构建书卷名列表（用于引用识别）
         this.allBookNames = this.buildBookNameList();
@@ -3915,24 +4019,33 @@ class BibleSearchPlugin extends Plugin {
         this.registerDomEvent(document, 'click', (evt) => {
             const t = evt && evt.target;
             if (!t || !(t instanceof Element)) return;
-            if (t.closest('.bible-inline-ref') || t.closest('.bible-inline-tooltip')) return;
+            if (t.closest('.bible-inline-ref') || t.closest('.bible-inline-tooltip') || t.closest('.bible-tooltip-menu')) return;
             document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
         });
 
         this.addRibbonIcon('book-plus', '圣经检索', () => { this.activateSearchView(); });
         this.addCommand({ id: 'open-bible-search', name: '打开圣经检索', callback: () => this.activateSearchView() });
+        this.addCommand({
+            id: 'show-bible-changelog',
+            name: '查看当前版本的更新说明',
+            callback: () => this.showCurrentChangelog()
+        });
         this.addSettingTab(new BibleSettingTab(this.app, this));
 
         await this.migrateOldData();
         await this.loadBibleData();
 
-        this.registerEvent(this.app.workspace.onLayoutReady(() => {
+        this.registerEvent(this.app.workspace.onLayoutReady(async () => {
             const hasInstalledVersion = this.settings.versions.some(v => v.installed);
             if (!this.settings.hasSetup || !hasInstalledVersion) {
                 new FirstRunModal(this.app, this).open();
             }
+            // 版本发生变化就显示最新版的更新说明（与更新渠道无关：自带更新 / 插件市场 / BRAT 都覆盖）
+            let changelogShown = false;
+            try { changelogShown = await this.checkAndShowChangelog(); } catch (e) { }
             if (this.settings.autoCheckUpdate) {
-                this.checkForUpdate();
+                if (changelogShown) setTimeout(() => this.checkForUpdate(), 4000);
+                else this.checkForUpdate();
             }
         }));
     }
@@ -4159,6 +4272,46 @@ class BibleSearchPlugin extends Plugin {
             await leaf.setViewState({ type: BIBLE_SEARCH_VIEW_TYPE, active: true });
             workspace.revealLeaf(leaf);
         }
+    }
+
+    // ==================== 更新说明：无论用哪种方式安装 / 更新都显示 ====================
+    // 插件可能被插件自带的更新功能更新，也可能是 Obsidian 第三方插件市场、BRAT
+    // 或手动覆盖安装更新的。这里只在启动时比对「上次记录的版本」与「当前版本号」，
+    // 只要版本号发生变化就弹出最新版的更新说明，因此与更新渠道完全无关。
+    async checkAndShowChangelog() {
+        try {
+            const current = this.manifest.version;
+            const last = this.settings.lastVersion || '';
+            if (!last) {
+                // 从未记录过版本：全新安装只记下版本号（首次运行引导会介绍用法），
+                // 老用户升级到含此功能的版本时，补弹一次最新版更新说明
+                this.settings.lastVersion = current;
+                await this.saveSettings();
+                if (!this.settings.hasSetup) return false;
+            } else if (this.compareVersion(current, last) <= 0) {
+                // 版本没变（或回退到旧版本）：只同步记录，不弹窗
+                if (last !== current) {
+                    this.settings.lastVersion = current;
+                    await this.saveSettings();
+                }
+                return false;
+            }
+            const changelog = await this.getChangelogFor(current);
+            this.settings.lastVersion = current;
+            await this.saveSettings();
+            new UpdateModal(this.app, current, changelog).open();
+            return true;
+        } catch (e) {
+            console.error('[Bible] 显示更新说明失败:', e);
+            return false;
+        }
+    }
+
+    // 手动查看当前版本的更新说明（命令 / 设置按钮）
+    async showCurrentChangelog() {
+        const version = this.manifest.version;
+        const changelog = await this.getChangelogFor(version);
+        new UpdateModal(this.app, version, changelog, '📜 Bible Search and Reader v' + version + ' 更新说明').open();
     }
 
     async checkForUpdate(manual = false) {
@@ -5204,12 +5357,147 @@ class BibleSearchPlugin extends Plugin {
         return matches;
     }
 
+    // 轻量弹出菜单（用于经文弹窗的「复制范围」「投影模式」选项）
+    showPopupMenu(anchorEl, items) {
+        document.querySelectorAll('.bible-tooltip-menu').forEach(el => el.remove());
+        const menu = document.createElement('div');
+        menu.className = 'bible-tooltip-menu';
+        for (const it of items) {
+            const row = document.createElement('div');
+            row.className = 'bible-tooltip-menu-item';
+            row.textContent = it.label;
+            row.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                menu.remove();
+                if (it.action) it.action();
+            });
+            menu.appendChild(row);
+        }
+        document.body.appendChild(menu);
+        const r = anchorEl.getBoundingClientRect();
+        const mr = menu.getBoundingClientRect();
+        let left = r.left;
+        let top = r.bottom + 4;
+        if (left + mr.width > window.innerWidth - 10) left = window.innerWidth - mr.width - 10;
+        if (left < 10) left = 10;
+        if (top + mr.height > window.innerHeight - 10) top = r.top - mr.height - 4;
+        if (top < 10) top = 10;
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+        // 点击菜单以外区域关闭
+        setTimeout(() => {
+            const onDoc = (ev) => {
+                if (!menu.isConnected) { document.removeEventListener('click', onDoc, true); return; }
+                if (ev.target && menu.contains(ev.target)) return;
+                menu.remove();
+                document.removeEventListener('click', onDoc, true);
+            };
+            document.addEventListener('click', onDoc, true);
+        }, 0);
+        return menu;
+    }
+
+    // 经文弹窗的「全局复制」：按全局顺序复制候选池 + 视图选中 + 本弹窗勾选
+    copyTooltipSelection(view, list) {
+        if (!view) { new Notice('请先打开圣经检索视图'); return; }
+        view.copySelected(list);
+    }
+
+    // 经文弹窗的投影：按全局顺序投影，投影前关闭弹窗
+    async projectTooltipSelection(view, list, mode) {
+        let v = view || this.getSearchView();
+        if (!v) v = await this.ensureSearchView();
+        if (!v) { new Notice('无法打开圣经检索视图，投影失败'); return; }
+        this.removeCurrentTooltip();
+        v.projectSelections(list, mode);
+    }
+
+    // ==================== 经文弹窗自己的候选项 ====================
+    // 弹窗是与「圣经搜索」「圣经阅读」并列的第三个窗口：
+    // 未勾选「保留候选」时，每处经文引用（弹窗）独立统计——编号从 1 开始、弹窗之间互不累计，
+    // 关闭后重新打开同一处引用仍然保留；勾选「保留候选」后，再与候选池同步合并。
+    // 候选以「经文引用」为键分组保存（_tooltipPools），切换弹窗时只切换当前这一组。
+
+    tooltipPoolListOf(sessionKey) {
+        const key = sessionKey || 'default';
+        if (!this._tooltipPools) this._tooltipPools = {};
+        if (!this._tooltipPools[key]) this._tooltipPools[key] = [];
+        return this._tooltipPools[key];
+    }
+
+    // 打开某个经文引用对应的弹窗：切换当前使用的候选组
+    openTooltipPool(sessionKey) {
+        this._tooltipPoolKey = sessionKey || 'default';
+        return this.tooltipPoolListOf(this._tooltipPoolKey);
+    }
+
+    getTooltipPool() {
+        return this.tooltipPoolListOf(this._tooltipPoolKey);
+    }
+
+    tooltipPoolIndexOf(item) {
+        const key = verseIdentity(item, false);
+        return this.getTooltipPool().findIndex(p => p.key === key);
+    }
+
+    tooltipPoolAdd(item, sideBySide, sessionKey) {
+        if (!item) return;
+        const key = verseIdentity(item, false);
+        const pool = sessionKey ? this.tooltipPoolListOf(sessionKey) : this.getTooltipPool();
+        if (pool.some(p => p.key === key)) return;
+        const book = BOOK_ID_MAP[item.bookId];
+        pool.push({
+            key: key,
+            item: item,
+            bookShortName: item.bookShortName || (book ? book.shortName : ''),
+            chapter: item.chapter,
+            verse: item.verse,
+            sideBySide: !!sideBySide
+        });
+    }
+
+    tooltipPoolRemove(item) {
+        const idx = this.tooltipPoolIndexOf(item);
+        if (idx !== -1) this.getTooltipPool().splice(idx, 1);
+    }
+
+    // 切换某一项的「并」（与前一节并列）状态
+    tooltipPoolSetSide(item, sideBySide) {
+        const idx = this.tooltipPoolIndexOf(item);
+        if (idx !== -1) this.getTooltipPool()[idx].sideBySide = !!sideBySide;
+    }
+
+    // 清空某一处引用的弹窗候选（默认当前弹窗）
+    tooltipPoolClear(sessionKey) {
+        this._tooltipPools = this._tooltipPools || {};
+        this._tooltipPools[sessionKey || this._tooltipPoolKey || 'default'] = [];
+    }
+
+    // 清空全部弹窗候选（「清空」按钮：与圣经搜索 / 圣经阅读的清空一样，整体清空）
+    tooltipPoolClearAll() {
+        this._tooltipPools = {};
+    }
+
+    // 弹窗候选项按勾选顺序输出为统一的选中列表（保留「并」状态）
+    tooltipPoolList() {
+        return this.getTooltipPool().map((p, i) => ({
+            item: p.item, selected: true, order: i + 1, sideBySide: !!p.sideBySide, _isCompare: false
+        }));
+    }
+
     showVerseTooltip(targetEl, match) {
         // 同一时间只显示一个弹窗
         document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
         const tooltip = document.createElement('div');
         tooltip.className = 'bible-inline-tooltip';
         const refs = match.allRefs || [{ chapter: match.chapter, verse: match.verse, verseEnd: match.verseEnd, suffix: match.suffix, endChapter: match.endChapter, endVerse: match.endVerse }];
+        // 本弹窗的「引用键」：同一处经文引用共用一组候选（关闭再打开仍保留），
+        // 不同引用各自独立统计，勾选顺序互不影响
+        const sessionKey = 'tt|' + match.bookId + '|' + refs.map(r =>
+            `${r.chapter}:${r.verse == null ? '' : r.verse}${r.verseEnd ? '-' + r.verseEnd : ''}${r.endChapter ? '~' + r.endChapter + ':' + r.endVerse : ''}`
+        ).join(',');
+        this.openTooltipPool(sessionKey);
         // 收集弹窗中要显示的经文（每处一节，便于单独勾选与跳转）
         const verses = [];
         let hasMore = false;
@@ -5259,7 +5547,9 @@ class BibleSearchPlugin extends Plugin {
         if (first.suffix) refText += first.suffix;
         if (refs.length > 1) refText += ` 等${refs.length}处`;
 
-        const refEl = tooltip.createDiv({ cls: 'bible-inline-tooltip-ref', text: refText });
+        // 标题行：经文出处（双击跳转）+ 保留候选 + 候选计数 + 清空
+        const headerRow = tooltip.createDiv({ cls: 'bible-inline-tooltip-header' });
+        const refEl = headerRow.createDiv({ cls: 'bible-inline-tooltip-ref', text: refText });
         refEl.title = '双击跳转到圣经阅读视图';
         refEl.addEventListener('dblclick', (e) => {
             e.preventDefault();
@@ -5268,17 +5558,33 @@ class BibleSearchPlugin extends Plugin {
             this.jumpToBibleReader(match);
         });
 
-        // 工具条：字体增大/缩小、全选、取消、复制
+        // 与「候选池」联动的检索视图（可能尚未打开；打开后即可与圣经搜索 / 圣经阅读的选中项一起投影）
+        let view = this.getSearchView();
+
+        // 「保留候选」开关：与圣经搜索、圣经阅读共用同一个开关；
+        // 未勾选时本弹窗的勾选保存在弹窗自己的候选库里，只投影 / 复制本弹窗的内容
+        const keepLabel = headerRow.createEl('label', { cls: 'bible-inline-tooltip-keep' });
+        const keepCb = keepLabel.createEl('input', { type: 'checkbox' });
+        keepCb.title = '勾选后，本弹窗选中的经文会进入候选池，可与圣经搜索 / 圣经阅读的选中项一起投影';
+        keepLabel.createSpan({ text: '保留候选' });
+        const keepCount = keepLabel.createSpan({ cls: 'bible-inline-tooltip-keep-count', text: '' });
+        const keepClearBtn = keepLabel.createEl('button', { cls: 'bible-inline-tooltip-btn bible-inline-tooltip-clear', text: '清空' });
+        keepClearBtn.title = '清空全部候选经文（经文弹窗 / 圣经搜索 / 圣经阅读）';
+        keepCb.checked = view ? !!view.keepCandidates : false;
+        keepLabel.addEventListener('click', (e) => e.stopPropagation());
+
+        // 工具条：字体调节 / 全选·取消（合并） / 复制 / 投影
         const toolbar = tooltip.createDiv({ cls: 'bible-inline-tooltip-toolbar' });
         const fontMinusBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn', text: 'A-' });
         fontMinusBtn.title = '缩小字体';
         const fontLabel = toolbar.createEl('span', { cls: 'bible-inline-tooltip-font-size', text: '' });
         const fontPlusBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn', text: 'A+' });
         fontPlusBtn.title = '放大字体';
-        const selectAllBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn', text: '全选' });
-        const clearSelBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn', text: '取消' });
+        const selToggleBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn', text: '全选' });
         const copyBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn bible-inline-tooltip-copy', text: '复制' });
         copyBtn.title = '复制勾选的经文';
+        const projBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn bible-inline-tooltip-proj', text: '投影' });
+        projBtn.title = '投影选中的内容（逐节 / 并列 / 混合）';
 
         const contentEl = tooltip.createDiv({ cls: 'bible-inline-tooltip-content' });
 
@@ -5311,8 +5617,9 @@ class BibleSearchPlugin extends Plugin {
         }
         for (const v of verses) {
             const row = contentEl.createDiv({ cls: 'bible-inline-tooltip-verse' });
-            const cb = row.createEl('input', { type: 'checkbox', cls: 'bible-inline-tooltip-checkbox' });
-            cb.title = '勾选后点击「复制」复制此节经文';
+            // 候选框：与圣经搜索 / 圣经阅读一致——未选中是空框，选中后直接显示选中顺序数字
+            const box = row.createDiv({ cls: 'bible-inline-tooltip-checkbox' });
+            box.title = '点击选中 / 取消此节经文';
             const numEl = row.createEl('span', { cls: 'bible-inline-tooltip-verse-num', text: v.chapter + ':' + v.verse });
             numEl.title = '双击跳转到圣经阅读视图的该节经文';
             numEl.addEventListener('dblclick', (e) => {
@@ -5326,35 +5633,188 @@ class BibleSearchPlugin extends Plugin {
                 });
             });
             row.createEl('span', { cls: 'bible-inline-tooltip-verse-text', text: v.item.content });
-            // 点击整行切换勾选（点击候选框本身由浏览器处理）
+            // 「并」标签：与圣经搜索 / 圣经阅读一致，选中后显示，点击切换并列
+            const sideTag = row.createDiv({ cls: 'bible-inline-tooltip-side-tag' });
+            sideTag.title = '与前一节并列显示（混合投影时合并到同一页）';
+            const r = { row: row, box: box, sideTag: sideTag, verse: v, selected: false, sideBySide: false };
+            rows.push(r);
+            // 重新打开弹窗时恢复勾选：候选项可能在候选池中（已勾选「保留候选」），
+            // 也可能只保存在弹窗自己的候选库中（未勾选「保留候选」时依然保留）
+            const inPool = view ? view.poolIndexOf(v.item, false) !== -1 : false;
+            const ownIdx = this.tooltipPoolIndexOf(v.item);
+            if (inPool || ownIdx !== -1) {
+                r.selected = true;
+                r.sideBySide = inPool ? !!view.getPoolEntry(v.item, false).sideBySide : !!this.getTooltipPool()[ownIdx].sideBySide;
+                // 若「保留候选」是在其它页面开启的，打开弹窗时把本弹窗的候选补进候选池
+                if (!inPool && view && view.keepCandidates) view.poolSyncSelect(v.item, false, r.sideBySide, 'tooltip', sessionKey);
+            }
+            box.addEventListener('click', (e) => { e.stopPropagation(); setRowChecked(r, !r.selected); });
+            sideTag.addEventListener('click', (e) => { e.stopPropagation(); toggleRowSideBySide(r); });
+            // 点击整行切换选中（点击候选框 / 并标签由上面各自处理）
             row.addEventListener('click', (e) => {
-                if (e.target === cb) return;
-                cb.checked = !cb.checked;
+                if (e.target === box || e.target === sideTag) return;
+                setRowChecked(r, !r.selected);
             });
-            rows.push({ cb: cb, verse: v });
         }
         if (hasMore && verses.length > 0) {
             contentEl.createDiv({ cls: 'bible-inline-tooltip-more', text: '...' });
         }
 
-        selectAllBtn.addEventListener('click', (e) => {
+        // ---- 选中 / 取消：始终记入弹窗自己的候选库；勾选「保留候选」时再同步进候选池 ----
+        const setRowChecked = (r, checked) => {
+            r.selected = !!checked;
+            if (r.selected) {
+                this.tooltipPoolAdd(r.verse.item, r.sideBySide);
+                if (view && view.keepCandidates) view.poolSyncSelect(r.verse.item, false, r.sideBySide, 'tooltip', sessionKey);
+            } else {
+                r.sideBySide = false;
+                this.tooltipPoolRemove(r.verse.item);
+                if (view) view.poolSyncDeselect(r.verse.item, false);
+            }
+            if (view) view.updateKeepCandidatesUI();
+            refreshOrders();
+            updateSelToggleBtn();
+        };
+
+        // ---- 切换「并」（与前一节并列）：与圣经搜索 / 圣经阅读的「并」标签一致 ----
+        const toggleRowSideBySide = (r) => {
+            if (!r.selected) return;
+            r.sideBySide = !r.sideBySide;
+            this.tooltipPoolSetSide(r.verse.item, r.sideBySide);
+            if (view) {
+                if (view.poolSetSideBySide) view.poolSetSideBySide(r.verse.item, false, r.sideBySide);
+                view.updateKeepCandidatesUI();
+            }
+            refreshOrders();
+        };
+
+        // ---- 刷新每行的选中状态（候选框显示顺序数字 / 「并」标签）+ 标题栏计数 ----
+        // 勾选「保留候选」→ 与圣经搜索 / 圣经阅读统一编号（候选池在前）；
+        // 未勾选 → 本弹窗独立编号（从 1 开始），与其它窗口互不干扰。
+        const refreshOrders = () => {
+            const keepOn = !!(view && view.keepCandidates);
+            const base = keepOn ? view.getAllSelections().length : this.getTooltipPool().length;
+            let n = 0;
+            for (const r of rows) {
+                if (!r.selected) {
+                    r.box.setText('');
+                    r.box.classList.remove('checked');
+                    r.sideTag.style.display = 'none';
+                    r.sideTag.classList.remove('active');
+                    r.sideTag.setText('并');
+                    continue;
+                }
+                const idx = keepOn
+                    ? view.poolIndexOf(r.verse.item, false)
+                    : this.tooltipPoolIndexOf(r.verse.item);
+                r.box.setText(String((idx !== -1) ? (idx + 1) : (base + (++n))));
+                r.box.classList.add('checked');
+                // 「并」标签：与圣经搜索 / 圣经阅读一致，选中后才出现
+                r.sideTag.style.display = 'block';
+                if (r.sideBySide) r.sideTag.classList.add('active'); else r.sideTag.classList.remove('active');
+                r.sideTag.setText(r.sideBySide ? '✓ 并列' : '并');
+            }
+            // 标题栏的候选计数 / 清空按钮：与圣经搜索 / 圣经阅读的「保留候选」逻辑一致——
+            // 勾选「保留候选」→ 显示候选池的总数（各窗口共享，与搜索页 / 阅读页显示同一个数字）；
+            // 未勾选 → 各窗口互不干扰，只统计本弹窗自己的候选数。
+            const ownN = this.getTooltipPool().length;
+            const cnt = keepOn ? (view ? view.candidatePool.length : 0) : ownN;
+            keepCount.setText(cnt > 0 ? ' (' + cnt + ')' : '');
+            keepClearBtn.style.display = cnt > 0 ? 'inline-block' : 'none';
+            keepCb.checked = keepOn;
+        };
+
+        // ---- 全选 / 取消（同一按钮自动切换文案，与「全局全选」一样重置并列）----
+        const isAllChecked = () => rows.length > 0 && rows.every(r => r.selected);
+        const updateSelToggleBtn = () => {
+            const all = isAllChecked();
+            selToggleBtn.setText(all ? '取消' : '全选');
+            selToggleBtn.title = all ? '取消本弹窗的全部勾选' : '勾选本弹窗的全部经文';
+        };
+        selToggleBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            for (const r of rows) r.cb.checked = true;
+            const next = !isAllChecked();
+            for (const r of rows) {
+                if (next) { r.sideBySide = false; setRowChecked(r, true); }
+                else setRowChecked(r, false);
+            }
+            updateSelToggleBtn();
         });
-        clearSelBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            for (const r of rows) r.cb.checked = false;
+
+        // ---- 「保留候选」开关：与其它页面共用同一状态 ----
+        keepCb.addEventListener('change', async () => {
+            const on = keepCb.checked;
+            let v = view || this.getSearchView();
+            if (!v && on) v = await this.ensureSearchView();
+            if (!v) { keepCb.checked = false; new Notice('无法访问圣经检索视图'); return; }
+            view = v;
+            if (on) {
+                v.setKeepCandidates(true);
+                // 本弹窗候选库中的经文全部纳入候选池（不止当前这几节，并保留「并」状态）
+                for (const p of this.getTooltipPool().slice()) v.poolSyncSelect(p.item, false, !!p.sideBySide, 'tooltip', sessionKey);
+                v.updateKeepCandidatesUI();
+            } else {
+                // 关闭时：候选池中的弹窗候选项归还给弹窗自己，检索页 / 阅读页各留各的
+                v.setKeepCandidates(false);
+            }
+            keepCb.checked = !!v.keepCandidates;
+            refreshOrders();
+            updateSelToggleBtn();
         });
-        copyBtn.addEventListener('click', (e) => {
+        keepCb.addEventListener('click', (e) => e.stopPropagation());
+
+        // ---- 标题栏「清空」：与圣经搜索 / 圣经阅读的清空一致，整体清空所有窗口的候选 ----
+        // 候选池 + 圣经搜索 + 圣经阅读 + 全部经文弹窗，一次清空
+        keepClearBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            const picked = rows.filter(r => r.cb.checked);
-            if (picked.length === 0) { new Notice('请先勾选要复制的经文'); return; }
-            const lines = picked.map(r => `${match.bookShortName}${r.verse.chapter}:${r.verse.verse} ${r.verse.item.content}`);
-            const text = lines.join('\n');
-            const done = () => new Notice('已复制 ' + picked.length + ' 节经文');
+            let v = view || this.getSearchView();
+            if (!v) v = await this.ensureSearchView();
+            const ownN = this.getTooltipPool().length;
+            const beforeN = v ? v.getAllSelections().length : ownN;
+            const hadOther = beforeN > ownN;
+            if (v) v.clearAllSelections();              // 候选池 + 圣经搜索 + 圣经阅读
+            this.tooltipPoolClearAll();                 // 全部经文弹窗的候选（不只是当前这一处引用）
+            for (const r of rows) { r.selected = false; r.sideBySide = false; }
+            refreshOrders();
+            updateSelToggleBtn();
+            new Notice(hadOther
+                ? '已清空全部候选经文（经文弹窗 / 圣经搜索 / 圣经阅读）'
+                : '已清空经文弹窗的候选经文');
+        });
+
+        const pickedRows = () => rows.filter(r => r.selected);
+        const formatRows = (list) => list.map(r => `${match.bookShortName}${r.verse.chapter}:${r.verse.verse} ${r.verse.item.content}`).join('\n');
+        // 本弹窗窗口自己的候选（跨弹窗保留）
+        const ownList = () => this.tooltipPoolList();
+        const formatOwn = () => this.getTooltipPool()
+            .map(p => `${p.bookShortName || match.bookShortName}${p.chapter}:${p.verse} ${p.item.content}`).join('\n');
+        const keepOn = () => !!(view && view.keepCandidates);
+
+        // 本弹窗之外（候选池 / 圣经搜索 / 圣经阅读）仍有选中项 → 复制时需要选择范围
+        // 未勾选「保留候选」时各窗口互不干扰，因此不存在「本弹窗之外」的内容
+        const outsideCount = () => {
+            if (!keepOn()) return 0;
+            const keys = new Set(this.getTooltipPool().map(p => p.key));
+            for (const r of pickedRows()) keys.add(verseIdentity(r.verse.item, false));
+            return view.getAllSelections().filter(s => !keys.has(verseIdentity(s.item, !!s._isCompare))).length;
+        };
+
+        // 全局内容顺序：候选池 + 当前视图选中 + 本弹窗未入池的候选
+        const buildGlobalList = () => {
+            const list = view ? view.getAllSelections() : [];
+            let n = list.length;
+            for (const p of this.getTooltipPool()) {
+                if (view && view.poolIndexOf(p.item, false) !== -1) continue;
+                n++;
+                list.push({ item: p.item, selected: true, order: n, sideBySide: !!p.sideBySide, _isCompare: false });
+            }
+            return list;
+        };
+
+        const doCopyText = (text, count) => {
+            const done = () => new Notice('已复制 ' + count + ' 节经文');
             if (navigator.clipboard && window.isSecureContext) {
                 navigator.clipboard.writeText(text).then(done).catch(() => new Notice('复制失败'));
             } else {
@@ -5374,7 +5834,47 @@ class BibleSearchPlugin extends Plugin {
                     new Notice('复制失败');
                 }
             }
+        };
+
+        copyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const picked = pickedRows();
+            const own = this.getTooltipPool();
+            if (picked.length === 0 && own.length === 0) { new Notice('请先勾选要复制的经文'); return; }
+            // 未勾选「保留候选」→ 各窗口各自独立，只复制本弹窗的内容
+            if (!keepOn()) {
+                doCopyText(formatOwn(), own.length || picked.length);
+                return;
+            }
+            const out = outsideCount();
+            if (out === 0) {
+                doCopyText(formatOwn(), own.length || picked.length);
+                return;
+            }
+            // 多个页面都有候选经文 → 弹出复制范围选项
+            this.showPopupMenu(copyBtn, [
+                { label: '本页复制（' + (own.length || picked.length) + ' 节）', action: () => doCopyText(formatOwn(), own.length || picked.length) },
+                { label: '全局复制（' + buildGlobalList().length + ' 条）', action: () => this.copyTooltipSelection(view || this.getSearchView(), buildGlobalList()) }
+            ]);
         });
+
+        projBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // 未勾选「保留候选」→ 只投影本弹窗窗口的内容；勾选后投影全局（候选池 + 本弹窗）
+            const list = keepOn() ? buildGlobalList() : ownList();
+            if (list.length === 0) { new Notice('请先勾选要投影的经文'); return; }
+            // 三种投影模式选项
+            this.showPopupMenu(projBtn, [
+                { label: '逐节投影', action: () => this.projectTooltipSelection(view || this.getSearchView(), list, 'focus') },
+                { label: '并列投影', action: () => this.projectTooltipSelection(view || this.getSearchView(), list, 'parallel') },
+                { label: '混合投影', action: () => this.projectTooltipSelection(view || this.getSearchView(), list, 'mixed') }
+            ]);
+        });
+
+        refreshOrders();
+        updateSelToggleBtn();
 
         document.body.appendChild(tooltip);
         const rect = targetEl.getBoundingClientRect();

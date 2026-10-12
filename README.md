@@ -18,7 +18,7 @@
 - **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、关键词（多词组合匹配）、以及混合检索
 - **阅读模式**：书卷/章节网格浏览，快速跳转，字体调节，主题与纲目同屏显示
 - **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影
-- **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文，按顺序累计投影
+- **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文（经文弹窗中勾选的经文也可入池），按顺序累计投影；取消勾选后，经文弹窗 / 圣经搜索 / 圣经阅读各自保留自己的候选，各窗口分别投影
 - **文章内圣经引用自动识别**：阅读笔记时，自动识别文中所出现的圣经引用，点击可查看经文内容，双击可查看经文上下文
 - **自动更新**：支持启动时自动检测新版本，一键下载并安装更新
 
@@ -143,7 +143,7 @@
 ### 全局操作与本页操作
 
 **全局操作**（作用于整个书卷或所有已选中内容）：
-- **保留候选**（标题右侧复选框）：两个标签页共用同一个开关。勾选后，选中的经文会**实时**进入候选池——每选中一处就立即按序加入，右侧的候选数量与经文序号即时刷新，重新搜索、切换书卷/章节、切换标签页都不会丢失（主版本与对照版本均保留）；取消勾选某处经文也会立即从候选池移除。刚勾选开关时已有的选中项会立即纳入候选池。默认关闭时保持原有行为（切换书卷会清空旧书卷选中项）。点击「清空」可一键清空保留的候选（「取消全选」也会一并清空）。取消勾选时会把已保留的候选按来源归还到检索页 / 阅读页，两个视图都从 1 重新开始编号
+- **保留候选**（标题右侧复选框）：两个标签页与经文弹窗共用同一个开关。勾选后，选中的经文会**实时**进入候选池——每选中一处就立即按序加入，右侧的候选数量与经文序号即时刷新，重新搜索、切换书卷/章节、切换标签页、开关弹窗都不会丢失（主版本与对照版本均保留）；取消勾选某处经文也会立即从候选池移除。经文弹窗的「保留候选」开关默认不勾选，勾选后弹窗内勾选的经文同样进入候选池。刚勾选开关时已有的选中项会立即纳入候选池。默认关闭时保持原有行为（切换书卷会清空旧书卷选中项）。点击「清空」可一键清空保留的候选（「取消全选」也会一并清空）。取消勾选时会把已保留的候选按来源归还到检索页 / 阅读页，两个视图都从 1 重新开始编号
 - **全局全选**：按顺序选中当前书卷所有章节的主版本内容（含主题）
 - **全局取消**：取消所有已选中的内容（跨所有章节）
 - **全局复制**：复制所有已选中的内容
@@ -189,10 +189,16 @@
 **经文弹窗操作**：
 
 - `A-` / `A+`：缩小 / 放大弹窗字体（调整后的字体大小会被记住，下次弹窗自动沿用）
-- `全选` / `取消`：勾选或取消勾选弹窗中全部经文
-- `复制`：复制弹窗中已勾选的经文（带出处）
-- 每处经文前都有候选框，可单独勾选后再点击「复制」
+- `全选` / `取消`：合并为同一个按钮——未全选时显示「全选」，已全选时自动变成「取消」
+- `复制`：复制弹窗中已勾选的经文（带出处）。勾选「保留候选」且候选池或圣经搜索 / 圣经阅读中也有选中经文时，会先弹出「本页复制 / 全局复制」供选择；否则只复制本弹窗的经文
+- `投影`：点击后给出「逐节 / 并列 / 混合」三种投影模式。未勾选「保留候选」时只投影本弹窗的经文；勾选后按全局顺序投影候选池与各页面的选中经文
+- `保留候选`（标题行，默认不勾选）：勾选后，弹窗中勾选的经文会实时进入候选池，可与圣经搜索 / 圣经阅读的选中项一起投影；取消勾选某节会即时移出候选池。右侧的候选数量与圣经搜索 / 圣经阅读保持一致——勾选时显示候选池总数，未勾选时只统计本弹窗自己的候选
+- 标题行在候选数量大于 0 时显示 `清空`，与圣经搜索 / 圣经阅读的「清空」一致：**一次清空三个窗口的全部候选**（经文弹窗 / 圣经搜索 / 圣经阅读，含所有经文弹窗的候选）
+- 未勾选「保留候选」时，每处经文引用的弹窗都**独立统计**、从 1 开始编号，弹窗之间互不累计；关闭再打开仍然保留
+- 每处经文前是与圣经搜索 / 圣经阅读相同的**候选框**：未选中是空框，选中后在框内直接显示**选中顺序**编号——未勾选「保留候选」时按本弹窗从 1 开始编号，勾选后按全局顺序编号，与实际投影顺序一致
+- 选中后的经文后面会出现**「并」标签**（与圣经搜索 / 圣经阅读一致）：点击切换为「✓ 并列」，混合投影时该节会与前一节合并到同一页
 - **双击弹窗中的经文出处**（顶部出处或每节前的 `章:节`）：跳转到圣经阅读页面对应的经文位置，方便查看上下文
+- 三个窗口（经文弹窗 / 圣经搜索 / 圣经阅读）各自保留自己的候选：取消勾选「保留候选」时，各窗口的选中项仍然保留，在哪个窗口点「投影」就只投影哪个窗口的内容
 
 ---
 
@@ -227,6 +233,8 @@
 - **自动检测**：设置 → 自动检测更新（默认开启），启动时自动检查新版本
 - **手动检查**：设置 → 立即检查更新
 - **一键更新**：检测到新版本后，点击「立即更新」即可自动下载并安装
+
+**更新说明**：无论用哪种方式安装或更新（插件自带的更新功能、Obsidian 第三方插件市场、BRAT、手动覆盖安装），只要版本号发生变化，下次启动 Obsidian 时都会自动弹出**最新版的更新内容**（内置更新日志优先，缺失时自动从 GitHub 拉取）；版本没变就不会重复弹。想随时回看，可以运行命令「查看当前版本的更新说明」，或在设置 → 插件更新里点「📜 查看」。
 
 ---
 
@@ -272,6 +280,8 @@ Bible Search and Reader is an Obsidian plugin for searching, reading, and projec
 
 The plugin works on desktop and mobile. Data files are stored inside the vault at `.obsidian/plugins/bible-search-reader/`, so no external files are added to your vault.
 
+**What's new after updating**: however the plugin was installed or updated (its built-in updater, Obsidian's community plugin store, BRAT, or copying files in manually), it compares the last recorded version with the current one on startup and shows the **latest release notes** whenever the version changes (built-in changelog first, fetched from GitHub when missing). It never re-shows the same version. You can also re-open it anytime with the "View release notes for the current version" command or the 📜 button under Settings → Plugin update.
+
 ## Usage
 
 - **Search**: click the 📖 ribbon icon (or run the "Open Bible Search" command). Pick the search type (theme / outline / verse) and range, type a query, and search.
@@ -281,7 +291,7 @@ The plugin works on desktop and mobile. Data files are stored inside the vault a
 - **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `T` to toggle theme, `ESC` to exit. The `🔍 检索` button shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and `⛶ 全屏` restores full screen.
 - **Projection search**: the 🔍 button in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
 - **Keep candidates**: the 「保留候选」 checkbox beside "全局操作" is shared by both tabs. Once ticked, every verse you select is added to the candidate pool **in real time** — the counter and verse numbers update immediately, and nothing is lost on re-search, book/chapter switch or tab switch. Unticking a verse removes it from the pool at once. A 「清空」 button clears the pool. Unticking the checkbox releases kept candidates back to the search/reader view and restarts numbering from 1.
-- **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted. References that omit the book name inherit the last book mentioned earlier in the same note (works across lines and paragraphs), and a bare verse number continues from the end chapter of the previous range. Single-click a reference to open the verse popup (font +/-, 全选/取消, 复制 with per-verse checkboxes, and remembered font size); double-click a reference (or a `章:节` inside the popup) to jump to the reader view.
+- **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted. References that omit the book name inherit the last book mentioned earlier in the same note (works across lines and paragraphs), and a bare verse number continues from the end chapter of the previous range. Single-click a reference to open the verse popup (font +/-, a combined 全选/取消 toggle, 复制 and 投影, per-verse checkboxes that show the selection-order number once selected (same box style as the search / reader tabs), a 「并」 tag behind each selected verse for side-by-side projection, and remembered font size). The popup keeps its own candidates: with 「保留候选」 unticked, the popup, the search tab and the reader tab each keep their own selections, and projecting from one of them only projects that window's content (each reference's popup numbers its own verses from 1, and the selections survive closing the popup). Its header shows 保留候选 + count + a 清空 button; the count follows the same rule as the search / reader tabs (shared pool total when ticked, the popup's own count when unticked), and 清空 clears every window's candidates at once (popup + search + reader). With 「保留候选」 ticked, popup verses join the shared pool so everything is projected together; 复制 then offers 本页复制 / 全局复制, and 投影 offers 逐节 / 并列 / 混合. Double-click a reference (or a `章:节` inside the popup) to jump to the reader view.
 - **Version management**: in plugin settings, enable/disable versions, set the primary version, delete versions, or download new ones.
 
 ---
