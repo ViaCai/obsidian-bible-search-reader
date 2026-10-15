@@ -317,6 +317,7 @@ const CHANGELOG_CONTENT = {
 - **书卷 / 章节选择网格自适应**：书卷列表与章节列表从固定 6 列改为 repeat(auto-fill, minmax(46px, 1fr))，容器变窄时自动减少列数，避免按钮被挤出侧边栏
 - **搜索框行自适应**：输入框与按钮整行允许换行，极窄窗口下「查询」按钮可自动换到第二行；输入框最小宽度压缩到 35px，更窄的侧边栏也能放得下
 - **投影底部工具栏被遮盖**：工具栏按钮全部改为符号 / 图标，并大幅压缩按钮尺寸；左右翻页始终固定在两端，中间按钮在窄窗口自动换行成两行显示，不再被挤出画面
+- **标签栏窄屏按钮被挤出**：侧边栏较窄时，标签栏的「对照」「专注」按钮会被挤出画面。现在会实时检测标签栏是否溢出，溢出时自动隐藏「搜索 / 阅读」的文字只保留图标，并缩小按钮宽度与间距；窗口大小足够时恢复完整显示
 
 ### 改进
 - **标签页图标化**：「圣经搜索」「圣经阅读」标签页改为图标 + 文字（放大镜图标 + 搜索 / 书签图标 + 阅读）
@@ -1898,16 +1899,26 @@ class BibleSearchView extends ItemView {
         this.buildReaderTab();
         this.switchTab('search');
     }
-    async onClose() {}
+    async onClose() {
+        if (this._tabResizeObserver) {
+            this._tabResizeObserver.disconnect();
+            this._tabResizeObserver = null;
+        }
+        if (this._tabResizeHandler) {
+            window.removeEventListener('resize', this._tabResizeHandler);
+            this._tabResizeHandler = null;
+        }
+    }
 
     buildTabs() {
         const tabBar = this.container.createDiv({ cls: 'bible-tab-bar' });
+        this.tabBar = tabBar;
         this.tabSearch = tabBar.createEl('button', { cls: 'bible-tab active' });
         setIcon(this.tabSearch, 'search');
-        this.tabSearch.createSpan({ text: '搜索' });
+        this.tabSearch.createSpan({ cls: 'bible-tab-text', text: '搜索' });
         this.tabReader = tabBar.createEl('button', { cls: 'bible-tab' });
         setIcon(this.tabReader, 'book-marked');
-        this.tabReader.createSpan({ text: '阅读' });
+        this.tabReader.createSpan({ cls: 'bible-tab-text', text: '阅读' });
 
         this.tabSearch.addEventListener('click', () => this.switchTab('search'));
         this.tabReader.addEventListener('click', () => this.switchTab('reader'));
@@ -1917,6 +1928,30 @@ class BibleSearchView extends ItemView {
 
         this.focusModeBtn = tabBar.createEl('button', { cls: 'bible-focus-mode-btn', text: '专注' });
         this.focusModeBtn.addEventListener('click', () => this.toggleFocusMode());
+
+        this.setupTabOverflowWatch();
+    }
+
+    // 标签栏窄屏自适应：溢出时隐藏「搜索 / 阅读」文字只保留图标并缩小按钮宽度，
+    // 保证右侧「对照 / 专注」不被挤出画面；窗口足够时自动恢复完整显示
+    setupTabOverflowWatch() {
+        requestAnimationFrame(() => this.updateTabBarCompact());
+        if (typeof ResizeObserver !== 'undefined') {
+            this._tabResizeObserver = new ResizeObserver(() => this.updateTabBarCompact());
+            this._tabResizeObserver.observe(this.tabBar);
+        }
+        this._tabResizeHandler = () => this.updateTabBarCompact();
+        window.addEventListener('resize', this._tabResizeHandler);
+    }
+
+    updateTabBarCompact() {
+        if (!this.tabBar) return;
+        // 先还原到完整状态再测量，避免在已精简的状态下误判（窗口变宽时能及时恢复）
+        const wasCompact = this.tabBar.classList.contains('compact');
+        if (wasCompact) this.tabBar.classList.remove('compact');
+        if (this.tabBar.scrollWidth > this.tabBar.clientWidth + 1) {
+            this.tabBar.classList.add('compact');
+        }
     }
 
 

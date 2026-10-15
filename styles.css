@@ -43,6 +43,17 @@
     width: 14px;
     height: 14px;
 }
+/* 标签栏窄屏精简模式：内容溢出时自动隐藏「搜索 / 阅读」文字只保留图标，并缩小按钮宽度，
+   保证右侧「对照 / 专注」不被挤出画面；窗口足够时恢复完整显示 */
+.bible-tab-bar.compact {
+    gap: 3px;
+}
+.bible-tab-bar.compact .bible-tab {
+    padding: 8px 8px;
+}
+.bible-tab-bar.compact .bible-tab-text {
+    display: none;
+}
 .bible-tab:hover {
     background: var(--background-modifier-hover);
     color: var(--text-normal);
