@@ -25,6 +25,10 @@
 }
 .bible-tab {
     flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
     padding: 8px 12px;
     border: none;
     border-radius: 6px 6px 0 0;
@@ -34,7 +38,10 @@
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
-    text-align: center;
+}
+.bible-tab .svg-icon {
+    width: 14px;
+    height: 14px;
 }
 .bible-tab:hover {
     background: var(--background-modifier-hover);
@@ -112,6 +119,28 @@
     font-size: 10px;
     color: var(--text-muted);
 }
+.bible-section-font-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    margin-left: 4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.bible-section-font-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--bible-accent);
+}
+.bible-section-font-btn svg {
+    width: 14px;
+    height: 14px;
+}
 .bible-section-body {
     padding: 0 12px 12px 12px;
 }
@@ -160,11 +189,13 @@
 /* ===== 输入框 ===== */
 .bible-input-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 6px;
 }
 .bible-search-input {
-    flex: 1;
+    flex: 1 1 35px;
+    min-width: 35px;
     padding: 8px 12px;
     border: 1px solid var(--bible-card-border);
     border-radius: 6px;
@@ -177,7 +208,7 @@
     border-color: var(--bible-accent);
 }
 .bible-input-btn {
-    flex-shrink: 0;
+    flex: 0 0 auto;
     padding: 8px 12px;
     border: 1px solid var(--bible-card-border);
     border-radius: 6px;
@@ -259,18 +290,21 @@
 /* ===== 结果头部 ===== */
 .bible-results-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin: 10px 0 6px 0;
     padding: 0 4px;
 }
 .bible-results-count {
-    flex: 1;
+    flex: 1 1 auto;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-normal);
 }
 .bible-small-btn {
+    flex: 0 1 auto;
+    min-width: 56px;
     padding: 4px 10px;
     border: 1px solid var(--bible-card-border);
     border-radius: 4px;
@@ -278,6 +312,9 @@
     color: var(--text-normal);
     font-size: 11px;
     cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .bible-small-btn:hover {
     background: var(--background-modifier-hover);
@@ -439,14 +476,16 @@
     color: var(--text-muted);
     margin: 8px 0 6px 0;
 }
+/* 书卷/章节网格：根据容器宽度自动填充，避免窄窗口被挤出 */
 .bible-reader-grid {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
     gap: 6px;
     margin-bottom: 10px;
 }
 .bible-reader-book-btn,
 .bible-reader-chapter-btn {
+    min-width: 0;
     padding: 8px 4px;
     border: 1px solid var(--bible-card-border);
     border-radius: 6px;
@@ -456,6 +495,9 @@
     text-align: center;
     cursor: pointer;
     transition: all 0.15s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .bible-reader-book-btn:hover,
 .bible-reader-chapter-btn:hover {
@@ -464,18 +506,20 @@
 }
 .bible-reader-nav-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin-bottom: 10px;
 }
 .bible-reader-nav-btn {
-    padding: 4px 10px;
+    padding: 4px 6px;
     border: 1px solid var(--bible-card-border);
     border-radius: 4px;
     background: var(--background-primary);
     color: var(--text-normal);
     font-size: 11px;
     cursor: pointer;
+    min-width: 48px;
 }
 .bible-reader-nav-btn:hover:not(:disabled) {
     background: var(--background-modifier-hover);
@@ -488,6 +532,142 @@
     font-size: 13px;
     font-weight: 600;
     flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+.bible-reader-nav-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 6px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-normal);
+    transition: background 0.2s, border-color 0.2s;
+}
+.bible-reader-nav-pill:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--bible-accent);
+}
+.bible-reader-nav-caret {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1;
+}
+.bible-reader-nav-menu {
+    position: fixed;
+    z-index: 9999;
+    max-height: 320px;
+    max-width: calc(100vw - 16px);
+    overflow-y: auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 8px;
+    box-sizing: border-box;
+}
+.bible-reader-nav-menu-books {
+    min-width: 160px;
+    max-width: calc(100vw - 16px);
+}
+.bible-reader-nav-menu-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+.bible-reader-nav-menu-col {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.bible-reader-nav-menu-group {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 4px 0 4px 4px;
+}
+.bible-reader-nav-menu-item {
+    padding: 4px 6px;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+.bible-reader-nav-menu-item:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-reader-nav-menu-item.active {
+    background: var(--bible-accent);
+    color: #fff;
+}
+.bible-reader-nav-menu-chapters {
+    min-width: 160px;
+    max-width: calc(100vw - 16px);
+}
+.bible-reader-nav-menu-chapter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+    gap: 4px;
+    padding: 2px;
+}
+.bible-reader-nav-menu-chip {
+    padding: 6px 0;
+    font-size: 13px;
+    text-align: center;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    transition: background 0.2s;
+}
+.bible-reader-nav-menu-chip:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-reader-nav-menu-chip.active {
+    background: var(--bible-accent);
+    color: #fff;
+    border-color: var(--bible-accent);
+}
+.bible-reader-font-picker {
+    min-width: 120px;
+    padding: 6px;
+}
+.bible-reader-font-picker-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.bible-reader-font-picker-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+.bible-reader-font-picker-btn:hover {
+    background: var(--background-modifier-hover);
+    border-color: var(--bible-accent);
+}
+.bible-reader-font-picker-size {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-normal);
+    min-width: 40px;
+    text-align: center;
 }
 .bible-reader-content-nav {
     display: flex;
@@ -589,35 +769,38 @@
 }
 /* 投影工具按钮：暗色下用纯白文字 + 更亮的描边/底色，保证符号清晰 */
 .bible-proj-tool-btn {
-    min-width: 36px;
-    height: 34px;
-    padding: 0 8px;
+    min-width: 28px;
+    height: 30px;
+    padding: 0 6px;
     border: 1px solid rgba(255,255,255,0.55);
     border-radius: 6px;
     background: rgba(255,255,255,0.18);
     color: #fff;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
 }
 .bible-proj-tool-btn:hover {
     background: rgba(255,255,255,0.32);
     border-color: rgba(255,255,255,0.85);
 }
-/* 带文字的按钮（A− / A+ / 重置 / 居中） */
-.bible-proj-tool-label {
-    font-size: 14px;
-    letter-spacing: 0.5px;
-    padding: 0 10px;
+/* 纯图标按钮（重置 / 居中 / 检索 / 字号 − +） */
+.bible-proj-tool-icon {
+    padding: 0 5px;
 }
-/* 纯符号按钮（主题 / 关闭）放大符号 */
+.bible-proj-tool-icon svg {
+    width: 15px;
+    height: 15px;
+}
+/* 纯符号按钮（主题 / 关闭） */
 .bible-proj-tool-emoji {
-    font-size: 18px;
-    padding: 0 6px;
+    font-size: 16px;
+    padding: 0 5px;
 }
 /* 已开启的状态（如「居中」）高亮 */
 .bible-proj-tool-btn.active {
@@ -631,23 +814,11 @@
     color: #fff;
 }
 .bible-proj-font-size {
-    font-size: 13px;
-    min-width: 50px;
+    font-size: 12px;
+    min-width: 38px;
     text-align: center;
     color: inherit;
-}
-
-/* 底部「检索」按钮：在不关闭投影的情况下打开插件检索窗口 */
-.bible-proj-search-btn {
-    height: 30px;
-    padding: 0 12px;
-    font-size: 13px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-.bible-projection-fullscreen.light-mode .bible-proj-search-btn {
-    background: rgba(0,0,0,0.06);
-    color: #1f2937;
+    flex-shrink: 0;
 }
 
 /* 底部翻页导航 */
@@ -664,15 +835,17 @@
     justify-content: center;
     gap: 6px;
     flex: 1;
+    min-width: 0;
+    flex-wrap: wrap;
 }
 .bible-proj-nav-btn {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     border: none;
     background: #3b82f6;
     color: #fff;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 700;
     cursor: pointer;
     display: flex;
@@ -716,7 +889,7 @@
 /* 移动端适配 */
 @media (max-width: 500px) {
     .bible-reader-grid {
-        grid-template-columns: repeat(5, 1fr);
+        grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
     }
     .bible-proj-slide-wrapper {
         width: 95%;
@@ -736,13 +909,17 @@
         gap: 4px;
     }
     .bible-proj-tool-btn {
-        width: 26px;
-        height: 26px;
+        width: 28px;
+        height: 28px;
         font-size: 11px;
+    }
+    .bible-proj-tool-icon svg {
+        width: 13px;
+        height: 13px;
     }
     .bible-proj-font-size {
         font-size: 11px;
-        min-width: 36px;
+        min-width: 34px;
     }
     .bible-proj-nav-btn {
         width: 32px;
@@ -763,12 +940,6 @@
     background: var(--background-secondary);
     border-radius: 6px;
 }
-.bible-reader-jump-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
-    white-space: nowrap;
-}
 .bible-reader-jump-select {
     padding: 4px 6px;
     border: 1px solid var(--background-modifier-border);
@@ -788,6 +959,13 @@
 .bible-reader-jump-select:focus {
     border-color: var(--bible-accent);
     outline: none;
+}
+.bible-reader-book-select {
+    min-width: 11px;
+}
+.bible-reader-nav-icon-btn {
+    min-width: 26px;
+    padding: 4px 6px;
 }
 
 /* ===== 阅读字体控制 ===== */
@@ -811,8 +989,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 1 1 auto;
-    justify-content: flex-end;
+    flex: 0 1 auto;
+    justify-content: flex-start;
     min-width: 120px;
 }
 .bible-reader-font-label {

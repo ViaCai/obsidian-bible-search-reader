@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, TFile, TFolder, ItemView, WorkspaceLeaf, Notice, Platform, requestUrl, Modal } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, TFile, TFolder, ItemView, WorkspaceLeaf, Notice, Platform, requestUrl, Modal, setIcon } = require('obsidian');
 
 // ==================== 圣经书卷数据 ====================
 const BIBLE_BOOKS = [
@@ -309,6 +309,24 @@ function parseNumber(s) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '3.1.3': `## [3.1.3] - 2026-10-15
+
+### 修复
+- **侧边栏窄宽布局优化**：修复 Obsidian 侧边栏较窄时，全局操作按钮（全局全选 / 全局取消 / 全局复制 / 逐节 / 并列 / 混合投影）被挤出画面的问题。按钮组改为 flex 自适应换行，输入框右侧按钮不再被压缩，确保桌面端窄边栏和移动端都能正常显示
+- **混合投影字体大小调节无效**：修复混合投影模式下投影工具栏字号调节不起作用的问题。原因是 updateFontSize() 没有更新混合模式专用的 .bible-proj-mixed-text / .bible-proj-mixed-ref，现已补齐
+- **书卷 / 章节选择网格自适应**：书卷列表与章节列表从固定 6 列改为 repeat(auto-fill, minmax(46px, 1fr))，容器变窄时自动减少列数，避免按钮被挤出侧边栏
+- **搜索框行自适应**：输入框与按钮整行允许换行，极窄窗口下「查询」按钮可自动换到第二行；输入框最小宽度压缩到 35px，更窄的侧边栏也能放得下
+- **投影底部工具栏被遮盖**：工具栏按钮全部改为符号 / 图标，并大幅压缩按钮尺寸；左右翻页始终固定在两端，中间按钮在窄窗口自动换行成两行显示，不再被挤出画面
+
+### 改进
+- **标签页图标化**：「圣经搜索」「圣经阅读」标签页改为图标 + 文字（放大镜图标 + 搜索 / 书签图标 + 阅读）
+- **阅读页顶部快速跳转改为点击选择**：书卷名与章数改为带 ▼ 的胶囊按钮，点击书卷名弹出按旧约 / 新约双列分组的书卷菜单，点击章数弹出网格章节菜单，当前所在书卷 / 章节高亮；菜单会自动避开窗口边界，窄侧边栏下也不再超出可视区。书卷名带序号（如 38. 撒迦利亚书），章数显示去掉「第」字
+- **本页操作布局统一**：搜索页与阅读页的「本页操作」统一为可折叠区块（与「全局操作」一致），前面加「本页操作」标签，按钮精简为两个字（全选 / 复制 / 经文 / 纲目），宽度与全局操作按钮一致
+- **字体调节入口调整**：移除阅读页独立的「字体：− / +」行，改为「全局操作」标题右侧的字体图标按钮，点击后弹出字号调节面板
+- **返回按钮精简**：「← 返回书卷」「← 返回章节」统一改为「返回」，去掉箭头
+- **章节列表页书卷选择**：章节列表页顶部的书卷名也改为可点击，点击后直接弹出书卷选择菜单，不必再返回上一级
+- **投影工具栏符号化**：字号按钮由 A− / A+ 改为 − / +；重置改为旋转箭头图标；居中改为对齐图标（开启时蓝色高亮）；检索改为放大镜图标（分屏检索时切换为全屏图标）；主题切换由月亮 / 太阳图标表示
+`,
     '3.1.2': `## [3.1.2] - 2026-10-12
 
 ### 新增
@@ -1346,7 +1364,7 @@ class BibleProjectionOverlay {
         topLeft.createEl('span', { cls: 'bible-proj-mode-name', text: this.getModeName() });
         const topCenter = topBar.createDiv();
         topCenter.style.cssText = 'font-size:12px;opacity:0.75;text-align:center;flex:1;';
-        topCenter.setText('← → 翻页  ·  +/- 字体  ·  T 主题  ·  🔍 检索  ·  ESC 关闭');
+        topCenter.setText('← → 翻页  ·  +/- 字体  ·  T 主题  ·  检索  ·  ESC 关闭');
         const topRight = topBar.createDiv();
         topRight.createEl('span', { cls: 'bible-proj-page-num', text: (this.currentSlide + 1) + '/' + this.slides.length + '页' });
         this.overlay.appendChild(topBar);
@@ -1374,15 +1392,19 @@ class BibleProjectionOverlay {
                 attr: { 'data-action': action, title: title }
             });
         };
-        addToolBtn('A−', 'font-smaller', '缩小字体', 'bible-proj-tool-label');
+        addToolBtn('−', 'font-smaller', '缩小字体', 'bible-proj-tool-icon');
         toolCenter.createEl('span', { cls: 'bible-proj-font-size', text: this.fontSize + 'px' });
-        addToolBtn('A+', 'font-larger', '放大字体', 'bible-proj-tool-label');
-        addToolBtn('重置', 'font-reset', '重置字体', 'bible-proj-tool-label');
+        addToolBtn('+', 'font-larger', '放大字体', 'bible-proj-tool-icon');
+        const resetBtn = addToolBtn('', 'font-reset', '重置字体', 'bible-proj-tool-icon');
+        setIcon(resetBtn, 'rotate-ccw');
         if (this.mode !== 'focus') {
-            addToolBtn('居中', 'toggle-centered', '切换居中', 'bible-proj-tool-label');
+            const centerBtn = addToolBtn('', 'toggle-centered', '切换居中', 'bible-proj-tool-icon');
+            setIcon(centerBtn, 'align-center');
         }
-        addToolBtn('🌙', 'toggle-theme', '切换主题', 'bible-proj-tool-emoji');
-        addToolBtn('🔍 检索', 'open-search', '打开检索窗口（不关闭投影）', 'bible-proj-search-btn');
+        const themeBtn = addToolBtn('', 'toggle-theme', '切换主题', 'bible-proj-tool-icon');
+        setIcon(themeBtn, this.isDark ? 'moon' : 'sun');
+        const searchBtn = addToolBtn('', 'open-search', '打开检索窗口（不关闭投影）', 'bible-proj-tool-icon');
+        setIcon(searchBtn, 'search');
         addToolBtn('✕', 'close', '关闭投影', 'bible-proj-tool-emoji');
 
         const nextBtn = bottomRow.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-next', text: '▶' });
@@ -1599,17 +1621,18 @@ class BibleProjectionOverlay {
     toggleCentered() {
         this.isCentered = !this.isCentered;
         const btn = this.overlay.querySelector('[data-action="toggle-centered"]');
-        if (btn) {
-            btn.textContent = this.isCentered ? '✓ 居中' : '居中';
-            btn.classList.toggle('active', this.isCentered);
-        }
+        if (btn) btn.classList.toggle('active', this.isCentered);
         this.renderSlide();
     }
 
     toggleTheme() {
         this.isDark = !this.isDark;
         const btn = this.overlay.querySelector('[data-action="toggle-theme"]');
-        if (btn) btn.textContent = this.isDark ? '🌙' : '☀️';
+        if (btn) {
+            btn.empty();
+            setIcon(btn, this.isDark ? 'moon' : 'sun');
+            btn.title = this.isDark ? '切换到亮色' : '切换到暗色';
+        }
         if (this.isDark) {
             this.overlay.classList.remove('light-mode');
             this.overlay.style.background = '#1a1a2e';
@@ -1711,7 +1734,7 @@ class BibleProjectionOverlay {
         this.applySplitLayout();
         setTimeout(() => this.applySplitLayout(), 120);
         this.watchSidebar();
-        new Notice('已在右侧打开圣经检索；改选内容后点投影即可原地更新，点「⛶ 全屏」恢复全屏');
+        new Notice('已在右侧打开圣经检索；改选内容后点投影即可原地更新，点「全屏」按钮恢复全屏');
     }
 
     exitSearchMode() {
@@ -1786,7 +1809,11 @@ class BibleProjectionOverlay {
 
     updateSearchBtn() {
         const btn = this.overlay.querySelector('[data-action="open-search"]');
-        if (btn) btn.textContent = this.isSearchMode ? '⛶ 全屏' : '🔍 检索';
+        if (btn) {
+            btn.empty();
+            setIcon(btn, this.isSearchMode ? 'maximize' : 'search');
+            btn.title = this.isSearchMode ? '恢复全屏投影' : '打开检索窗口（不关闭投影）';
+        }
     }
 
     // 用新的选中内容替换当前投影内容（原地更新，保持当前分屏/全屏状态，避免画面缩放跳动）
@@ -1875,8 +1902,12 @@ class BibleSearchView extends ItemView {
 
     buildTabs() {
         const tabBar = this.container.createDiv({ cls: 'bible-tab-bar' });
-        this.tabSearch = tabBar.createEl('button', { cls: 'bible-tab active', text: '圣经搜索' });
-        this.tabReader = tabBar.createEl('button', { cls: 'bible-tab', text: '圣经阅读' });
+        this.tabSearch = tabBar.createEl('button', { cls: 'bible-tab active' });
+        setIcon(this.tabSearch, 'search');
+        this.tabSearch.createSpan({ text: '搜索' });
+        this.tabReader = tabBar.createEl('button', { cls: 'bible-tab' });
+        setIcon(this.tabReader, 'book-marked');
+        this.tabReader.createSpan({ text: '阅读' });
 
         this.tabSearch.addEventListener('click', () => this.switchTab('search'));
         this.tabReader.addEventListener('click', () => this.switchTab('reader'));
@@ -2696,8 +2727,19 @@ class BibleSearchView extends ItemView {
 
         this.resultsHeader = fixedTop.createDiv({ cls: 'bible-results-header' });
         this.resultsCount = this.resultsHeader.createEl('span', { cls: 'bible-results-count', text: '' });
-        const pageSelectAllBtn = this.resultsHeader.createEl('button', { cls: 'bible-small-btn', text: '本页全选' });
-        const pageCopyBtn = this.resultsHeader.createEl('button', { cls: 'bible-small-btn', text: '📋 本页复制' });
+
+        const pageActionSection = fixedTop.createDiv({ cls: 'bible-section' });
+        const pageActionHeader = pageActionSection.createDiv({ cls: 'bible-section-header' });
+        const pageActionIcon = pageActionHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
+        pageActionHeader.createEl('span', { text: '本页操作' });
+        const pageActionBody = pageActionSection.createDiv({ cls: 'bible-action-grid' });
+        pageActionHeader.addEventListener('click', () => {
+            const isCollapsed = pageActionBody.style.display === 'none';
+            pageActionBody.style.display = isCollapsed ? 'flex' : 'none';
+            pageActionIcon.textContent = isCollapsed ? '▼' : '▶';
+        });
+        const pageSelectAllBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '全选' });
+        const pageCopyBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '复制' });
 
         this.paginationEl = fixedTop.createDiv({ cls: 'bible-pagination' });
 
@@ -3365,9 +3407,12 @@ class BibleSearchView extends ItemView {
         const book = this.readerBook;
         if (!book) { this.readerState = 'books'; this.renderReader(); return; }
         const nav = this.readerContent.createDiv({ cls: 'bible-reader-nav-row' });
-        const backBtn = nav.createEl('button', { cls: 'bible-reader-nav-btn', text: '← 返回书卷' });
+        const backBtn = nav.createEl('button', { cls: 'bible-reader-nav-btn', text: '返回' });
         backBtn.addEventListener('click', () => { this.readerState = 'books'; this.renderReader(); });
-        nav.createEl('span', { cls: 'bible-reader-nav-title', text: book.id + '. ' + book.fullName });
+        const titleGroup = nav.createEl('span', { cls: 'bible-reader-nav-title' });
+        const bookLabel = titleGroup.createEl('span', { cls: 'bible-reader-nav-pill', text: book.id + '. ' + book.fullName });
+        bookLabel.createEl('span', { cls: 'bible-reader-nav-caret', text: ' ▼' });
+        bookLabel.addEventListener('click', () => this.showBookPicker(bookLabel));
         const grid = this.readerContent.createDiv({ cls: 'bible-reader-grid' });
         for (let i = 1; i <= book.maxChapters; i++) {
             const btn = grid.createEl('button', { cls: 'bible-reader-chapter-btn', text: String(i) });
@@ -3407,68 +3452,28 @@ class BibleSearchView extends ItemView {
         const hasCompare = compareVersions.length > 0;
 
         const nav = this.readerFixedTop.createDiv({ cls: 'bible-reader-nav-row' });
-        const backBtn = nav.createEl('button', { cls: 'bible-reader-nav-btn', text: '← 返回章节' });
+        const backBtn = nav.createEl('button', { cls: 'bible-reader-nav-btn', text: '返回' });
         backBtn.addEventListener('click', () => { this.readerState = 'chapters'; this.renderReader(); });
-        nav.createEl('span', { cls: 'bible-reader-nav-title', text: book.fullName + ' 第' + chapter + '章' });
-
-        const jumpRow = this.readerFixedTop.createDiv({ cls: 'bible-reader-jump-row' });
-        jumpRow.createEl('span', { cls: 'bible-reader-jump-label', text: '快速跳转：' });
-        const bookSelect = jumpRow.createEl('select', { cls: 'bible-reader-jump-select' });
-        for (const b of BIBLE_BOOKS) {
-            const opt = bookSelect.createEl('option', { value: String(b.id), text: b.id + '. ' + b.fullName });
-            if (b.id === book.id) opt.selected = true;
-        }
-        const chapterSelect = jumpRow.createEl('select', { cls: 'bible-reader-jump-select' });
-        for (let i = 1; i <= book.maxChapters; i++) {
-            const opt = chapterSelect.createEl('option', { value: String(i), text: '第' + i + '章' });
-            if (i === chapter) opt.selected = true;
-        }
-        bookSelect.addEventListener('change', () => {
-            const newBookId = parseInt(bookSelect.value);
-            const newBook = BOOK_ID_MAP[newBookId];
-            if (newBook) {
-                this.readerBook = newBook;
-                this.readerChapter = 1;
-                this.renderReader();
-            }
-        });
-        chapterSelect.addEventListener('change', () => {
-            this.readerChapter = parseInt(chapterSelect.value);
-            this.renderReader();
-        });
-
-
-        // 字体调节行（上一章/下一章放在右边）
-        const fontRow = this.readerFixedTop.createDiv({ cls: 'bible-reader-font-row' });
-        const fontGroup = fontRow.createDiv({ cls: 'bible-reader-font-group' });
-        fontGroup.createEl('span', { cls: 'bible-reader-font-label', text: '字体：' });
-        const fontSmaller = fontGroup.createEl('button', { cls: 'bible-reader-font-btn', text: '−' });
-        const fontSizeDisplay = fontGroup.createEl('span', { cls: 'bible-reader-font-size', text: this.readerFontSize + 'px' });
-        const fontLarger = fontGroup.createEl('button', { cls: 'bible-reader-font-btn', text: '+' });
-        fontSmaller.addEventListener('click', () => {
-            this.readerFontSize = Math.max(10, this.readerFontSize - 1);
-            fontSizeDisplay.setText(this.readerFontSize + 'px');
-            this.updateReaderFontSize();
-        });
-        fontLarger.addEventListener('click', () => {
-            this.readerFontSize = Math.min(32, this.readerFontSize + 1);
-            fontSizeDisplay.setText(this.readerFontSize + 'px');
-            this.updateReaderFontSize();
-        });
-        // 上一章/下一章放在字体调节右边
-        const fontNav = fontRow.createDiv({ cls: 'bible-reader-font-nav' });
-        const prevChBtn = fontNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '◀ 上一章' });
-        const nextChBtn = fontNav.createEl('button', { cls: 'bible-reader-nav-btn', text: '下一章 ▶' });
-        prevChBtn.disabled = chapter <= 1;
-        nextChBtn.disabled = chapter >= book.maxChapters;
-        prevChBtn.addEventListener('click', () => { if (chapter > 1) { this.readerChapter--; this.renderReader(); } });
-        nextChBtn.addEventListener('click', () => { if (chapter < book.maxChapters) { this.readerChapter++; this.renderReader(); } });
+        const titleGroup = nav.createEl('span', { cls: 'bible-reader-nav-title' });
+        const bookLabel = titleGroup.createEl('span', { cls: 'bible-reader-nav-pill', text: book.id + '. ' + book.fullName });
+        bookLabel.createEl('span', { cls: 'bible-reader-nav-caret', text: ' ▼' });
+        const chapterLabel = titleGroup.createEl('span', { cls: 'bible-reader-nav-pill', text: chapter + '章' });
+        chapterLabel.createEl('span', { cls: 'bible-reader-nav-caret', text: ' ▼' });
+        bookLabel.addEventListener('click', () => this.showBookPicker(bookLabel));
+        chapterLabel.addEventListener('click', () => this.showChapterPicker(chapterLabel, book));
 
         // 全局操作区块（模仿搜索视图的折叠区块）
         const actionSection = this.readerFixedTop.createDiv({ cls: 'bible-section bible-action-section' });
         const actionHeader = actionSection.createDiv({ cls: 'bible-section-header' });
         const actionIcon = actionHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
         actionHeader.createEl('span', { text: '全局操作' });
+        // 字体大小按钮（点击弹出调节面板）
+        const fontSizeBtn = actionHeader.createEl('button', { cls: 'bible-section-font-btn', attr: { title: '字体大小' } });
+        setIcon(fontSizeBtn, 'type');
+        fontSizeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showFontSizePicker(fontSizeBtn);
+        });
         // 「保留候选」复选框：勾选后切换书卷/章节时保留已选中的候选经文
         this.buildKeepCandidatesControl(actionHeader);
         const actionBody = actionSection.createDiv({ cls: 'bible-action-grid' });
@@ -3501,19 +3506,21 @@ class BibleSearchView extends ItemView {
         this.currentChapterItems = items;
         this.currentChapterThemeItems = themeItems;
 
-        // 章节标题行（单独一行，不占按钮空间）
-        const chapterTitleRow = this.readerFixedTop.createDiv({ cls: 'bible-reader-nav-title' });
-        chapterTitleRow.style.textAlign = 'center';
-        chapterTitleRow.style.marginBottom = '8px';
-        chapterTitleRow.style.fontSize = '14px';
-        chapterTitleRow.setText(book.fullName + ' 第' + chapter + '章');
-
-        // 本页操作按钮行放在全局操作区块下方（readerFixedTop 中）
-        const pageActionRow = this.readerFixedTop.createDiv({ cls: 'bible-results-header' });
-        const pageSelectAllBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '本页全选' });
-        const pageCopyBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '📋 本页复制' });
-        const copyVersesBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '复制经文' });
-        const copyOutlinesBtn = pageActionRow.createEl('button', { cls: 'bible-small-btn', text: '复制纲目' });
+        // 本页操作区块（参照全局操作的可折叠布局）
+        const pageActionSection = this.readerFixedTop.createDiv({ cls: 'bible-section' });
+        const pageActionHeader = pageActionSection.createDiv({ cls: 'bible-section-header' });
+        const pageActionIcon = pageActionHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
+        pageActionHeader.createEl('span', { text: '本页操作' });
+        const pageActionBody = pageActionSection.createDiv({ cls: 'bible-action-grid' });
+        pageActionHeader.addEventListener('click', () => {
+            const isCollapsed = pageActionBody.style.display === 'none';
+            pageActionBody.style.display = isCollapsed ? 'flex' : 'none';
+            pageActionIcon.textContent = isCollapsed ? '▼' : '▶';
+        });
+        const pageSelectAllBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '全选' });
+        const pageCopyBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '复制' });
+        const copyVersesBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '经文' });
+        const copyOutlinesBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '纲目' });
 
         const contentEl = this.readerContent.createDiv({ cls: 'bible-reader-content-list' });
         contentEl.style.fontSize = this.readerFontSize + 'px';
@@ -3652,6 +3659,109 @@ class BibleSearchView extends ItemView {
         });
 
         this.updateKeepCandidatesUI();
+    }
+
+    showBookPicker(anchorEl) {
+        const menu = document.body.createEl('div', { cls: 'bible-reader-nav-menu bible-reader-nav-menu-books' });
+        const groups = [
+            ['旧约', BIBLE_BOOKS.filter(b => b.testament === 'old')],
+            ['新约', BIBLE_BOOKS.filter(b => b.testament === 'new')]
+        ];
+        const wrap = menu.createDiv({ cls: 'bible-reader-nav-menu-grid' });
+        for (const [gname, books] of groups) {
+            const col = wrap.createDiv({ cls: 'bible-reader-nav-menu-col' });
+            col.createEl('div', { cls: 'bible-reader-nav-menu-group', text: gname });
+            for (const b of books) {
+                const item = col.createEl('div', { cls: 'bible-reader-nav-menu-item' + (b.id === this.readerBook.id ? ' active' : ''), text: b.id + '. ' + b.shortName });
+                item.addEventListener('click', () => {
+                    menu.remove();
+                    this.readerBook = b;
+                    this.readerChapter = 1;
+                    this.renderReader();
+                });
+            }
+        }
+        this.positionPopupMenu(menu, anchorEl);
+        const closeHandler = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+    }
+
+    showChapterPicker(anchorEl, book) {
+        const menu = document.body.createEl('div', { cls: 'bible-reader-nav-menu bible-reader-nav-menu-chapters' });
+        const grid = menu.createDiv({ cls: 'bible-reader-nav-menu-chapter-grid' });
+        for (let i = 1; i <= book.maxChapters; i++) {
+            const item = grid.createEl('div', { cls: 'bible-reader-nav-menu-chip' + (i === this.readerChapter ? ' active' : ''), text: i + '章' });
+            item.addEventListener('click', () => {
+                menu.remove();
+                this.readerChapter = i;
+                this.renderReader();
+            });
+        }
+        this.positionPopupMenu(menu, anchorEl);
+        const closeHandler = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+    }
+
+    positionPopupMenu(menu, anchorEl) {
+        const rect = anchorEl.getBoundingClientRect();
+        // 默认放在锚点下方、左对齐
+        let top = rect.bottom + 4;
+        let left = rect.left;
+        menu.style.top = top + 'px';
+        menu.style.left = left + 'px';
+        // 渲染一帧后根据实际尺寸校正，确保不超出视口
+        requestAnimationFrame(() => {
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const mw = menu.offsetWidth;
+            const mh = menu.offsetHeight;
+            if (left + mw > vw - 8) {
+                left = Math.max(8, vw - mw - 8);
+                menu.style.left = left + 'px';
+            }
+            if (top + mh > vh - 8) {
+                top = Math.max(8, rect.top - mh - 4);
+                menu.style.top = top + 'px';
+            }
+        });
+    }
+
+    showFontSizePicker(anchorEl) {
+        const menu = document.body.createEl('div', { cls: 'bible-reader-nav-menu bible-reader-font-picker' });
+        const row = menu.createDiv({ cls: 'bible-reader-font-picker-row' });
+        const fontSmaller = row.createEl('button', { cls: 'bible-reader-font-picker-btn', text: '−', attr: { title: '缩小字体' } });
+        const fontSizeDisplay = row.createEl('span', { cls: 'bible-reader-font-picker-size', text: this.readerFontSize + 'px' });
+        const fontLarger = row.createEl('button', { cls: 'bible-reader-font-picker-btn', text: '+', attr: { title: '放大字体' } });
+        const updateDisplay = () => {
+            fontSizeDisplay.setText(this.readerFontSize + 'px');
+            this.updateReaderFontSize();
+        };
+        fontSmaller.addEventListener('click', () => {
+            this.readerFontSize = Math.max(10, this.readerFontSize - 1);
+            updateDisplay();
+        });
+        fontLarger.addEventListener('click', () => {
+            this.readerFontSize = Math.min(32, this.readerFontSize + 1);
+            updateDisplay();
+        });
+        this.positionPopupMenu(menu, anchorEl);
+        const closeHandler = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeHandler), 0);
     }
 
     openReaderProjection(mode) {

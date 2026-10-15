@@ -16,7 +16,7 @@
 - **版本管理设置**：全新的版本管理界面，支持启用/禁用版本、设置主版本、删除版本、下载新版本
 - **圣经搜索**：支持主题、纲目、经文三种检索类型；可按全部圣经或自定义书卷范围搜索
 - **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、关键词（多词组合匹配）、以及混合检索
-- **阅读模式**：书卷/章节网格浏览，快速跳转，字体调节，主题与纲目同屏显示
+- **阅读模式**：书卷/章节网格浏览，点击顶部书卷名 / 章数快速跳转，字体调节，主题与纲目同屏显示
 - **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影
 - **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文（经文弹窗中勾选的经文也可入池），按顺序累计投影；取消勾选后，经文弹窗 / 圣经搜索 / 圣经阅读各自保留自己的候选，各窗口分别投影
 - **文章内圣经引用自动识别**：阅读笔记时，自动识别文中所出现的圣经引用，点击可查看经文内容，双击可查看经文上下文
@@ -160,19 +160,25 @@
 - **全局复制**：复制所有已选中的内容
 - **逐节/并列/混合投影**：投影所有已选中的内容
 
-**本页操作**（仅作用于当前章节）：
-- **本页全选**：选中当前章的主版本内容（第一章额外包含主题）
-- **本页复制**：仅复制当前章已选中的内容
-- **复制经文**：复制当前章主版本的全部经文
-- **复制纲目**：复制当前章主版本的纲目
+**本页操作**（仅作用于当前章节，与「全局操作」一样为可折叠区块）：
+- **全选**：选中当前章的主版本内容（第一章额外包含主题）
+- **复制**：仅复制当前章已选中的内容
+- **经文**：复制当前章主版本的全部经文
+- **纲目**：复制当前章主版本的纲目
 
 ### 投影操作
 
 - `←/→` 或 `空格`：翻页
 - `+/-`：调整字体大小
 - `T`：切换深色/浅色主题
-- `🔍 检索`（底部栏按钮）：在不关闭投影的情况下，把投影区宽度收窄、右侧空出侧边栏显示圣经检索；检索并选中新经文后点击「逐节/并列/混合投影」，投影内容会**原地更新**（尺寸不变），拖动侧边栏宽度时投影区自动跟随
-- `⛶ 全屏`（同一按钮切换）：把投影恢复为满屏
+- 底部工具栏（符号 / 图标按钮，窄窗口下中间按钮自动换行，左右翻页始终固定在两端）：
+  - `−` / `+`：缩小 / 放大字体，中间显示当前字号
+  - 旋转箭头：重置字体大小
+  - 对齐图标：切换居中（开启时高亮为蓝色）
+  - 月亮 / 太阳图标：切换深色 / 浅色主题
+  - 放大镜图标（检索）：在不关闭投影的情况下，把投影区宽度收窄、右侧空出侧边栏显示圣经检索；检索并选中新经文后点击「逐节/并列/混合投影」，投影内容会**原地更新**（尺寸不变），拖动侧边栏宽度时投影区自动跟随
+  - 全屏图标（同一按钮切换）：把投影恢复为满屏
+  - `✕`：关闭投影
 - `ESC`：退出投影
 
 ### 自动识别文章中的圣经引用
@@ -320,8 +326,8 @@ The plugin works on desktop and mobile. Data files are stored inside the vault a
 - **Search syntax**: verse references like `太1:1`, `路一1～3`, `加1:1-2:5`, plus keyword matching. Space/`、` = AND, `，`/`,` = ordered AND, `；`/`;` = ordered OR, `。`/`.` = unordered OR.
 - **Comparison reading**: click the "对照" button to enable side-by-side versions. The top version is the primary one; drag to reorder. Each version's verses have independent checkboxes for copying and projection.
 - **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. Selected verses can be copied or projected.
-- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `T` to toggle theme, `ESC` to exit. The `🔍 检索` button shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and `⛶ 全屏` restores full screen.
-- **Projection search**: the 🔍 button in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
+- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `T` to toggle theme, `ESC` to exit. The bottom bar uses icon buttons (`−`/`+` font size, reset, center, moon/sun theme, search); the prev/next buttons stay pinned to both ends while the middle buttons wrap onto a second line in narrow windows. The search icon shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and the maximize icon restores full screen.
+- **Projection search**: the search icon in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
 - **Keep candidates**: the 「保留候选」 checkbox beside "全局操作" is shared by both tabs. Once ticked, every verse you select is added to the candidate pool **in real time** — the counter and verse numbers update immediately, and nothing is lost on re-search, book/chapter switch or tab switch. Unticking a verse removes it from the pool at once. A 「清空」 button clears the pool. Unticking the checkbox releases kept candidates back to the search/reader view and restarts numbering from 1.
 - **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted. References that omit the book name inherit the last book mentioned earlier in the same note (works across lines and paragraphs), and a bare verse number continues from the end chapter of the previous range. Single-click a reference to open the verse popup (font +/-, a combined 全选/取消 toggle, 复制 and 投影, per-verse checkboxes that show the selection-order number once selected (same box style as the search / reader tabs), a 「并」 tag behind each selected verse for side-by-side projection, and remembered font size). The popup keeps its own candidates: with 「保留候选」 unticked, the popup, the search tab and the reader tab each keep their own selections, and projecting from one of them only projects that window's content (each reference's popup numbers its own verses from 1, and the selections survive closing the popup). Its header shows 保留候选 + count + a 清空 button; the count follows the same rule as the search / reader tabs (shared pool total when ticked, the popup's own count when unticked), and 清空 clears every window's candidates at once (popup + search + reader). With 「保留候选」 ticked, popup verses join the shared pool so everything is projected together; 复制 then offers 本页复制 / 全局复制, and 投影 offers 逐节 / 并列 / 混合. Double-click a reference (or a `章:节` inside the popup) to jump to the reader view.
 - **Version management**: in plugin settings, enable/disable versions, set the primary version, delete versions, or download new ones.
