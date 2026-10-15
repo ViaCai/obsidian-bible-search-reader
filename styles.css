@@ -177,6 +177,7 @@
     border-color: var(--bible-accent);
 }
 .bible-input-btn {
+    flex-shrink: 0;
     padding: 8px 12px;
     border: 1px solid var(--bible-card-border);
     border-radius: 6px;
@@ -212,12 +213,15 @@
     padding: 0;
 }
 .bible-action-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 0 12px 12px 12px;
 }
 .bible-action-btn {
+    flex: 1 1 80px;
+    min-width: 72px;
+    max-width: 100%;
     padding: 6px 8px;
     border: 1px solid var(--bible-card-border);
     border-radius: 6px;
@@ -226,6 +230,9 @@
     font-size: 12px;
     cursor: pointer;
     text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .bible-action-btn:hover {
     background: var(--background-modifier-hover);
@@ -711,9 +718,6 @@
     .bible-reader-grid {
         grid-template-columns: repeat(5, 1fr);
     }
-    .bible-action-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
     .bible-proj-slide-wrapper {
         width: 95%;
         padding: 10px;
@@ -751,14 +755,13 @@
 /* ===== 快速跳转 ===== */
 .bible-reader-jump-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     margin-bottom: 10px;
     padding: 6px 8px;
     background: var(--background-secondary);
     border-radius: 6px;
-    flex-wrap: nowrap;
-    overflow: hidden;
 }
 .bible-reader-jump-label {
     font-size: 12px;
@@ -790,12 +793,27 @@
 /* ===== 阅读字体控制 ===== */
 .bible-reader-font-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     margin-bottom: 10px;
     padding: 6px 8px;
     background: var(--background-secondary);
     border-radius: 6px;
+}
+.bible-reader-font-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+.bible-reader-font-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    min-width: 120px;
 }
 .bible-reader-font-label {
     font-size: 12px;
