@@ -696,9 +696,57 @@ class FirstRunModal extends Modal {
 }
 
 // ==================== 更新日志模态框 ====================
+// ==================== 更新日志渲染（UpdateModal / 历史更新记录弹窗共用）====================
+// 行内粗体 **...** 渲染
+function renderInlineMarkdown(container, text) {
+    const regex = /\*\*(.*?)\*\*/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+            container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+        }
+        const strong = container.createEl('strong', { text: match[1] });
+        strong.style.fontWeight = '600';
+        lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+        container.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
+}
+
+// 去掉日志开头的「## [版本号] - 日期」标题行（历史记录里该信息已在折叠标题显示）
+function stripVersionHeading(content) {
+    return String(content || '').replace(/^[ \t]*##[ \t]*[^\n]*\n?/, '');
+}
+
+// 将 Markdown 形式的更新说明渲染到容器：## 版本标题、### 分类小标题、- 列表项
+function renderChangelogInto(container, content) {
+    const lines = (content || '').trim().split('\n');
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === '---') continue;
+        if (trimmed.startsWith('## ')) {
+            container.createEl('h3', { text: trimmed.replace('## ', '') });
+        } else if (trimmed.startsWith('### ')) {
+            const h4 = container.createEl('h4', { text: trimmed.replace('### ', '') });
+            h4.style.color = 'var(--bible-accent)';
+            h4.style.marginTop = '12px';
+        } else if (trimmed.startsWith('- ')) {
+            const div = container.createDiv({ attr: { style: 'margin-left:12px;margin-bottom:4px;' } });
+            div.createEl('span', { text: '• ', attr: { style: 'margin-right:4px;' } });
+            renderInlineMarkdown(div, trimmed.slice(2));
+        } else if (trimmed) {
+            const div = container.createDiv();
+            renderInlineMarkdown(div, trimmed);
+        }
+    }
+}
+
 class UpdateModal extends Modal {
-    constructor(app, version, content, title) {
+    constructor(app, plugin, version, content, title) {
         super(app);
+        this.plugin = plugin || null;
         this.version = version;
         this.content = content || CHANGELOG_CONTENT[this.version] || '';
         // title 为空时按「已更新至 vX」显示（自动弹出场景）；手动查看时传入自定义标题
@@ -718,54 +766,151 @@ class UpdateModal extends Modal {
         body.style.lineHeight = '1.8';
         body.style.fontSize = '14px';
 
-        const lines = (this.content || '').trim().split('\n');
         if (!this.content || !this.content.trim()) {
             const emptyEl = body.createEl('div', { cls: 'setting-item-description', text: '暂无该版本的更新说明，可查看插件目录下的 CHANGELOG.md。' });
             emptyEl.style.color = 'var(--text-muted)';
-        }
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed === '---') continue;
-            if (trimmed.startsWith('## ')) {
-                body.createEl('h3', { text: trimmed.replace('## ', '') });
-            } else if (trimmed.startsWith('### ')) {
-                const h4 = body.createEl('h4', { text: trimmed.replace('### ', '') });
-                h4.style.color = 'var(--bible-accent)';
-                h4.style.marginTop = '12px';
-            } else if (trimmed.startsWith('- ')) {
-                const div = body.createDiv({ attr: { style: 'margin-left:12px;margin-bottom:4px;' } });
-                div.createEl('span', { text: '• ', attr: { style: 'margin-right:4px;' } });
-                this.renderInlineMarkdown(div, trimmed.slice(2));
-            } else if (trimmed) {
-                const div = body.createDiv();
-                this.renderInlineMarkdown(div, trimmed);
-            }
+        } else {
+            renderChangelogInto(body, this.content);
         }
 
         const btnWrap = contentEl.createDiv();
-        btnWrap.style.textAlign = 'center';
+        btnWrap.style.display = 'flex';
+        btnWrap.style.justifyContent = 'center';
+        btnWrap.style.gap = '8px';
         btnWrap.style.marginTop = '20px';
+        // 更新成功后可继续翻看全部历史版本说明
+        if (this.plugin) {
+            const histBtn = btnWrap.createEl('button', { text: '📜 查看历史更新记录' });
+            histBtn.title = '按版本号倒序查看历次更新的完整说明';
+            histBtn.addEventListener('click', () => this.plugin.showChangelogHistory());
+        }
         const okBtn = btnWrap.createEl('button', { cls: 'mod-cta', text: '知道了' });
         okBtn.addEventListener('click', () => this.close());
     }
 
-    renderInlineMarkdown(container, text) {
-        const regex = /\*\*(.*?)\*\*/g;
-        let lastIndex = 0;
-        let match;
-        while ((match = regex.exec(text)) !== null) {
-            if (match.index > lastIndex) {
-                container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-            }
-            const strong = container.createEl('strong', { text: match[1] });
-            strong.style.fontWeight = '600';
-            lastIndex = match.index + match[0].length;
-        }
-        if (lastIndex < text.length) {
-            container.appendChild(document.createTextNode(text.slice(lastIndex)));
-        }
-    }
     onClose() {
+        this.contentEl.empty();
+    }
+}
+
+// ==================== 历史更新记录弹窗 ====================
+// 汇总「内置更新日志 + GitHub 上的 CHANGELOG.md」，按版本号倒序展示所有历史版本，
+// 供「设置 → 插件更新」与更新成功弹窗共用。每个版本折叠，默认展开最新一条。
+class ChangelogHistoryModal extends Modal {
+    constructor(app, plugin, entries) {
+        super(app);
+        this.plugin = plugin || null;
+        this.entries = entries || [];
+        this._closed = false;
+    }
+
+    // 远端日志到达后原地刷新内容；弹窗已关闭则忽略
+    setEntries(entries) {
+        if (this._closed) return;
+        this.entries = entries || [];
+        this.render();
+    }
+
+    onOpen() { this.render(); }
+
+    render() {
+        const { contentEl } = this;
+        contentEl.empty();
+        if (contentEl.classList) contentEl.classList.add('bible-update-modal', 'bible-changelog-history');
+        contentEl.style.padding = '24px';
+        contentEl.style.maxWidth = '680px';
+
+        contentEl.createEl('h2', { text: '📜 历史更新记录' });
+        const currentVersion = this.plugin && this.plugin.manifest ? this.plugin.manifest.version : '';
+
+        const meta = contentEl.createEl('div', { cls: 'setting-item-description' });
+        meta.style.margin = '8px 0 12px';
+        meta.setText(this.entries.length
+            ? ('共 ' + this.entries.length + ' 个版本，最新版本在最上方；点击版本号展开 / 收起。')
+            : '暂无可显示的更新记录。');
+
+        if (!this.entries.length) {
+            const emptyEl = contentEl.createEl('div', { cls: 'setting-item-description', text: '未找到内置更新日志，联网后可从 GitHub 拉取完整的 CHANGELOG.md。' });
+            emptyEl.style.color = 'var(--text-muted)';
+        } else {
+            const listEl = contentEl.createDiv({ cls: 'bible-changelog-history-list' });
+            listEl.style.maxHeight = '58vh';
+            listEl.style.overflowY = 'auto';
+            listEl.style.border = '1px solid var(--background-modifier-border)';
+            listEl.style.borderRadius = '6px';
+            listEl.style.padding = '8px 12px';
+            for (let i = 0; i < this.entries.length; i++) {
+                const entry = this.entries[i];
+                const det = listEl.createEl('details');
+                det.style.padding = '6px 0';
+                det.style.borderBottom = (i === this.entries.length - 1) ? 'none' : '1px solid var(--background-modifier-border)';
+                if (i === 0) det.setAttribute('open', 'true');
+                const isCurrent = currentVersion && String(entry.version) === String(currentVersion);
+                const summary = det.createEl('summary');
+                summary.style.cursor = 'pointer';
+                summary.style.fontWeight = isCurrent ? '700' : '600';
+                summary.setText(this.versionTitle(entry) + (isCurrent ? '　（当前版本）' : ''));
+                const body = det.createDiv();
+                body.style.marginTop = '8px';
+                body.style.lineHeight = '1.8';
+                body.style.fontSize = '14px';
+                if (!entry.content) {
+                    const e = body.createEl('div', { cls: 'setting-item-description', text: '暂无该版本的更新说明，可查看插件目录下的 CHANGELOG.md。' });
+                    e.style.color = 'var(--text-muted)';
+                } else {
+                    renderChangelogInto(body, stripVersionHeading(entry.content));
+                }
+            }
+        }
+
+        const btnWrap = contentEl.createDiv();
+        btnWrap.style.display = 'flex';
+        btnWrap.style.justifyContent = 'flex-end';
+        btnWrap.style.gap = '8px';
+        btnWrap.style.marginTop = '16px';
+        const refreshBtn = btnWrap.createEl('button', { text: '🔄 重新获取' });
+        refreshBtn.title = '清空缓存并重新从 GitHub 拉取完整的更新日志';
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.setAttribute('disabled', 'true');
+            refreshBtn.setText('获取中...');
+            try {
+                if (this.plugin) this.plugin._remoteChangelogCache = null;
+                const entries = this.plugin ? await this.plugin.getChangelogHistory() : [];
+                this.setEntries(entries);
+                new Notice(entries.length ? ('已获取 ' + entries.length + ' 个版本的更新记录') : '未获取到更新记录，请检查网络');
+            } catch (e) {
+                new Notice('获取失败：' + (e && e.message ? e.message : e));
+            } finally {
+                if (!this._closed) {
+                    refreshBtn.removeAttribute('disabled');
+                    refreshBtn.setText('🔄 重新获取');
+                }
+            }
+        });
+        const closeBtn = btnWrap.createEl('button', { cls: 'mod-cta', text: '关闭' });
+        closeBtn.addEventListener('click', () => this.close());
+    }
+
+    // 从日志正文里取「版本标题 + 日期」，如 "## [3.1.3] - 2026-10-15" → "v3.1.3　2026-10-15"
+    versionTitle(entry) {
+        const lines = (entry.content || '').split('\n');
+        for (const line of lines) {
+            const t = line.trim();
+            if (!t.startsWith('## ')) continue;
+            const title = t.replace(/^##\s*/, '');
+            const dm = title.match(/^\[?([0-9][0-9.]*)\]?\s*[-–—]?\s*(.*)$/);
+            if (dm) {
+                const ver = dm[1];
+                const rest = (dm[2] || '').trim();
+                return 'v' + ver + (rest ? ('　' + rest) : '');
+            }
+            return title;
+        }
+        return 'v' + entry.version;
+    }
+
+    onClose() {
+        this._closed = true;
         this.contentEl.empty();
     }
 }
@@ -953,6 +1098,12 @@ class BibleSettingTab extends PluginSettingTab {
                     await this.plugin.showCurrentChangelog();
                     button.setDisabled(false);
                 }));
+        new Setting(containerEl)
+            .setName('查看历史更新记录')
+            .setDesc('按版本号倒序查看历次更新的完整说明（优先内置日志，联网时可补齐 GitHub 上的全部记录）')
+            .addButton(button => button
+                .setButtonText('🗂️ 查看')
+                .onClick(() => this.plugin.showChangelogHistory()));
 
     
     }
@@ -4257,6 +4408,11 @@ class BibleSearchPlugin extends Plugin {
             callback: () => this.showCurrentChangelog()
         });
         this.addCommand({
+            id: 'show-bible-changelog-history',
+            name: '查看历史更新记录',
+            callback: () => this.showChangelogHistory()
+        });
+        this.addCommand({
             id: 'check-bible-data-update',
             name: '检查圣经数据更新',
             callback: async () => {
@@ -4553,7 +4709,7 @@ class BibleSearchPlugin extends Plugin {
             const changelog = await this.getChangelogFor(current);
             this.settings.lastVersion = current;
             await this.saveSettings();
-            new UpdateModal(this.app, current, changelog).open();
+            new UpdateModal(this.app, this, current, changelog).open();
             return true;
         } catch (e) {
             console.error('[Bible] 显示更新说明失败:', e);
@@ -4565,7 +4721,7 @@ class BibleSearchPlugin extends Plugin {
     async showCurrentChangelog() {
         const version = this.manifest.version;
         const changelog = await this.getChangelogFor(version);
-        new UpdateModal(this.app, version, changelog, '📜 Bible Search and Reader v' + version + ' 更新说明').open();
+        new UpdateModal(this.app, this, version, changelog, '📜 Bible Search and Reader v' + version + ' 更新说明').open();
     }
 
     async checkForUpdate(manual = false) {
@@ -4582,7 +4738,7 @@ class BibleSearchPlugin extends Plugin {
             if (this.compareVersion(latestVersion, currentVersion) > 0) {
                 if (manual) {
                     const changelog = await this.getChangelogFor(latestVersion);
-                    new UpdateModal(this.app, latestVersion, changelog).open();
+                    new UpdateModal(this.app, this, latestVersion, changelog).open();
                 } else {
                     this.showUpdateNotification(latestVersion);
                 }
@@ -4826,7 +4982,7 @@ class BibleSearchPlugin extends Plugin {
             new Notice('更新成功！请重启 Obsidian 以应用新版本。');
             // 优先使用内置更新日志，缺失时自动从 GitHub 拉取对应版本的更新简介
             const changelog = await this.getChangelogFor(targetVersion);
-            new UpdateModal(this.app, targetVersion, changelog).open();
+            new UpdateModal(this.app, this, targetVersion, changelog).open();
         } catch (e) {
             notice.hide();
             new Notice('更新失败：' + e.message);
@@ -4840,6 +4996,74 @@ class BibleSearchPlugin extends Plugin {
         if (local && local.trim()) return local;
         const remote = await this.fetchRemoteChangelog(version);
         return remote || '';
+    }
+
+    // 内置更新日志（离线可用），用于历史弹窗首屏
+    getLocalChangelogEntries() {
+        const entries = Object.keys(CHANGELOG_CONTENT)
+            .filter(v => /^[0-9]+(\.[0-9]+){1,3}$/.test(String(v == null ? '' : v).trim()))
+            .map(v => ({ version: String(v).trim(), content: (CHANGELOG_CONTENT[v] || '').trim() }));
+        entries.sort((a, b) => this.compareVersion(b.version, a.version));
+        return entries;
+    }
+
+    // 历史更新记录：内置日志 + 远端 CHANGELOG.md 合并（内置优先），按版本号倒序
+    async getChangelogHistory() {
+        const map = new Map();
+        const addEntry = (version, content) => {
+            const v = String(version == null ? '' : version).trim();
+            if (!/^[0-9]+(\.[0-9]+){1,3}$/.test(v)) return;
+            map.set(v, String(content || '').trim());
+        };
+        const remote = await this.fetchFullRemoteChangelog();
+        if (remote) for (const k of Object.keys(remote)) addEntry(k, remote[k]);
+        for (const k of Object.keys(CHANGELOG_CONTENT)) addEntry(k, CHANGELOG_CONTENT[k]);
+        const entries = [];
+        for (const [version, content] of map.entries()) entries.push({ version: version, content: content });
+        entries.sort((a, b) => this.compareVersion(b.version, a.version));
+        return entries;
+    }
+
+    // 拉取远端完整 CHANGELOG.md，按 ## 标题切分为「版本 → 内容」
+    async fetchFullRemoteChangelog() {
+        if (this._remoteChangelogCache) return this._remoteChangelogCache;
+        try {
+            const url = 'https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/CHANGELOG.md';
+            const resp = await requestUrl({ url: url, method: 'GET', timeout: 15000 });
+            if (!resp || resp.status !== 200 || !resp.text) return null;
+            const out = {};
+            let current = null;
+            const buf = [];
+            const flush = () => { if (current) out[current] = buf.join('\n').trim(); };
+            for (const line of resp.text.split('\n')) {
+                const t = line.trim();
+                if (t.startsWith('##')) {
+                    flush();
+                    const m = t.match(/([0-9]+(?:\.[0-9]+)*)/);
+                    current = m ? m[1] : null;
+                    buf.length = 0;
+                    if (current) buf.push(t); // 保留标题行，便于统一渲染
+                    continue;
+                }
+                if (current) buf.push(line);
+            }
+            flush();
+            this._remoteChangelogCache = out;
+            return out;
+        } catch (e) {
+            console.error('[Bible] 获取远端完整更新日志失败:', e);
+            return null;
+        }
+    }
+
+    // 打开「历史更新记录」弹窗：先用内置日志渲染，远端日志到位后自动刷新
+    showChangelogHistory() {
+        const modal = new ChangelogHistoryModal(this.app, this, this.getLocalChangelogEntries());
+        modal.open();
+        this.getChangelogHistory().then(entries => {
+            if (entries && entries.length) modal.setEntries(entries);
+        }).catch(() => { });
+        return modal;
     }
 
     async fetchRemoteChangelog(version) {
