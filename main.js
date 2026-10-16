@@ -181,7 +181,7 @@ function parseConnectedChapterVerse(text, pos, book) {
     const remaining = text.slice(pos);
     
     // 模式1: 中文数字章节 + 阿拉伯数字节 (如 "加五22" → 第五章第22节；也支持空格分隔，如“一 1”)
-    const m1 = remaining.match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
+    const m1 = remaining.match(/^([一二三四五六七八九十百零〇]+)[\s　]*(\d+)/);
     if (m1) {
         const chapter = parseNumber(m1[1]);
         const verse = parseInt(m1[2]);
@@ -192,7 +192,7 @@ function parseConnectedChapterVerse(text, pos, book) {
     }
     
     // 模式2: 阿拉伯数字章节 + 中文数字节 (如 "约3十二" → 第三章第12节)
-    const m2 = remaining.match(/^(\d+)([一二三四五六七八九十百零]+)/);
+    const m2 = remaining.match(/^(\d+)([一二三四五六七八九十百零〇]+)/);
     if (m2) {
         const chapter = parseInt(m2[1]);
         const verse = parseNumber(m2[2]);
@@ -218,7 +218,7 @@ function parseConnectedChapterVerse(text, pos, book) {
     }
     
     // 模式4: 纯中文数字连写 (如 "约五十二" → 第五章第十二节)
-    const m4 = remaining.match(/^([一二三四五六七八九十百零]+)([一二三四五六七八九十百零]+)/);
+    const m4 = remaining.match(/^([一二三四五六七八九十百零〇]+)([一二三四五六七八九十百零〇]+)/);
     if (m4) {
         const chapter = parseNumber(m4[1]);
         const verse = parseNumber(m4[2]);
@@ -283,7 +283,7 @@ const DEFAULT_VERSIONS = [
 
 // ==================== 工具函数 ====================
 function chineseToNumber(s) {
-    const numMap = { '零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,'百':100 };
+    const numMap = { '零':0,'〇':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9,'十':10,'百':100 };
     let result = 0, temp = 0;
     for (let i = 0; i < s.length; i++) {
         const char = s[i];
@@ -299,7 +299,7 @@ function chineseToNumber(s) {
     }
     return result + temp;
 }
-function isChineseNumber(s) { return /^[一二三四五六七八九十百零]+$/.test(s); }
+function isChineseNumber(s) { return /^[一二三四五六七八九十百零〇]+$/.test(s); }
 function parseNumber(s) {
     s = s.trim();
     if (/^\d+$/.test(s)) return parseInt(s);
@@ -1195,19 +1195,19 @@ class BibleSearchEngine {
             const vs = parseInt(match[2]);
             if (ch > 0 && vs > 0) return { chapter: ch, verse: vs };
         }
-        match = s.match(/^([一二三四五六七八九十百零]+):(\d+)$/);
+        match = s.match(/^([一二三四五六七八九十百零〇]+):(\d+)$/);
         if (match) {
             const ch = chineseToNumber(match[1]);
             const vs = parseInt(match[2]);
             if (!isNaN(ch) && ch > 0 && vs > 0) return { chapter: ch, verse: vs };
         }
-        match = s.match(/^([一二三四五六七八九十百零]+)(\d+)$/);
+        match = s.match(/^([一二三四五六七八九十百零〇]+)(\d+)$/);
         if (match) {
             const ch = chineseToNumber(match[1]);
             const vs = parseInt(match[2]);
             if (!isNaN(ch) && ch > 0 && vs > 0) return { chapter: ch, verse: vs };
         }
-        match = s.match(/^(\d+)([一二三四五六七八九十百零]+)$/);
+        match = s.match(/^(\d+)([一二三四五六七八九十百零〇]+)$/);
         if (match) {
             const ch = parseInt(match[1]);
             const vs = chineseToNumber(match[2]);
@@ -1237,7 +1237,7 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-        m = token.match(/^([一二三四五六七八九十百零]+)(\d+)-(\d+)$/);
+        m = token.match(/^([一二三四五六七八九十百零〇]+)(\d+)-(\d+)$/);
         if (m) {
             const ch = chineseToNumber(m[1]);
             const vs = parseInt(m[2]);
@@ -1247,7 +1247,7 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-        m = token.match(/^([一二三四五六七八九十百零]+)(\d+)$/);
+        m = token.match(/^([一二三四五六七八九十百零〇]+)(\d+)$/);
         if (m) {
             const ch = chineseToNumber(m[1]);
             const vs = parseInt(m[2]);
@@ -1264,7 +1264,7 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-        m = token.match(/^([一二三四五六七八九十百零]+)$/);
+        m = token.match(/^([一二三四五六七八九十百零〇]+)$/);
         if (m) {
             const vs = chineseToNumber(m[1]);
             if (!isNaN(vs) && vs > 0) {
@@ -1281,7 +1281,7 @@ class BibleSearchEngine {
                 return ranges;
             }
         }
-        m = token.match(/^([一二三四五六七八九十百零]+)-([一二三四五六七八九十百零]+)$/);
+        m = token.match(/^([一二三四五六七八九十百零〇]+)-([一二三四五六七八九十百零〇]+)$/);
         if (m) {
             const vs = chineseToNumber(m[1]);
             const endVs = chineseToNumber(m[2]);
@@ -5125,7 +5125,7 @@ class BibleSearchPlugin extends Plugin {
             // 跳过引导词（如“说”），支持“约壹四章十七节说……三章三节”这类写法
             pos = skipGuideWords(text, pos);
             // 检查范围分隔符
-            const rangeSep = text.slice(pos).match(/^\s*[~～\-－]\s*/);
+            const rangeSep = text.slice(pos).match(/^\s*[~～\-－至]\s*/);
             if (rangeSep) {
                 pos += rangeSep[0].length;
                 const rangeEnd = this.parseRangeEnd(text, pos, book, refs[refs.length - 1].chapter);
@@ -5138,6 +5138,8 @@ class BibleSearchPlugin extends Plugin {
                         lastRef.verseEnd = rangeEnd.verse;
                     }
                     pos = rangeEnd.endPos;
+                    // 吞掉范围结束后的“节”字（如“一章二十五至二十八节”）
+                    if (text[pos] === '节') pos++;
                     continue;
                 }
             }
@@ -5162,7 +5164,7 @@ class BibleSearchPlugin extends Plugin {
     parseSingleRef(text, pos, book) {
         const startPos = pos;
         // 格式1: chapter:verse
-        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+|\d+)[:：]\s*([一二三四五六七八九十百零〇]+|\d+)/);
         if (m1) {
             const chapter = parseNumber(m1[1]);
             const verse = parseNumber(m1[2]);
@@ -5175,13 +5177,13 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         // 格式2: chapter章[第]verse节
-        const m2 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[章篇]/);
+        const m2 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+|\d+)[章篇]/);
         if (m2) {
             const chapter = parseNumber(m2[1]);
             if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
                 pos += m2[0].length;
                 while (pos < text.length && /\s/.test(text[pos])) pos++;
-                const vm = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零]+|\d+)[节]?/);
+                const vm = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+|\d+)[节]?/);
                 if (vm) {
                     const verse = parseNumber(vm[1]);
                     if (!isNaN(verse) && verse >= 1) {
@@ -5205,7 +5207,7 @@ class BibleSearchPlugin extends Plugin {
             return { chapter: m3.chapter, verse: m3.verse, verseEnd: null, suffix, endChapter: null, endVerse: null, endPos: pos };
         }
         // 格式4: 只有章号
-        const m4 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)/);
+        const m4 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+|\d+)/);
         if (m4) {
             const chapter = parseNumber(m4[1]);
             if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
@@ -5219,7 +5221,7 @@ class BibleSearchPlugin extends Plugin {
     // 支持后缀（上/中/下）与范围（同章～节、跨章～章节）
     parseCnSpaceVerseRef(text, pos, book) {
         const remaining = text.slice(pos);
-        const m = remaining.match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
+        const m = remaining.match(/^([一二三四五六七八九十百零〇]+)[\s　]*(\d+)/);
         if (!m) return null;
         const chapter = parseNumber(m[1]);
         const verse = parseNumber(m[2]);
@@ -5231,11 +5233,11 @@ class BibleSearchPlugin extends Plugin {
         if (suffix) p += sfx[0].length;
         // 范围
         let verseEnd = null, endChapter = null, endVerse = null;
-        const rangeSep = text.slice(p).match(/^[\s　]*[～~\-－][\s　]*/);
+        const rangeSep = text.slice(p).match(/^[\s　]*[～~\-－至][\s　]*/);
         if (rangeSep) {
             const q = p + rangeSep[0].length;
             // 跨章：中文章 + 阿拉伯节（如“二 3”）
-            const rc = text.slice(q).match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
+            const rc = text.slice(q).match(/^([一二三四五六七八九十百零〇]+)[\s　]*(\d+)/);
             if (rc) {
                 const ch2 = parseNumber(rc[1]);
                 const v2 = parseNumber(rc[2]);
@@ -5261,7 +5263,7 @@ class BibleSearchPlugin extends Plugin {
         pos = skipGuideWords(text, pos);
         
         // 模式A: 章:节
-        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+|\d+)[:：]\s*([一二三四五六七八九十百零〇]+|\d+)/);
         if (m1) {
             const chapter = parseNumber(m1[1]);
             const verse = parseNumber(m1[2]);
@@ -5270,11 +5272,15 @@ class BibleSearchPlugin extends Plugin {
                 const suffixMatch = text.slice(p).match(/^[上中下]半?/);
                 let suffix = suffixMatch ? suffixMatch[0] : null;
                 if (suffix) p += suffix.length;
-                const rangeMatch = text.slice(p).match(/^\s*[~～\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+                const rangeMatch = text.slice(p).match(/^\s*[~～\-－至]\s*([一二三四五六七八九十百零〇]+|\d+)/);
                 let verseEnd = null;
                 if (rangeMatch) {
                     verseEnd = parseNumber(rangeMatch[1]);
-                    if (!isNaN(verseEnd) && verseEnd >= verse) p += rangeMatch[0].length;
+                    if (!isNaN(verseEnd) && verseEnd >= verse) {
+                        p += rangeMatch[0].length;
+                        // 吞掉范围结束后的“节”字
+                        if (text[p] === '节') p++;
+                    }
                     else verseEnd = null;
                 }
                 return { chapter, verse, verseEnd, suffix, endPos: p };
@@ -5288,7 +5294,7 @@ class BibleSearchPlugin extends Plugin {
         // 模式B: 只有节号（优先当 lastChapter 已知时）
         // 注意：数字后若紧跟 章/篇/节 或另一个数字，则不是纯节号，应让位给“X章X节”或“章+节连写”
         if (lastChapter !== null) {
-            const afterSeparator = /^[章节篇\d一二三四五六七八九十百零]/;
+            const afterSeparator = /^[章节篇\d一二三四五六七八九十百零〇]/;
             // digitStr 仅用于解析数字；consumedLen 为实际消耗长度（含可选的“节”字等）
             const applyVerse = (digitStr, consumedLen) => {
                 const verse = parseNumber(digitStr);
@@ -5297,11 +5303,15 @@ class BibleSearchPlugin extends Plugin {
                 const suffixMatch = text.slice(p).match(/^[上中下]半?/);
                 let suffix = suffixMatch ? suffixMatch[0] : null;
                 if (suffix) p += suffix.length;
-                const rangeMatch = text.slice(p).match(/^\s*[~～\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+                const rangeMatch = text.slice(p).match(/^\s*[~～\-－至]\s*([一二三四五六七八九十百零〇]+|\d+)/);
                 let verseEnd = null;
                 if (rangeMatch) {
                     verseEnd = parseNumber(rangeMatch[1]);
-                    if (!isNaN(verseEnd) && verseEnd >= verse) p += rangeMatch[0].length;
+                    if (!isNaN(verseEnd) && verseEnd >= verse) {
+                        p += rangeMatch[0].length;
+                        // 吞掉范围结束后的“节”字
+                        if (text[p] === '节') p++;
+                    }
                     else verseEnd = null;
                 }
                 return { chapter: lastChapter, verse, verseEnd, suffix, endPos: p };
@@ -5311,10 +5321,44 @@ class BibleSearchPlugin extends Plugin {
                 const r = applyVerse(mNum[1], mNum[0].length);
                 if (r) return r;
             }
-            const mCn = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零]+)[节]?/);
+            const mCn = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+)[节]?/);
             if (mCn && !afterSeparator.test(text.slice(pos + mCn[0].length))) {
                 const r = applyVerse(mCn[1], mCn[0].length);
                 if (r) return r;
+            }
+        }
+        // 模式D: 章节节（中文量词）。
+        // 注意：必须先于“连写”模式判断，否则“十四章十九节”这类延续项
+        // 会被连写解析误拆成 十:4（如“六章五十七节下，十四章十九节”）
+        const m2 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+|\d+)[章篇]/);
+        if (m2) {
+            const chapter = parseNumber(m2[1]);
+            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
+                let p = pos + m2[0].length;
+                while (p < text.length && /\s/.test(text[p])) p++;
+                const vm = text.slice(p).match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+|\d+)[节]?/);
+                if (vm) {
+                    const verse = parseNumber(vm[1]);
+                    if (!isNaN(verse) && verse >= 1) {
+                        p += vm[0].length;
+                        const suffixMatch = text.slice(p).match(/^[上中下]半?/);
+                        let suffix = suffixMatch ? suffixMatch[0] : null;
+                        if (suffix) p += suffix.length;
+                        const rangeMatch = text.slice(p).match(/^\s*[至～~\-－]\s*([一二三四五六七八九十百零〇]+|\d+)/);
+                        let verseEnd = null;
+                        if (rangeMatch) {
+                            const ve = parseNumber(rangeMatch[1]);
+                            if (!isNaN(ve) && ve >= verse) {
+                                verseEnd = ve;
+                                p += rangeMatch[0].length;
+                                // 吞掉范围结束后的“节”字
+                                if (text[p] === '节') p++;
+                            }
+                        }
+                        return { chapter, verse, verseEnd, suffix, endPos: p };
+                    }
+                }
+                return { chapter, verse: null, verseEnd: null, suffix: null, endPos: p };
             }
         }
         // 模式C: 连写 chapter+verse（使用智能解析）
@@ -5324,42 +5368,25 @@ class BibleSearchPlugin extends Plugin {
             const suffixMatch = text.slice(p).match(/^[上中下]半?/);
             let suffix = suffixMatch ? suffixMatch[0] : null;
             if (suffix) p += suffix.length;
-            const rangeMatch = text.slice(p).match(/^\s*[～~\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+            const rangeMatch = text.slice(p).match(/^\s*[至～~\-－]\s*([一二三四五六七八九十百零〇]+|\d+)/);
             let verseEnd = null;
             if (rangeMatch) {
                 verseEnd = parseNumber(rangeMatch[1]);
-                if (!isNaN(verseEnd) && verseEnd >= m3.verse) p += rangeMatch[0].length;
+                if (!isNaN(verseEnd) && verseEnd >= m3.verse) {
+                    p += rangeMatch[0].length;
+                    // 吞掉范围结束后的“节”字
+                    if (text[p] === '节') p++;
+                }
                 else verseEnd = null;
             }
             return { chapter: m3.chapter, verse: m3.verse, verseEnd, suffix, endPos: p };
-        }
-        // 模式D: 章节节（中文量词）
-        const m2 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[章篇]/);
-        if (m2) {
-            const chapter = parseNumber(m2[1]);
-            if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
-                let p = pos + m2[0].length;
-                while (p < text.length && /\s/.test(text[p])) p++;
-                const vm = text.slice(p).match(/^(?:第\s*)?([一二三四五六七八九十百零]+|\d+)[节]?/);
-                if (vm) {
-                    const verse = parseNumber(vm[1]);
-                    if (!isNaN(verse) && verse >= 1) {
-                        p += vm[0].length;
-                        const suffixMatch = text.slice(p).match(/^[上中下]半?/);
-                        let suffix = suffixMatch ? suffixMatch[0] : null;
-                        if (suffix) p += suffix.length;
-                        return { chapter, verse, verseEnd: null, suffix, endPos: p };
-                    }
-                }
-                return { chapter, verse: null, verseEnd: null, suffix: null, endPos: p };
-            }
         }
         return null;
     }
 
     parseRangeEnd(text, pos, book, currentChapter) {
         // 尝试跨章: chapter:verse
-        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        const m1 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+|\d+)[:：]\s*([一二三四五六七八九十百零〇]+|\d+)/);
         if (m1) {
             const chapter = parseNumber(m1[1]);
             const verse = parseNumber(m1[2]);
@@ -5368,7 +5395,7 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         // 尝试跨章: 中文章 + 空格/无 + 阿拉伯节（如“二 25”“二25”）
-        const mCn2 = text.slice(pos).match(/^([一二三四五六七八九十百零]+)[\s　]*(\d+)/);
+        const mCn2 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+)[\s　]*(\d+)/);
         if (mCn2) {
             const chapter = parseNumber(mCn2[1]);
             const verse = parseNumber(mCn2[2]);
@@ -5376,13 +5403,14 @@ class BibleSearchPlugin extends Plugin {
                 return { crossChapter: true, chapter, verse, endPos: pos + mCn2[0].length };
             }
         }
-        // 尝试跨章: chapterverse（仅限含中文数字的组合；纯阿拉伯数字“23”等按同章节号处理，
-        // 避免“创一20～23”被误拆为“1:20～2:3”）
-        const m2 = text.slice(pos).match(/^(([一二三四五六七八九十百零]+)(\d+)|(\d+)([一二三四五六七八九十百零]+)|([一二三四五六七八九十百零]+)([一二三四五六七八九十百零]+))/);
+        // 尝试跨章: chapterverse（仅限“中文章+阿拉伯节 / 阿拉伯章+中文节”的混合连写；
+        // 纯阿拉伯“23”与纯中文“二十八”等按同章节号处理，避免“创一20～23”“八至二十八”
+        // 被误拆为跨章引用）
+        const m2 = text.slice(pos).match(/^(([一二三四五六七八九十百零〇]+)(\d+)|(\d+)([一二三四五六七八九十百零〇]+))/);
         if (m2 && !/^\d+$/.test(m2[0])) {
-            // 捕获组：1=外层；2/3=中文章+阿拉伯节；4/5=阿拉伯章+中文节；8/9=中文+中文
-            const cStr = m2[2] || m2[4] || m2[8];
-            const vStr = m2[3] || m2[5] || m2[9];
+            // 捕获组：1=外层；2/3=中文章+阿拉伯节；4/5=阿拉伯章+中文节
+            const cStr = m2[2] || m2[4];
+            const vStr = m2[3] || m2[5];
             const chapter = parseNumber(cStr);
             const verse = parseNumber(vStr);
             if (!isNaN(chapter) && chapter > currentChapter && chapter <= book.maxChapters && !isNaN(verse) && verse >= 1) {
@@ -5390,7 +5418,7 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         // 同章范围: 只有节号
-        const m3 = text.slice(pos).match(/^([一二三四五六七八九十百零]+|\d+)/);
+        const m3 = text.slice(pos).match(/^([一二三四五六七八九十百零〇]+|\d+)/);
         if (m3) {
             const verse = parseNumber(m3[1]);
             if (!isNaN(verse) && verse >= 1) {
@@ -5413,7 +5441,7 @@ class BibleSearchPlugin extends Plugin {
             if (this.bracketHasBookName(m[1])) continue;
             // 跳过纲目序号括号（如“（一）”“（四）”）——裸中文数字视为结构标记，非经文出处
             const bareCn = m[1].trim().replace(/^(?:参看|参考|参)/, '');
-            if (/^[一二三四五六七八九十百零]+$/.test(bareCn)) continue;
+            if (/^[一二三四五六七八九十百零〇]+$/.test(bareCn)) continue;
             // 按本括号所在位置取上下文：优先沿用其左侧最近引用（含跨段落的书卷上下文）
             const c = resolveCtx(start);
             const book = c.bookId != null ? BOOK_ID_MAP[c.bookId] : null;
@@ -5497,9 +5525,9 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         // 纯节号后若紧跟 章/篇/节 或另一个数字，则不是纯节号，让位给 X章 / 连写
-        const afterSeparator = /^[章节篇\d一二三四五六七八九十百零]/;
+        const afterSeparator = /^[章节篇\d一二三四五六七八九十百零〇]/;
         // 模式A: 章:节
-        const m1 = remaining.match(/^([一二三四五六七八九十百零]+|\d+)[:：]\s*([一二三四五六七八九十百零]+|\d+)/);
+        const m1 = remaining.match(/^([一二三四五六七八九十百零〇]+|\d+)[:：]\s*([一二三四五六七八九十百零〇]+|\d+)/);
         if (m1) {
             const chapter = parseNumber(m1[1]);
             const verse = parseNumber(m1[2]);
@@ -5508,7 +5536,7 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         // 模式B: 章节节（中文量词）
-        const m2 = remaining.match(/^([一二三四五六七八九十百零]+|\d+)[章篇]\s*(?:第\s*)?([一二三四五六七八九十百零]+|\d+)[节]?/);
+        const m2 = remaining.match(/^([一二三四五六七八九十百零〇]+|\d+)[章篇]\s*(?:第\s*)?([一二三四五六七八九十百零〇]+|\d+)[节]?/);
         if (m2) {
             const chapter = parseNumber(m2[1]);
             const verse = parseNumber(m2[2]);
@@ -5529,7 +5557,7 @@ class BibleSearchPlugin extends Plugin {
                 const verse = parseInt(m4[1]);
                 if (!isNaN(verse) && verse >= 1 && verse <= 200) {
                     let p = pos + m4[0].length;
-                    const r4 = text.slice(p).match(/^[\s　]*[～~\-－][\s　]*(\d+)/);
+                    const r4 = text.slice(p).match(/^[\s　]*[～~\-－至][\s　]*(\d+)/);
                     let verseEnd = null;
                     if (r4) { const v2 = parseInt(r4[1]); if (!isNaN(v2) && v2 >= verse) { verseEnd = v2; p += r4[0].length; } }
                     const s4 = text.slice(p).match(/^[上中下]半?/);
@@ -5539,12 +5567,12 @@ class BibleSearchPlugin extends Plugin {
                 }
             }
             // 中文数字节号
-            const m5 = remaining.match(/^(?:第\s*)?([一二三四五六七八九十百零]+)[节]?/);
+            const m5 = remaining.match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+)[节]?/);
             if (m5 && !afterSeparator.test(remaining.slice(m5[0].length))) {
                 const verse = parseNumber(m5[1]);
                 if (!isNaN(verse) && verse >= 1) {
                     let p = pos + m5[0].length;
-                    const r5 = text.slice(p).match(/^[\s　]*[～~\-－][\s　]*(\d+)/);
+                    const r5 = text.slice(p).match(/^[\s　]*[～~\-－至][\s　]*(\d+)/);
                     let verseEnd = null;
                     if (r5) { const v2 = parseNumber(r5[1]); if (!isNaN(v2) && v2 >= verse) { verseEnd = v2; p += r5[0].length; } }
                     const s5 = text.slice(p).match(/^[上中下]半?/);
@@ -5558,7 +5586,7 @@ class BibleSearchPlugin extends Plugin {
         const m6 = parseConnectedChapterVerse(remaining, 0, currentBook);
         if (m6) {
             let p = pos + m6.consumed;
-            const rangeMatch = remaining.substring(m6.consumed).match(/^[～~\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+            const rangeMatch = remaining.substring(m6.consumed).match(/^[至～~\-－]\s*([一二三四五六七八九十百零〇]+|\d+)/);
             let verseEnd = null;
             if (rangeMatch) {
                 verseEnd = parseNumber(rangeMatch[1]);
@@ -5590,7 +5618,7 @@ class BibleSearchPlugin extends Plugin {
                     p += ref.consumed;
                     const refs = [{ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix }];
                     // 检查范围
-                    const rangeMatch = trimmed.slice(p).match(/^\s*[~～\-－]\s*([一二三四五六七八九十百零]+|\d+)/);
+                    const rangeMatch = trimmed.slice(p).match(/^\s*[~～\-－至]\s*([一二三四五六七八九十百零〇]+|\d+)/);
                     if (rangeMatch) {
                         const verseEnd = parseNumber(rangeMatch[1]);
                         if (!isNaN(verseEnd) && verseEnd >= ref.verse) {
@@ -5626,7 +5654,7 @@ class BibleSearchPlugin extends Plugin {
     // 阶段4：句中“X章Y节”及其顿号延续，如“三章三节、七节”“四章一节”
     findChapterVersePatternRefs(text, coveredRanges, resolveCtx) {
         const matches = [];
-        const pattern = /([一二三四五六七八九十百零\d]+)章(?:第)?([一二三四五六七八九十百零\d]+)节/g;
+        const pattern = /([一二三四五六七八九十百零〇\d]+)章(?:第)?([一二三四五六七八九十百零〇\d]+)节/g;
         let m;
         while ((m = pattern.exec(text)) !== null) {
             const start = m.index;
@@ -5645,7 +5673,7 @@ class BibleSearchPlugin extends Plugin {
                 const sep = text.slice(p).match(/^[，、,;；]\s*/);
                 if (!sep) break;
                 const q = p + sep[0].length;
-                const nextCh = text.slice(q).match(/^([一二三四五六七八九十百零\d]+)章(?:第)?([一二三四五六七八九十百零\d]+)节/);
+                const nextCh = text.slice(q).match(/^([一二三四五六七八九十百零〇\d]+)章(?:第)?([一二三四五六七八九十百零〇\d]+)节/);
                 if (nextCh) {
                     const ch = parseNumber(nextCh[1]);
                     const v = parseNumber(nextCh[2]);
@@ -5655,7 +5683,7 @@ class BibleSearchPlugin extends Plugin {
                         continue;
                     }
                 }
-                const nextV = text.slice(q).match(/^(?:第)?([一二三四五六七八九十百零\d]+)节/);
+                const nextV = text.slice(q).match(/^(?:第)?([一二三四五六七八九十百零〇\d]+)节/);
                 if (nextV) {
                     const v = parseNumber(nextV[1]);
                     if (v >= 1) {
@@ -5680,7 +5708,7 @@ class BibleSearchPlugin extends Plugin {
     findInlineContinuationRefs(text, coveredRanges, resolveCtx) {
         const matches = [];
         // 前面必须是行首或空白；中文数字章 + 阿拉伯节；后面不跟数字（避免吃掉更长连写）
-        const re = /(^|[\s　])([一二三四五六七八九十百零]+)(\d+)(?![\d一二三四五六七八九十百零])/g;
+        const re = /(^|[\s　])([一二三四五六七八九十百零〇]+)(\d+)(?![\d一二三四五六七八九十百零〇])/g;
         let m;
         while ((m = re.exec(text)) !== null) {
             const start = m.index + m[1].length;
@@ -5738,14 +5766,14 @@ class BibleSearchPlugin extends Plugin {
             // 的起点，说明这只是对已有书卷名的重复解析，跳过以免产生部分冗余高亮
             if (coveredRanges.some(([s]) => s >= start && s < end)) { re.lastIndex = start + 1; continue; }
             // 括号包裹的裸中文数字（纲目标记“（一）”“（四）”）不作经文出处
-            const isBareCn = /^[一二三四五六七八九十百零]+$/.test(matchedSlice);
+            const isBareCn = /^[一二三四五六七八九十百零〇]+$/.test(matchedSlice);
             const prevCh = start > 0 ? text[start - 1] : '';
             if (isBareCn && /[（〔(]/.test(prevCh) && /^[\s　]*[）〕)]/.test(text.slice(end))) { re.lastIndex = start + 1; continue; }
             // 纯数字（中文/阿拉伯，可带“第/节”前后缀，如“一”“（四）”“第五”）若未带范围/后缀，
             // 视为结构标记或正文数字，必须后跟范围/后缀/收尾标点/行尾/括号闭合才认可，
             // 避免误认纲目标记（“一”）与正文数字（“第五日”“31 岁”）；行尾（含换行）视为边界
             const bareNum = matchedSlice.replace(/^第/, '').replace(/节$/, '');
-            const pureNum = /^[一二三四五六七八九十百零]+$/.test(bareNum) || /^\d+$/.test(bareNum);
+            const pureNum = /^[一二三四五六七八九十百零〇]+$/.test(bareNum) || /^\d+$/.test(bareNum);
             if (pureNum && !ref.verseEnd && !ref.suffix) {
                 const afterSlice = text.slice(end);
                 // 只跳过空格/制表符，换行保留下来作为“行尾边界”判断依据
