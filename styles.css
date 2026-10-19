@@ -726,6 +726,12 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* 投影容器可编程聚焦（便于键盘快捷键无需先点击投影），但不显示焦点描边 */
+.bible-projection-fullscreen:focus,
+.bible-projection-fullscreen:focus-visible {
+    outline: none;
+}
+
 /* 顶部信息栏 */
 .bible-proj-topbar {
     display: flex;
