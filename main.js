@@ -1495,7 +1495,8 @@ class BibleProjectionOverlay {
         this.slides = [];
         this.fontSize = 48;
         this.isDark = true;
-        this.isCentered = false;
+        // 逐节模式默认居中（沿用原外观），其余模式默认左对齐，均可按 C 切换
+        this.isCentered = (mode === 'focus');
         this.isSearchMode = false;
         this.touchStartX = 0;
         this.touchStartY = 0;
@@ -1544,7 +1545,7 @@ class BibleProjectionOverlay {
         topLeft.createEl('span', { cls: 'bible-proj-mode-name', text: this.getModeName() });
         const topCenter = topBar.createDiv();
         topCenter.style.cssText = 'font-size:12px;opacity:0.75;text-align:center;flex:1;';
-        topCenter.setText('← → 翻页  ·  +/- 字体  ·  T 主题  ·  检索  ·  ESC 关闭');
+        topCenter.setText('← → 翻页 · Q 逐节 · W 并列 · E 混合 · S 检索 · C 居中 · R 重置 · +/- 字体 · T 主题 · ESC 关闭');
         const topRight = topBar.createDiv();
         topRight.createEl('span', { cls: 'bible-proj-page-num', text: (this.currentSlide + 1) + '/' + this.slides.length + '页' });
         this.overlay.appendChild(topBar);
@@ -1577,10 +1578,8 @@ class BibleProjectionOverlay {
         addToolBtn('+', 'font-larger', '放大字体', 'bible-proj-tool-icon');
         const resetBtn = addToolBtn('', 'font-reset', '重置字体', 'bible-proj-tool-icon');
         setIcon(resetBtn, 'rotate-ccw');
-        if (this.mode !== 'focus') {
-            const centerBtn = addToolBtn('', 'toggle-centered', '切换居中', 'bible-proj-tool-icon');
-            setIcon(centerBtn, 'align-center');
-        }
+        const centerBtn = addToolBtn('', 'toggle-centered', '切换居中', 'bible-proj-tool-icon');
+        setIcon(centerBtn, 'align-center');
         const themeBtn = addToolBtn('', 'toggle-theme', '切换主题', 'bible-proj-tool-icon');
         setIcon(themeBtn, this.isDark ? 'moon' : 'sun');
         const searchBtn = addToolBtn('', 'open-search', '打开检索窗口（不关闭投影）', 'bible-proj-tool-icon');
@@ -1614,12 +1613,18 @@ class BibleProjectionOverlay {
         bottomRow.querySelector('.bible-proj-next').addEventListener('click', () => this.nextSlide());
 
         this.keyHandler = (e) => {
+            // 在输入框（如投影内检索分屏的搜索框）中打字时，不拦截快捷键，避免误触
+            const ae = document.activeElement;
+            if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
             if (e.key === 'ArrowRight' || e.key === ' ') this.nextSlide();
             else if (e.key === 'ArrowLeft') this.prevSlide();
             else if (e.key === 'Escape') this.close();
             else if (e.key === '+' || e.key === '=') { this.fontSize += 4; this.updateFontSize(); }
             else if (e.key === '-') { this.fontSize = Math.max(16, this.fontSize - 4); this.updateFontSize(); }
             else if (e.key === 't' || e.key === 'T') this.toggleTheme();
+            else if (e.key === 's' || e.key === 'S') this.toggleSearchMode();
+            else if (e.key === 'c' || e.key === 'C') this.toggleCentered();
+            else if (e.key === 'r' || e.key === 'R') { this.fontSize = 48; this.updateFontSize(); }
         };
         document.addEventListener('keydown', this.keyHandler);
 
@@ -1671,8 +1676,11 @@ class BibleProjectionOverlay {
         wrapper.className = 'bible-proj-slide-wrapper';
         // 宽度/最大宽度交给 CSS（min(900px, 92%)），侧边栏模式与全屏模式都能自适应
         wrapper.style.cssText = 'text-align:center;padding:20px;margin:auto;overflow-y:auto;max-height:100%;';
+        // 宽度/最大宽度交给 CSS：跟随窗口宽度（94%、不固定上限），放大窗口或放大字体时投影区域随之变宽，避免经文换行
 
         if (this.mode === 'focus') {
+            // 逐节模式同样支持居中切换（参照并列/混合模式）：居中时文字居中，否则左对齐
+            wrapper.style.textAlign = this.isCentered ? 'center' : 'left';
             for (const r of slide.items) {
                 const item = { ...r.item, ...r };
                 const isCompare = item._isCompare;
@@ -1762,6 +1770,9 @@ class BibleProjectionOverlay {
 
         this.contentArea.appendChild(wrapper);
         this.updateFontSize();
+        // 同步居中按钮高亮状态（应对内容原地更新导致模式切换的情形）
+        const cb = this.overlay && this.overlay.querySelector('[data-action="toggle-centered"]');
+        if (cb) cb.classList.toggle('active', this.isCentered);
     }
 
     updateFontSize() {
@@ -1920,12 +1931,15 @@ class BibleProjectionOverlay {
     exitSearchMode() {
         this.isSearchMode = false;
         const o = this.overlay;
+        // 关键：退出检索时必须把宽度复位为全屏，否则 applySplitLayout 收窄的像素宽度会残留，
+        // 导致再按 S（或点「全屏」按钮）时投影区无法扩大回全屏。
         o.style.width = '100vw';
         o.style.height = '100vh';
         o.style.top = '0';
         o.style.bottom = '0';
         o.style.left = '0';
         o.style.right = 'auto';
+        o.style.maxWidth = '';
         o.style.zIndex = '9999';
         o.classList.remove('bible-proj-search-mode');
         this.unwatchSidebar();
@@ -1994,6 +2008,24 @@ class BibleProjectionOverlay {
             setIcon(btn, this.isSearchMode ? 'maximize' : 'search');
             btn.title = this.isSearchMode ? '恢复全屏投影' : '打开检索窗口（不关闭投影）';
         }
+    }
+
+    // 在投影进行中，用快捷键即时切换投影模式（逐节/并列/混合），复用当前选中内容
+    setMode(mode) {
+        if (!mode || mode === this.mode) return;
+        this.mode = mode;
+        // 沿用各模式默认居中行为：逐节默认居中、并列/混合默认左对齐，与初始投影一致
+        this.isCentered = (mode === 'focus');
+        this.buildSlides();
+        // 模式切换会改变页数，钳制当前页防止越界
+        if (this.currentSlide > this.slides.length - 1) this.currentSlide = Math.max(0, this.slides.length - 1);
+        if (this.currentSlide < 0) this.currentSlide = 0;
+        this.renderSlide();
+        const modeEl = this.overlay.querySelector('.bible-proj-mode-name');
+        if (modeEl) modeEl.textContent = this.getModeName();
+        this.updateSearchBtn();
+        // 处于检索分屏时保持窄宽度不变，仅刷新内容排版
+        if (this.isSearchMode) this.applySplitLayout();
     }
 
     // 用新的选中内容替换当前投影内容（原地更新，保持当前分屏/全屏状态，避免画面缩放跳动）
@@ -4426,6 +4458,38 @@ class BibleSearchPlugin extends Plugin {
             if (!t || !(t instanceof Element)) return;
             if (t.closest('.bible-inline-ref') || t.closest('.bible-inline-tooltip') || t.closest('.bible-tooltip-menu')) return;
             document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
+            this.currentTooltipProjector = null;
+        });
+
+        // 全局投影快捷键 Q/W/E：未投影时以对应模式启动投影（自动收集当前选中项），
+        // 已投影时切换为对应模式；通过 getSearchView 可靠定位圣经视图，避免停靠侧边栏时误判为「非活动」而不响应
+        this.registerDomEvent(document, 'keydown', (e) => {
+            // 仅当焦点在「文本输入框」（如检索分屏的搜索框）时拦截快捷键，避免误触；
+            // 勾选框（checkbox）、按钮、笔记正文不拦截，从而选中经文后按 Q/W/E 能正常投影
+            const ae = document.activeElement;
+            const typingText = ae && (
+                ae.tagName === 'TEXTAREA' ||
+                (ae.tagName === 'INPUT' && ['text', 'search', 'number', 'password', 'email', 'url', 'tel'].includes((ae.type || '').toLowerCase()))
+            );
+            // 没有弹窗时，避免在笔记正文中打字误触 Q/W/E；有弹窗时（用户在选经文体）允许触发
+            const editingNote = ae && ae.isContentEditable && !this.currentTooltipProjector;
+            if (typingText || editingNote) return;
+            let mode = null;
+            if (e.key === 'q' || e.key === 'Q') mode = 'focus';
+            else if (e.key === 'w' || e.key === 'W') mode = 'parallel';
+            else if (e.key === 'e' || e.key === 'E') mode = 'mixed';
+            if (!mode) return;
+            // 经文弹窗打开时优先：直接以对应模式投影弹窗内勾选的经文（会自动关闭弹窗）
+            if (this.currentTooltipProjector) { this.currentTooltipProjector(mode); return; }
+            // 已在投影中：直接切换投影模式（不依赖当前活动视图）
+            if (this.currentProjection) { this.currentProjection.setMode(mode); return; }
+            // 未投影：取（或最近一次创建的）圣经检索 / 阅读视图实例，以对应模式启动投影。
+            // 不依赖 getActiveViewOfType 的「活动视图」判断——圣经视图停在侧边栏、或勾选框后
+            // Obsidian 未将其判定为活动 leaf 时，getActiveViewOfType 常返回 null，导致 Q/W/E 无反应；
+            // getSearchView 能可靠地定位到持有选中项的视图实例
+            const view = this.getSearchView();
+            if (!view) return; // 当前根本没有圣经视图，静默忽略（避免笔记里误按刷提示）
+            view.openProjection(mode);
         });
 
         this.addRibbonIcon('book-plus', '圣经检索', () => { this.activateSearchView(); });
@@ -6623,12 +6687,19 @@ class BibleSearchPlugin extends Plugin {
         if (top + tooltipRect.height > window.innerHeight - 20) top = rect.top - tooltipRect.height - 8;
         tooltip.style.left = left + 'px';
         tooltip.style.top = top + 'px';
+        // 注册「弹窗投影快捷键」入口：全局 Q/W/E 监听会调用它，直接以对应模式投影本弹窗勾选的经文
+        this.currentTooltipProjector = (mode) => {
+            const list = keepOn() ? buildGlobalList() : ownList();
+            if (list.length === 0) { new Notice('请先勾选要投影的经文'); return; }
+            this.projectTooltipSelection(view || this.getSearchView(), list, mode);
+        };
         // 移动端适配：不再依赖悬停关闭，改为“点击弹窗以外区域”关闭
         // （由 onload 中注册的 document 级 click 处理器统一处理）
     }
 
     removeCurrentTooltip() {
         document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
+        this.currentTooltipProjector = null;
     }
 
     async jumpToBibleReader(match) {

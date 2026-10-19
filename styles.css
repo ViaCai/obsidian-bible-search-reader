@@ -755,8 +755,8 @@
     position: relative;
 }
 .bible-proj-slide-wrapper {
-    width: 90%;
-    max-width: min(900px, 92%);
+    width: 94%;
+    max-width: none;
     text-align: center;
     padding: 20px;
     margin: auto;
@@ -1310,8 +1310,9 @@
 }
 .bible-book-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
     gap: 4px;
+    width: 100%;
 }
 .bible-book-grid-btn {
     padding: 5px 2px;
@@ -1325,6 +1326,8 @@
     transition: all 0.15s;
     min-height: 28px;
     line-height: 1.2;
+    min-width: 0;
+    overflow: hidden;
 }
 .bible-book-grid-btn:hover {
     border-color: var(--bible-accent);
