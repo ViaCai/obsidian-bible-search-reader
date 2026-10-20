@@ -448,7 +448,8 @@
     color: var(--bible-accent);
 }
 .bible-result-text {
-    font-size: 13px;
+    /* 「全局操作」标题右侧的字体按钮通过 --bible-result-font-size 调节 */
+    font-size: var(--bible-result-font-size, 13px);
     line-height: 1.7;
     color: var(--text-normal);
     padding-left: 28px;

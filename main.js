@@ -1172,9 +1172,7 @@ class BibleSettingTab extends PluginSettingTab {
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.showNotes)
                 .onChange(async (value) => {
-                    this.plugin.settings.showNotes = value;
-                    if (!value) this.plugin.notesData = null;
-                    await this.plugin.saveSettings();
+                    await this.plugin.setShowNotes(value);
                 }));
         new Setting(containerEl)
             .setName('检索时包含注解正文')
@@ -2766,15 +2764,14 @@ class BibleSearchView extends ItemView {
         });
 
         notesCb.addEventListener('change', async () => {
-            this.plugin.settings.showNotes = notesCb.checked;
-            await this.plugin.saveSettings();
-            if (notesCb.checked && !this.plugin.notesData) {
+            await this.plugin.setShowNotes(notesCb.checked);
+            if (notesCb.checked) {
                 notesStatus.setText('正在加载...');
                 await this.plugin.loadNotesData();
                 this.plugin.attachNotesToItems();
             }
             syncNotesStatus();
-            this.refreshNotesUI();
+            await this.refreshNotesUI();
         });
 
         // 版本列表容器
@@ -3749,7 +3746,7 @@ class BibleSearchView extends ItemView {
     renderResults() {
         this._renderedPoolVersion = this._poolVersion;
         this.resultsContainer.empty();
-        this.resultsContainer.style.fontSize = this.searchFontSize + 'px';
+        this.updateSearchFontSize();
         this.paginationEl.empty();
 
         if (this.results.length === 0) {
@@ -5115,7 +5112,9 @@ class BibleSearchView extends ItemView {
     }
 
     updateSearchFontSize() {
-        if (this.resultsContainer) this.resultsContainer.style.fontSize = this.searchFontSize + 'px';
+        if (!this.resultsContainer) return;
+        this.resultsContainer.style.fontSize = this.searchFontSize + 'px';
+        this.resultsContainer.style.setProperty('--bible-result-font-size', this.searchFontSize + 'px');
     }
 
     // 「恢复本注解 / 串珠」开关变化后刷新当前视图
@@ -5594,6 +5593,15 @@ class BibleSearchPlugin extends Plugin {
     }
 
     // ==================== 恢复本注解 / 串珠 ====================
+    // 开关「显示注解」：切换时清空缓存，让下次访问重新按需加载
+    async setShowNotes(on) {
+        this.settings.showNotes = !!on;
+        this.notesData = null;
+        this.notesSearchIndex = null;
+        this._notesAttached = false;
+        await this.saveSettings();
+    }
+
     // 注解数据体量约 6MB，与主圣经数据分开存放，首次用到时再读，避免拖慢启动
     async loadNotesData() {
         if (this.notesData) return this.notesData;
@@ -7504,9 +7512,9 @@ class BibleSearchPlugin extends Plugin {
         notesBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            this.settings.showNotes = !this.settings.showNotes;
-            await this.saveSettings();
-            if (syncNotesBtn() && !this.notesData) {
+            await this.setShowNotes(!this.settings.showNotes);
+            const on = syncNotesBtn();
+            if (on && !this.notesData) {
                 notesBtn.setText('注解…');
                 await this.loadNotesData();
                 syncNotesBtn();
