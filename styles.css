@@ -330,6 +330,11 @@
 .bible-small-btn:hover {
     background: var(--background-modifier-hover);
 }
+.bible-small-btn.active {
+    background: var(--bible-accent);
+    color: var(--text-on-accent);
+    border-color: var(--bible-accent);
+}
 
 /* ===== 分页 ===== */
 .bible-pagination {

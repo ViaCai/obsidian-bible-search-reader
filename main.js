@@ -2482,7 +2482,7 @@ class BibleSearchView extends ItemView {
         this.readerFontSize = 15;
         this.readerResults = [];
         this.readerSelectCounter = 0;
-        this.selectedBookIds = new Set();
+        this.selectedBookIds = new Set(BIBLE_BOOKS.map(b => b.id));
         this.searchFocusMode = false;
         this.readerFocusMode = false;
         this.comparePanelOpen = false;
@@ -3272,25 +3272,17 @@ class BibleSearchView extends ItemView {
             rangeBody.style.display = isCollapsed ? 'block' : 'none';
             rangeIcon.textContent = isCollapsed ? '▼' : '▶';
         });
-        this.rangeRadios = {};
-        const rangeOptions = [
-            { value: 'all', label: '全部圣经' },
-            { value: 'multi', label: '选择范围' }
-        ];
-        for (const opt of rangeOptions) {
-            const label = rangeBody.createEl('label', { cls: 'bible-radio-label' });
-            const radio = label.createEl('input', { type: 'radio', attr: { name: 'bible-range', value: opt.value } });
-            if (opt.value === 'all') radio.checked = true;
-            this.rangeRadios[opt.value] = radio;
-            label.createSpan({ text: opt.label });
-        }
-
         this.bookSelectWrapper = rangeBody.createDiv({ cls: 'bible-book-select-wrapper' });
-        this.bookSelectWrapper.style.display = 'none';
+        this.bookSelectWrapper.style.display = 'block';
         this.bookSelectCount = this.bookSelectWrapper.createEl('div', { cls: 'bible-book-select-count', text: '已选 0 卷' });
         const bookSelectActions = this.bookSelectWrapper.createDiv({ cls: 'bible-book-select-actions' });
+        const oldTestBtn = bookSelectActions.createEl('button', { cls: 'bible-small-btn', text: '旧约' });
+        const newTestBtn = bookSelectActions.createEl('button', { cls: 'bible-small-btn', text: '新约' });
         const selectAllBooksBtn = bookSelectActions.createEl('button', { cls: 'bible-small-btn', text: '全选' });
-        const clearBooksBtn = bookSelectActions.createEl('button', { cls: 'bible-small-btn', text: '清空' });
+        const clearBooksBtn = bookSelectActions.createEl('button', { cls: 'bible-small-btn', text: '取消' });
+        this.oldTestBtn = oldTestBtn;
+        this.newTestBtn = newTestBtn;
+        this.selectAllBooksBtn = selectAllBooksBtn;
 
         const oldGroup = this.bookSelectWrapper.createDiv({ cls: 'bible-book-group' });
         oldGroup.createEl('div', { cls: 'bible-book-group-title', text: '旧约' });
@@ -3308,6 +3300,17 @@ class BibleSearchView extends ItemView {
             btn.addEventListener('click', () => this.toggleBookSelection(btn));
         }
 
+        const selectOnlyTestament = (testament) => {
+            this.selectedBookIds.clear();
+            const books = BIBLE_BOOKS.filter(b => b.testament === testament);
+            for (const b of books) {
+                this.selectedBookIds.add(b.id);
+            }
+            this.updateBookSelectUI();
+        };
+        oldTestBtn.addEventListener('click', () => selectOnlyTestament('old'));
+        newTestBtn.addEventListener('click', () => selectOnlyTestament('new'));
+
         selectAllBooksBtn.addEventListener('click', () => {
             for (const book of BIBLE_BOOKS) { this.selectedBookIds.add(book.id); }
             this.updateBookSelectUI();
@@ -3317,12 +3320,8 @@ class BibleSearchView extends ItemView {
             this.updateBookSelectUI();
         });
 
-        for (const key in this.rangeRadios) {
-            this.rangeRadios[key].addEventListener('change', () => {
-                const val = this.getRangeValue();
-                this.bookSelectWrapper.style.display = (val === 'multi') ? 'block' : 'none';
-            });
-        }
+        // 默认即「全选」状态：初始化书卷按钮高亮与计数显示
+        this.updateBookSelectUI();
 
         clearBtn.addEventListener('click', () => {
             this.searchInput.value = '';
@@ -3423,8 +3422,8 @@ class BibleSearchView extends ItemView {
     }
 
     getRangeValue() {
-        for (const key in this.rangeRadios) { if (this.rangeRadios[key].checked) return key; }
-        return 'all';
+        // 已移除「全部圣经 / 选择范围」单选，始终按选中的书卷范围检索
+        return 'multi';
     }
 
     toggleBookSelection(btn) {
@@ -3445,6 +3444,19 @@ class BibleSearchView extends ItemView {
             const id = parseInt(btn.dataset.bookId);
             if (this.selectedBookIds.has(id)) btn.classList.add('active');
             else btn.classList.remove('active');
+        }
+        const oldBooks = BIBLE_BOOKS.filter(b => b.testament === 'old');
+        const newBooks = BIBLE_BOOKS.filter(b => b.testament === 'new');
+        if (this.oldTestBtn) {
+            const allOld = oldBooks.length > 0 && oldBooks.every(b => this.selectedBookIds.has(b.id));
+            this.oldTestBtn.classList.toggle('active', allOld);
+        }
+        if (this.newTestBtn) {
+            const allNew = newBooks.length > 0 && newBooks.every(b => this.selectedBookIds.has(b.id));
+            this.newTestBtn.classList.toggle('active', allNew);
+        }
+        if (this.selectAllBooksBtn) {
+            this.selectAllBooksBtn.classList.toggle('active', this.selectedBookIds.size === BIBLE_BOOKS.length);
         }
         this.updateBookSelectCount();
     }
@@ -6525,7 +6537,7 @@ class BibleSearchPlugin extends Plugin {
     findInlineContinuationRefs(text, coveredRanges, resolveCtx) {
         const matches = [];
         // 前面必须是行首或空白/破折号；中文数字章 + 阿拉伯节；后面不跟数字（避免吃掉更长连写）
-        const re = /(^|[\s　–—‐])([一二三四五六七八九十百零〇]+)(\d+)(?![\d一二三四五六七八九十百零〇])/g;
+        const re = /(^|[\s　–—‐\-])([一二三四五六七八九十百零〇]+)(\d+)(?![\d一二三四五六七八九十百零〇])/g;
         let m;
         while ((m = re.exec(text)) !== null) {
             const start = m.index + m[1].length;
@@ -6553,11 +6565,14 @@ class BibleSearchPlugin extends Plugin {
     // 不含行首（行首由 findLineStartRefs 负责）
     findWeakContinuationRefs(text, coveredRanges, resolveCtx) {
         const matches = [];
-        const re = /([\s　（〔(–—‐])(?![\s　])/g;
+        const re = /([\s　（〔(–—‐\-])(?![\s　])/g;
         let runningChapter = null;
         let m;
         while ((m = re.exec(text)) !== null) {
-            const start = m.index + m[1].length;
+            let start = m.index + m[1].length;
+            // 跳过引导分隔符后连续的破折号（如“——五11”里的第二个破折号），从真正内容位置开始解析，
+            // 否则第二个破折号会被当成内容开头，导致弱引用解析失败、范围被丢弃
+            while (start < text.length && /[–—‐\-－]/.test(text[start])) start++;
             if (this.isCovered(start, coveredRanges)) { re.lastIndex = start + 1; continue; }
             // 按本处所在位置取上下文：书卷沿用左侧最近引用（可跨行、跨段落），章号沿用其结束章
             const c = resolveCtx(start);
