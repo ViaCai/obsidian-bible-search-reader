@@ -1,24 +1,35 @@
 {
   "schema": 1,
-  "generated": "2026-10-12T20:15:00+08:00",
+  "generated": "2026-10-21T09:20:00+08:00",
   "files": [
+    {
+      "file": "bible-crv-notes.json",
+      "key": "CRV-NOTES",
+      "name": "恢复本注解·串珠",
+      "dataVersion": "2026.10.21.1",
+      "size": 6670797,
+      "sha256": "7b24b7622b50b37ca387ad85d2b9a8df0e872e2649272c41ac32348f692678bc",
+      "url": "https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/data/bible-crv-notes.json",
+      "changes": [
+        "15792 条注解、26215 条串珠，按「节 + 上/下」重新对齐新的恢复本经文数据",
+        "上标定位改为与经文正文同源（逐字一致），位置精确",
+        "检索页结果与经文弹窗同样显示 ¹ ᵃ 上标，点击展开"
+      ]
+    },
     {
       "file": "bible-crv-data.json",
       "key": "CRV",
       "name": "恢复本（推荐）",
-      "dataVersion": "2026.10.12.1",
-      "size": 14819019,
-      "sha256": "0a20beddf3f681697ca58484376c631219d7cf4ce7d317394399b6b6555564e7",
+      "dataVersion": "2026.10.21",
+      "size": 12770222,
+      "sha256": "6286e41c0e0981d6de788ba23a4ca271da8c3dfa69389d899fe30390df71478e",
       "url": "https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/data/bible-crv-data.json",
       "changes": [
-        "修复 79 节经文正文被误并入上一节、导致插件检索不到的问题（如林后5:7）",
-        "补齐林后6:17、林后6:18、约叁1:15 等章末缺失经文",
-        "修正约12:19→约13:19、约12:26→约15:26 两处章号错标",
-        "补回诗49:8、诗104:8 两节孤立行",
-        "补充 12 处「节合并」标注（如创24:30、书3:11）",
-        "清理 8 处行尾残留标记",
-        "规范化 rawLine 29 条（约贰/约叁前缀统一等）",
-        "恢复 outline/theme 与 verse 的穿插顺序：修复数据重排时把 verse=0 的纲目全部挤到章首的问题"
+        "用恢复本原始排版重新生成全部 31103 节经文：补齐句末句号等标点（旧数据大量缺失）",
+        "保留 72 处上 / 下半节的区分，出处显示为「创1:2上」「创1:2下」，可分别选中、复制、投影",
+        "修正玛拉基书 3 章缺 4、9、11、14、15、18 六节的问题",
+        "删除约翰三书 1:15 重复条目（与 14 下重复）",
+        "主题与纲目沿用原数据，位置与经文穿插顺序保持不变"
       ]
     },
     {

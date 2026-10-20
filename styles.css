@@ -2159,3 +2159,181 @@
     color: var(--text-accent);
 }
 /* （注：内容由AI生成） */
+
+/* ==================== 恢复本注解 / 串珠 ==================== */
+/* 经文内嵌上标：注 ¹ 串 ᵃ */
+.bible-reader-verse-text sup.bible-note-mark,
+.bible-result-text sup.bible-note-mark,
+.bible-inline-tooltip-verse-text sup.bible-note-mark {
+    display: inline-block;
+    min-width: 1em;
+    padding: 0 0.2em;
+    margin: 0 0.08em;
+    font-size: 0.72em;
+    line-height: 1.1;
+    text-align: center;
+    vertical-align: super;
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+    transition: background-color 0.12s ease;
+}
+.bible-reader-verse-text sup.bible-note-mark-note,
+.bible-result-text sup.bible-note-mark-note,
+.bible-inline-tooltip-verse-text sup.bible-note-mark-note {
+    color: var(--text-accent);
+    background-color: var(--background-modifier-hover);
+}
+.bible-reader-verse-text sup.bible-note-mark-ref,
+.bible-result-text sup.bible-note-mark-ref,
+.bible-inline-tooltip-verse-text sup.bible-note-mark-ref {
+    color: var(--text-muted);
+    background-color: var(--background-modifier-hover);
+}
+.bible-reader-verse-text sup.bible-note-mark:hover,
+.bible-result-text sup.bible-note-mark:hover,
+.bible-inline-tooltip-verse-text sup.bible-note-mark:hover {
+    background-color: var(--background-modifier-active-hover);
+}
+/* 检索命中注解正文时的经文底色 */
+.bible-reader-verse-text.bible-note-hit {
+    background-color: var(--background-modifier-hover);
+    border-radius: 4px;
+}
+/* 展开面板 */
+.bible-result-card .bible-note-panel,
+.bible-reader-verse-card .bible-note-panel,
+.bible-inline-tooltip .bible-note-panel {
+    margin: 6px 0 4px 0;
+    padding: 8px 10px;
+    border-left: 3px solid var(--interactive-accent);
+    border-radius: 0 6px 6px 0;
+    background-color: var(--background-secondary);
+    /* 注解正文与经文同字号，避免看不清 */
+    font-size: 1em;
+    line-height: 1.7;
+}
+.bible-note-item {
+    margin: 0 0 8px 0;
+}
+.bible-note-item:last-child {
+    margin-bottom: 0;
+}
+.bible-note-label {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-size: 0.92em;
+    font-weight: 600;
+    vertical-align: 1px;
+}
+.bible-note-label-note {
+    color: var(--text-accent);
+    background-color: var(--background-modifier-hover);
+}
+.bible-note-label-ref {
+    color: var(--text-muted);
+    background-color: var(--background-modifier-hover);
+}
+.bible-note-text {
+    color: var(--text-normal);
+}
+.bible-note-item-ref .bible-note-ref-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-bottom: 3px;
+}
+.bible-note-refs {
+    color: var(--text-muted);
+    font-size: 1em;
+}
+.bible-note-ref-verse {
+    display: flex;
+    gap: 6px;
+    margin: 3px 0 0 0;
+    padding-left: 2px;
+}
+.bible-note-ref-addr {
+    flex: 0 0 auto;
+    color: var(--text-accent);
+    font-size: 0.95em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.bible-note-ref-text {
+    flex: 1 1 auto;
+    color: var(--text-muted);
+}
+.bible-note-empty {
+    color: var(--text-faint);
+    font-size: 1em;
+}
+/* 「注N · 串M」折叠按钮 */
+.bible-result-notes-bar,
+.bible-inline-tooltip-notes-bar {
+    display: flex;
+    margin-top: 3px;
+}
+button.bible-notes-toggle-btn,
+.bible-result-card button.bible-notes-toggle-btn,
+.bible-inline-tooltip button.bible-notes-toggle-btn {
+    padding: 1px 8px;
+    font-size: 0.78em;
+    line-height: 1.5;
+    color: var(--text-muted);
+    background-color: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    cursor: pointer;
+}
+.bible-result-card button.bible-notes-toggle-btn:hover,
+.bible-inline-tooltip button.bible-notes-toggle-btn:hover {
+    color: var(--text-accent);
+    border-color: var(--interactive-accent);
+    background-color: var(--background-modifier-hover);
+}
+
+/* ===== 对照设置弹窗里的「恢复本注解 / 串珠」===== */
+.bible-compare-modal-notes {
+    margin: 0 16px 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background-color: var(--background-secondary);
+}
+.bible-compare-modal-notes-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.bible-compare-modal-notes-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1 1 auto;
+    font-size: 13px;
+    color: var(--text-normal);
+    cursor: pointer;
+    user-select: none;
+}
+.bible-compare-modal-notes-status {
+    flex: 0 0 auto;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.bible-compare-modal-notes .bible-small-btn {
+    width: 100%;
+    margin-top: 2px;
+}
+/* 经文弹窗工具条里开关打开的高亮 */
+.bible-inline-tooltip-btn.active {
+    color: var(--text-accent);
+    border-color: var(--interactive-accent);
+    background-color: var(--background-modifier-hover);
+}
+/* （注：内容由AI生成） */
