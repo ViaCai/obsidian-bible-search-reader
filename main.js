@@ -294,6 +294,17 @@ function notesVerseKey(verse, part) {
     return String(verse) + (part || '');
 }
 
+// 把一条注解正文写入容器：源数据用空行分段，每段单独成块，避免密密麻麻
+function appendNoteBody(container, text) {
+    const paras = String(text || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
+    if (paras.length <= 1) {
+        container.createEl('span', { cls: 'bible-note-text', text: paras[0] || '' });
+        return;
+    }
+    const body = container.createDiv({ cls: 'bible-note-body' });
+    for (const p of paras) body.createEl('div', { cls: 'bible-note-para', text: p });
+}
+
 // 上标定位：这些字符不计入「非标点字符序列」
 const NOTE_PUNC_RE = /[。，、；：？！“”「」『』（）()《》〈〉…—～·,. ;:?!\s]/;
 
@@ -325,6 +336,17 @@ function parseNumber(s) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '3.2.1': `## [3.2.1] - 2026-10-21
+
+### 改进
+- **注解检索出「注解条目」**：勾选「注解」检索时，每条命中的注解各自成为一条结果，显示出处与注解正文（如「创6:3注2　这是本书第二次提到……」），不再拿整节经文充当结果；命中关键词在注解正文里高亮
+- **注解正文分段**：注解原文的多段内容按空行分开，段与段之间留出间距，长注解不再挤成一坨
+- **读完即点，不必再找按钮**：检索结果里既然已经有 ¹ ᵃ 上标，就去掉了卡片末尾的「注N · 串M」按钮
+
+### 修复
+- **经文与纲目的顺序**：按恢复本原始排版重排经文与纲目的前后关系。分上/下半节的经文各自归位——「创1:2上」现在紧跟纲目「2审判与败坏」，「创1:2下」在「a第一日」之后，不再统一堆到该段纲目之后
+
+---`,
     '3.2.0': `## [3.2.0] - 2026-10-21
 
 ### 新增
@@ -1297,6 +1319,25 @@ class BibleSearchEngine {
     // 只检索注解正文：只勾了「注解」而不勾「经文」时生效
     setNotesOnly(on) { this.notesOnly = !!on; }
 
+    // 关键词匹配：and / and_ordered / or / or_ordered 四种模式共用
+    matchKeywords(text, keywords, mode) {
+        const lower = String(text || '').toLowerCase();
+        if (!keywords || !keywords.length) return false;
+        if (mode === 'or' || mode === 'or_ordered') {
+            return keywords.some(k => lower.includes(k.toLowerCase()));
+        }
+        if (mode === 'and_ordered') {
+            let lastIndex = -1;
+            for (const kw of keywords) {
+                const idx = lower.indexOf(kw.toLowerCase(), lastIndex + 1);
+                if (idx === -1) return false;
+                lastIndex = idx;
+            }
+            return true;
+        }
+        return keywords.every(k => lower.includes(k.toLowerCase()));
+    }
+
     search(query, types, range, bookIds, primaryKey) {
         if (!query.trim()) return [];
         const parsed = this.parseQuery(query);
@@ -1327,32 +1368,10 @@ class BibleSearchEngine {
                     }
                 }
             }
-            if (keywords.length > 0) {
-                // 勾选「搜注解」时把该节的注解正文一并纳入匹配范围；
-                // 只勾「注解」时只匹配注解正文
-                let contentLower = item.content.toLowerCase();
-                if (this.includeNotes) {
-                    if (this.notesOnly) {
-                        contentLower = (item.notesText || '').toLowerCase();
-                    } else if (item.notesText) {
-                        contentLower += ' ' + item.notesText.toLowerCase();
-                    }
-                }
-                if (keywordMode === 'or' || keywordMode === 'or_ordered') {
-                    matched = matched || keywords.some(k => contentLower.includes(k.toLowerCase()));
-                } else if (keywordMode === 'and_ordered') {
-                    let lastIndex = -1;
-                    let allFound = true;
-                    for (const kw of keywords) {
-                        const idx = contentLower.indexOf(kw.toLowerCase(), lastIndex + 1);
-                        if (idx === -1) { allFound = false; break; }
-                        lastIndex = idx;
-                    }
-                    if (allFound) matched = true;
-                } else {
-                    const allMatch = keywords.every(k => contentLower.includes(k.toLowerCase()));
-                    if (allMatch) matched = true;
-                }
+            // 经文类结果只看经文本身；注解正文单独产出「注解结果」（见下），
+            // 否则会出现「注解里命中、却拿一整节经文当结果」的情况
+            if (keywords.length > 0 && !this.notesOnly) {
+                if (this.matchKeywords(item.content, keywords, keywordMode)) matched = true;
             }
 
             if (matched) {
@@ -1360,6 +1379,18 @@ class BibleSearchEngine {
                 if (!seen.has(key)) {
                     seen.add(key);
                     results.push({ item: item, selected: false, order: 0, sideBySide: false, _refIndex: refIndex });
+                }
+            }
+
+            // 勾选「注解」时：每条命中的注解各自成为一条结果，显示「出处 + 注解正文」
+            if (this.includeNotes && keywords.length > 0 && Array.isArray(item.notesList)) {
+                for (const nt of item.notesList) {
+                    if (!nt || !nt[1]) continue;
+                    if (!this.matchKeywords(nt[1], keywords, keywordMode)) continue;
+                    results.push({
+                        item: item, isNote: true, noteLabel: nt[0], noteText: nt[1],
+                        selected: false, order: 0, sideBySide: false, _refIndex: -1
+                    });
                 }
             }
         }
@@ -1375,8 +1406,8 @@ class BibleSearchEngine {
 
         if (keywordMode === 'or_ordered' && keywords.length > 0 && refs.length === 0) {
             results.sort((a, b) => {
-                const aContent = a.item.content.toLowerCase();
-                const bContent = b.item.content.toLowerCase();
+                const aContent = (a.noteText || a.item.content).toLowerCase();
+                const bContent = (b.noteText || b.item.content).toLowerCase();
                 for (const kw of keywords) {
                     const aIdx = aContent.indexOf(kw.toLowerCase());
                     const bIdx = bContent.indexOf(kw.toLowerCase());
@@ -1394,6 +1425,12 @@ class BibleSearchEngine {
                 if (ia.bookId !== ib.bookId) return ia.bookId - ib.bookId;
                 if (ia.chapter !== ib.chapter) return ia.chapter - ib.chapter;
                 if (ia.verse !== ib.verse) return ia.verse - ib.verse;
+                // 同一节：经文行在前，注解行按注号排在后面
+                if (!!a.isNote !== !!b.isNote) return a.isNote ? 1 : -1;
+                if (a.isNote && b.isNote) {
+                    const al = parseInt(a.noteLabel, 10), bl = parseInt(b.noteLabel, 10);
+                    if (!isNaN(al) && !isNaN(bl) && al !== bl) return al - bl;
+                }
                 return ia.lineIndex - ib.lineIndex;
             });
         }
@@ -3760,7 +3797,8 @@ class BibleSearchView extends ItemView {
         const startIdx = this.currentPage * this.pageSize + 1;
         const endIdx = Math.min((this.currentPage + 1) * this.pageSize, this.results.length);
 
-        let countText = '共找到 ' + this.results.length + ' 节经文';
+        const noteHits = this.results.filter(r => r.isNote).length;
+        let countText = '共找到 ' + this.results.length + ' 条' + (noteHits === this.results.length && noteHits > 0 ? '注解' : '结果');
         if (this.keywords.length > 0) countText += '    关键词：' + this.keywords.join(' ');
         this.resultsCount.setText(countText);
 
@@ -3834,6 +3872,12 @@ class BibleSearchView extends ItemView {
             const item = result.item;
 
             // 选中状态：可能来自当前视图，也可能来自「保留候选」的候选池
+            // 注解结果：只显示「出处 + 注解正文」，不参与候选/选中
+            if (result.isNote) {
+                this.renderNoteResultCard(result);
+                continue;
+            }
+
             const selState = this.getSelectionState(item, false, !!result.selected, result.order, result.sideBySide);
 
             const card = this.resultsContainer.createDiv({ cls: 'bible-result-card' + (selState.selected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : '') });
@@ -3869,20 +3913,6 @@ class BibleSearchView extends ItemView {
                 this.highlightKeywords(contentEl, displayText, this.keywords);
             } else {
                 contentEl.setText(displayText);
-            }
-
-            // 注解 / 串珠总览按钮：点击展开该节全部注解与串珠
-            if (nd && ((nd.n && nd.n.length) || (nd.r && nd.r.length))) {
-                const bar = card.createDiv({ cls: 'bible-result-notes-bar' });
-                const parts = [];
-                if (nd.n && nd.n.length) parts.push('注' + nd.n.length);
-                if (nd.r && nd.r.length) parts.push('串' + nd.r.length);
-                const btn = bar.createEl('button', { cls: 'bible-notes-toggle-btn', text: parts.join(' · ') });
-                btn.title = '展开该节全部注解 / 串珠';
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.toggleResultNotePanel(card, item, nd);
-                });
             }
 
             if (selState.selected) {
@@ -4098,7 +4128,10 @@ class BibleSearchView extends ItemView {
 
     selectAll() {
         this.selectCounter = 0;
-        for (const result of this.results) { result.selected = true; result.sideBySide = false; this.selectCounter++; result.order = this.selectCounter; }
+        for (const result of this.results) {
+            if (result.isNote) continue;   // 注解结果不是可选经文
+            result.selected = true; result.sideBySide = false; this.selectCounter++; result.order = this.selectCounter;
+        }
         // 全选对照经文
         for (const cmpKey of this.cmpOrder) {
             this.compareSelections[cmpKey].selected = true;
@@ -4130,6 +4163,7 @@ class BibleSearchView extends ItemView {
         for (let i = 0; i < paged.length; i++) {
             const globalIdx = startOffset + i;
             const result = this.results[globalIdx];
+            if (result.isNote) continue;
             if (!result.selected) { this.selectCounter++; result.selected = true; result.order = this.selectCounter; }
         }
         // 勾选「保留候选」时，本页选中的经文实时进入候选池
@@ -4819,7 +4853,7 @@ class BibleSearchView extends ItemView {
             for (const n of list) {
                 const row = panel.createDiv({ cls: 'bible-note-item' });
                 row.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
-                row.createEl('span', { cls: 'bible-note-text', text: n[1] });
+                appendNoteBody(row, n[1]);
             }
             return;
         }
@@ -4860,37 +4894,33 @@ class BibleSearchView extends ItemView {
         return this.plugin.getVersesForTarget(t, this.getReaderPrimaryVersion());
     }
 
-    // 检索结果：展开该节的全部注解与串珠
-    toggleResultNotePanel(card, item, nd) {
-        let panel = card.querySelector(':scope > .bible-note-panel');
-        if (panel) { panel.remove(); return; }
-        panel = card.createDiv({ cls: 'bible-note-panel' });
-        panel.addEventListener('click', (e) => e.stopPropagation());
-        for (const n of (nd.n || [])) {
-            const row = panel.createDiv({ cls: 'bible-note-item' });
-            row.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
-            row.createEl('span', { cls: 'bible-note-text', text: n[1] });
-        }
-        for (const r of (nd.r || [])) {
-            const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
-            const head = row.createDiv({ cls: 'bible-note-ref-head' });
-            head.createEl('span', { cls: 'bible-note-label bible-note-label-ref', text: '串' + r[0] });
-            head.createEl('span', { cls: 'bible-note-refs', text: r[1] });
-            for (const t of (r[2] || [])) {
-                for (const v of this.getVersesForTarget(t)) {
-                    const vr = row.createDiv({ cls: 'bible-note-ref-verse' });
-                    const addr = vr.createEl('span', {
-                        cls: 'bible-note-ref-addr',
-                        text: v.bookShortName + v.chapter + ':' + v.verse
-                    });
-                    addr.title = '点击跳转到该节';
-                    addr.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.openVerseLocation(v);
-                    });
-                    vr.createEl('span', { cls: 'bible-note-ref-text', text: v.content });
-                }
-            }
+    // 检索结果里的注解条目：出处（如「创6:3注2」）+ 注解正文，命中关键词高亮
+    renderNoteResultCard(result) {
+        const item = result.item;
+        const card = this.resultsContainer.createDiv({ cls: 'bible-result-card bible-result-note-card' });
+        const header = card.createDiv({ cls: 'bible-result-header' });
+        const ref = header.createEl('span', {
+            cls: 'bible-result-ref',
+            text: item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + '注' + result.noteLabel
+        });
+        ref.style.cursor = 'pointer';
+        ref.title = '点击跳转到该节';
+        ref.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.openVerseLocation(item);
+        });
+        const body = card.createDiv({ cls: 'bible-result-text bible-result-note-text' });
+        this.renderNoteParagraphs(body, result.noteText, this.keywords);
+    }
+
+    // 注解正文分段：源数据用空行分段，每段单独成块（有关键词时高亮）
+    renderNoteParagraphs(container, text, keywords) {
+        const paras = String(text || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
+        if (!paras.length) return;
+        for (const p of paras) {
+            const el = container.createDiv({ cls: 'bible-note-para' });
+            if (keywords && keywords.length) this.highlightKeywords(el, p, keywords);
+            else el.setText(p);
         }
     }
 
@@ -5735,7 +5765,7 @@ class BibleSearchPlugin extends Plugin {
         for (const n of notes) {
             const row = panel.createDiv({ cls: 'bible-note-item' });
             row.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
-            row.createEl('span', { cls: 'bible-note-text', text: n[1] });
+            appendNoteBody(row, n[1]);
         }
         for (const r of refs) {
             const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
@@ -5761,6 +5791,10 @@ class BibleSearchPlugin extends Plugin {
             const t = idx.get(item.bookId + '-' + item.chapter + '-' + notesVerseKey(item.verse, item.part));
             if (t) item.notesText = t;
             else if (item.notesText) delete item.notesText;
+            // 注解级检索需要逐条注解：[[注号, 正文], ...]
+            const nd = this.getVerseNotes(item.bookId, item.chapter, item.verse, item.part);
+            if (nd && nd.n && nd.n.length) item.notesList = nd.n;
+            else if (item.notesList) delete item.notesList;
         }
         this._notesAttached = true;
     }

@@ -2241,6 +2241,28 @@
 .bible-note-text {
     color: var(--text-normal);
 }
+/* 注解正文分段：段与段之间留出空行，避免密密麻麻 */
+.bible-note-body {
+    display: block;
+    margin-top: 4px;
+}
+.bible-note-para {
+    margin: 0 0 0.72em 0;
+    text-align: justify;
+}
+.bible-note-para:last-child {
+    margin-bottom: 0;
+}
+/* 注解检索结果：只显示「出处 + 注解正文」 */
+.bible-result-card.bible-result-note-card {
+    background-color: var(--background-secondary);
+}
+.bible-result-card.bible-result-note-card .bible-result-header {
+    padding-left: 2px;
+}
+.bible-result-card.bible-result-note-card .bible-result-text {
+    padding-left: 2px;
+}
 .bible-note-item-ref .bible-note-ref-head {
     display: flex;
     align-items: baseline;
