@@ -284,7 +284,8 @@
 /* ===== 检索种类 ===== */
 .bible-type-grid {
     display: flex;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 8px 16px;
     padding: 0 12px 12px 12px;
 }
 .bible-checkbox-label {
@@ -473,6 +474,35 @@
     background: var(--interactive-success);
     color: var(--text-on-accent);
     border-color: var(--interactive-success);
+}
+
+/* ===== 注解 / 串珠候选框（与经文候选框同款样式，样式复用 .bible-result-checkbox / .bible-side-tag）===== */
+.bible-note-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.bible-note-item-ref {
+    flex-direction: row;
+}
+.bible-note-content {
+    flex: 1;
+    min-width: 0;
+}
+.bible-nc-boxes {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+/* 候选框内的「并」标签恢复为普通流式（覆盖 .bible-side-tag 的绝对定位），排在复选框下方 */
+.bible-nc-boxes .bible-side-tag {
+    position: static;
+    padding: 1px 6px;
+    font-size: 10px;
+    margin-top: 0;
 }
 
 /* ===== 空状态 ===== */
@@ -1305,9 +1335,27 @@
     padding: 4px 0;
 }
 .bible-book-select-actions {
-    display: flex;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    gap: 4px;
     margin-bottom: 8px;
+}
+/* 「旧约 / 新约 / 全选 / 取消」与下方书卷按钮同尺寸同行宽 */
+.bible-book-select-actions .bible-small-btn {
+    min-width: 0;
+    min-height: 28px;
+    padding: 5px 2px;
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: center;
+    box-sizing: border-box;
+}
+/* 检索范围收起时显示在标题右侧的已选提示 */
+.bible-range-count {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
 }
 .bible-book-group {
     margin-bottom: 8px;
@@ -1445,6 +1493,175 @@
 }
 .bible-proj-ref {
     color: #a0a0a0;
+}
+
+/* ===== 经文投影：正文内嵌注 / 串上标，点击上标展开（字号与经文一致）===== */
+.bible-proj-text sup.bible-note-mark {
+    display: inline-block;
+    min-width: 1em;
+    padding: 0 0.2em;
+    margin: 0 0.08em;
+    font-size: 0.72em;
+    line-height: 1.1;
+    text-align: center;
+    vertical-align: super;
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+    transition: background-color 0.12s ease;
+}
+.bible-proj-text sup.bible-note-mark-note {
+    color: #a0c4ff;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+.bible-proj-text sup.bible-note-mark-ref {
+    color: #b8b8b8;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+.bible-proj-text sup.bible-note-mark:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark-note {
+    color: #4a6fa5;
+    background-color: rgba(0, 0, 0, 0.1);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark-ref {
+    color: #555;
+    background-color: rgba(0, 0, 0, 0.08);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark:hover {
+    background-color: rgba(0, 0, 0, 0.18);
+}
+/* ===== 被选中直接投影的注解 / 串珠 =====
+   按段落呈现，段间留一个空行；左侧色条 + 淡底，与被投影的经文正文区分开 */
+.bible-proj-text.bible-proj-item-note,
+.bible-proj-text.bible-proj-item-chain {
+    text-align: left;
+    padding: 0.4em 0.9em;
+    border-left: 3px solid rgba(160, 196, 255, 0.55);
+    border-radius: 0 6px 6px 0;
+    background-color: rgba(255, 255, 255, 0.055);
+    color: rgba(255, 255, 255, 0.88);
+}
+.bible-proj-text.bible-proj-item-chain {
+    border-left-color: rgba(255, 200, 120, 0.55);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-text.bible-proj-item-note,
+.bible-projection-fullscreen.light-mode .bible-proj-text.bible-proj-item-chain {
+    background-color: rgba(0, 0, 0, 0.04);
+    color: #4a5568;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-text.bible-proj-item-note {
+    border-left-color: rgba(74, 111, 165, 0.55);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-text.bible-proj-item-chain {
+    border-left-color: rgba(180, 120, 20, 0.5);
+}
+.bible-proj-text-para {
+    margin: 0 0 0.9em 0;
+    text-indent: 0;
+}
+.bible-proj-text-para:last-child {
+    margin-bottom: 0;
+}
+
+/* 展开后的注解 / 串珠面板：字号跟随所在经文；
+   与经文之间用一条分割线隔开，并配淡背景 + 左侧重点色条，视觉上明显区别于经文正文 */
+.bible-proj-notes {
+    margin-top: 0.7em;
+    padding: 0.55em 0.9em 0.65em 0.9em;
+    text-align: left;
+    line-height: 1.75;
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
+    border-left: 3px solid rgba(160, 196, 255, 0.55);
+    border-radius: 0 6px 6px 0;
+    background-color: rgba(255, 255, 255, 0.07);
+    color: rgba(255, 255, 255, 0.86);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-notes {
+    border-top-color: rgba(0, 0, 0, 0.2);
+    border-left-color: rgba(74, 111, 165, 0.55);
+    background-color: rgba(0, 0, 0, 0.045);
+    color: #4a5568;
+}
+.bible-proj-note {
+    margin: 0 0 0.5em 0;
+}
+.bible-proj-note:last-child {
+    margin-bottom: 0;
+}
+.bible-proj-note-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 0.35em;
+}
+/* 类型徽标：注解偏蓝、串珠偏琥珀，一眼能区分注与串 */
+.bible-proj-note-label {
+    display: inline-block;
+    padding: 0 0.45em;
+    border-radius: 3px;
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.bible-proj-note-label-note {
+    color: #a0c4ff;
+    background-color: rgba(160, 196, 255, 0.16);
+    border: 1px solid rgba(160, 196, 255, 0.4);
+}
+.bible-proj-note-label-ref {
+    color: #ffd79a;
+    background-color: rgba(255, 200, 120, 0.14);
+    border: 1px solid rgba(255, 200, 120, 0.38);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-note-label-note {
+    color: #3c5f96;
+    background-color: rgba(74, 111, 165, 0.12);
+    border-color: rgba(74, 111, 165, 0.35);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-note-label-ref {
+    color: #8a5a12;
+    background-color: rgba(180, 120, 20, 0.12);
+    border-color: rgba(180, 120, 20, 0.35);
+}
+/* 正文分段：每段独立成块，段间留一个空行 */
+.bible-proj-note-body {
+    margin-top: 0.1em;
+}
+.bible-proj-note-para {
+    margin: 0 0 0.85em 0;
+    text-indent: 0;
+}
+.bible-proj-note-para:last-child {
+    margin-bottom: 0;
+}
+.bible-proj-note-refs {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-note-refs {
+    color: #55603f;
+}
+/* 串珠引到的经文：缩进 + 更淡，作为注解内容的从属块 */
+.bible-proj-note-ref-verse {
+    margin: 0 0 0.4em 1.2em;
+    padding-left: 0.6em;
+    border-left: 2px solid rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.68);
+}
+.bible-proj-note-ref-verse:first-child {
+    margin-top: 0.35em;
+}
+.bible-proj-note-ref-verse:last-child {
+    margin-bottom: 0;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-note-ref-verse {
+    border-left-color: rgba(0, 0, 0, 0.14);
+    color: #6b7280;
 }
 
 /* ===== 2.1.0 新增：对照模式相关样式 ===== */
@@ -2295,7 +2512,7 @@
     color: var(--text-faint);
     font-size: 1em;
 }
-/* 「注N · 串M」折叠按钮 */
+/* 「注N · 串M」折叠按钮：经文里已内嵌注 / 串上标，此处按钮已不再使用，保留样式备用
 .bible-result-notes-bar,
 .bible-inline-tooltip-notes-bar {
     display: flex;
@@ -2319,6 +2536,7 @@ button.bible-notes-toggle-btn,
     border-color: var(--interactive-accent);
     background-color: var(--background-modifier-hover);
 }
+*/
 
 /* ===== 对照设置弹窗里的「恢复本注解 / 串珠」===== */
 .bible-compare-modal-notes {

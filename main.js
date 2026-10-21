@@ -1079,6 +1079,48 @@ class DataUpdateModal extends Modal {
     }
 }
 
+// 注解数据缺失时的下载提示框：恢复本注解 / 串珠默认开启，本地没有数据文件时提示下载
+class NotesMissingModal extends Modal {
+    constructor(app, plugin) {
+        super(app);
+        this.plugin = plugin;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.classList.add('bible-update-modal');
+        contentEl.createEl('h2', { text: '📖 恢复本注解 / 串珠数据未安装' });
+        contentEl.createEl('div', {
+            cls: 'setting-item-description',
+            text: '注解与串珠功能已开启，但本机还没有数据文件 bible-crv-notes.json（约 6MB，含全 66 卷 1189 章的注解与串珠）。'
+        });
+        const tips = contentEl.createEl('ul');
+        tips.createEl('li', { text: '下载后经文里会出现 ¹ ᵃ 上标，点开即可看对应的注解 / 串珠。' });
+        tips.createEl('li', { text: '数据来源为公开的网络资源，版权归水流职事站所有，请自行确认符合当地法规后再使用。' });
+        tips.createEl('li', { text: '不下载也可以正常使用检索与阅读，只是没有注解 / 串珠。' });
+        const btnWrap = contentEl.createDiv();
+        btnWrap.style.cssText = 'display:flex;gap:8px;margin-top:16px;';
+        const dlBtn = btnWrap.createEl('button', { text: '⬇️ 下载安装', cls: 'mod-cta' });
+        const laterBtn = btnWrap.createEl('button', { text: '暂不下载' });
+        const offBtn = btnWrap.createEl('button', { text: '关闭注解功能' });
+        dlBtn.addEventListener('click', async () => {
+            this.close();
+            await this.plugin.installNotesData(true);
+            await this.plugin.refreshNotesViews();
+        });
+        laterBtn.addEventListener('click', () => this.close());
+        offBtn.addEventListener('click', async () => {
+            this.close();
+            await this.plugin.setShowNotes(false);
+            new Notice('已关闭恢复本注解 / 串珠，可在设置里重新开启');
+            await this.plugin.refreshNotesViews();
+        });
+    }
+    onClose() {
+        this.contentEl.empty();
+    }
+}
+
 // ==================== 设置标签页 ====================
 class BibleSettingTab extends PluginSettingTab {
     constructor(app, plugin) {
@@ -1197,15 +1239,6 @@ class BibleSettingTab extends PluginSettingTab {
                     await this.plugin.setShowNotes(value);
                 }));
         new Setting(containerEl)
-            .setName('检索时包含注解正文')
-            .setDesc('勾选后，关键词检索也会匹配恢复本注解的内容（检索页的「注解」复选框实时切换，此项记录默认值）')
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.searchIncludeNotes)
-                .onChange(async (value) => {
-                    this.plugin.settings.searchIncludeNotes = value;
-                    await this.plugin.saveSettings();
-                }));
-        new Setting(containerEl)
             .setName('注解数据文件')
             .setDesc((this.plugin.settings.notesInstalled ? '已安装' : '未安装') +
                 '：bible-crv-notes.json（约 6MB，含恢复本全部注解与串珠）。未安装时点击右侧按钮下载。')
@@ -1313,7 +1346,7 @@ class BibleParser {
 
 // ==================== 检索引擎 ====================
 class BibleSearchEngine {
-    constructor() { this.items = []; this.includeNotes = false; this.notesOnly = false; }
+    constructor(plugin) { this.items = []; this.includeNotes = false; this.notesOnly = false; this.plugin = plugin || null; }
     setItems(items) { this.items = items; }
     setIncludeNotes(on) { this.includeNotes = !!on; }
     // 只检索注解正文：只勾了「注解」而不勾「经文」时生效
@@ -1343,6 +1376,7 @@ class BibleSearchEngine {
         const parsed = this.parseQuery(query);
         const refs = parsed.refs;
         const keywords = parsed.keywords;
+        const noteRefs = parsed.noteRefs || [];
         const keywordMode = parsed.keywordMode || 'and';
 
         const results = [];
@@ -1350,7 +1384,8 @@ class BibleSearchEngine {
 
         for (const item of this.items) {
             if (item.versionKey !== primaryKey) continue;
-            if (!types.includes(item.type)) continue;
+            // 按注 / 串出处检索时，即使没勾「经文」也要允许扫描经文条目（结果只产出注 / 串本身）
+            if (!types.includes(item.type) && !(item.type === 'verse' && noteRefs.length > 0)) continue;
             if (range === 'old' && item.testament !== 'old') continue;
             if (range === 'new' && item.testament !== 'new') continue;
             if (range === 'single' && bookIds && bookIds.length > 0 && !bookIds.includes(item.bookId)) continue;
@@ -1370,7 +1405,7 @@ class BibleSearchEngine {
             }
             // 经文类结果只看经文本身；注解正文单独产出「注解结果」（见下），
             // 否则会出现「注解里命中、却拿一整节经文当结果」的情况
-            if (keywords.length > 0 && !this.notesOnly) {
+            if (keywords.length > 0 && !this.notesOnly && types.includes(item.type)) {
                 if (this.matchKeywords(item.content, keywords, keywordMode)) matched = true;
             }
 
@@ -1388,10 +1423,27 @@ class BibleSearchEngine {
                     if (!nt || !nt[1]) continue;
                     if (!this.matchKeywords(nt[1], keywords, keywordMode)) continue;
                     results.push({
-                        item: item, isNote: true, noteLabel: nt[0], noteText: nt[1],
+                        item: item, isNote: true, noteKind: 'n', noteLabel: nt[0], noteText: nt[1],
                         selected: false, order: 0, sideBySide: false, _refIndex: -1
                     });
                 }
+            }
+
+            // 按注 / 串出处直接定位：如「1:26注2」「创1:26注2」「罗8:28串1」
+            for (const nr of noteRefs) {
+                if (nr.bookId != null && item.bookId !== nr.bookId) continue;
+                if (item.chapter !== nr.chapter || item.verse !== nr.verse) continue;
+                if (nr.part && (item.part || '') !== nr.part) continue;
+                const hit = this.findNoteEntry(item, nr.kind, nr.label);
+                if (!hit) continue;
+                const key = 'note-' + item.bookId + '-' + item.chapter + '-' + item.verse +
+                    '-' + (item.part || '') + '-' + nr.kind + '-' + nr.label;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                results.push({
+                    item: item, isNote: true, noteKind: nr.kind, noteLabel: nr.label, noteText: hit.text,
+                    selected: false, order: 0, sideBySide: false, _refIndex: -1
+                });
             }
         }
 
@@ -1456,9 +1508,20 @@ class BibleSearchEngine {
         const tokens = normalizedQuery.split(/[,，、；;\s。\.]+/).map(t => t.trim()).filter(t => t.length > 0);
         let currentBookId = null;
         let currentChapter = 1;
+        const noteRefs = [];
 
         for (const token of tokens) {
             let matched = false;
+            // 注 / 串出处：先看是不是「…注N」「…串N」，是的话走注解定位而不是当关键词
+            const noteRef = this.parseNoteReference(token, currentBookId, currentChapter);
+            if (noteRef) {
+                noteRefs.push(noteRef);
+                if (noteRef.bookId != null) {
+                    currentBookId = noteRef.bookId;
+                    currentChapter = noteRef.chapter;
+                }
+                continue;
+            }
             for (const sn of BOOK_SHORT_NAMES) {
                 if (token.startsWith(sn)) {
                     const parsed = this.parseVerseReference(token);
@@ -1485,7 +1548,84 @@ class BibleSearchEngine {
             keywords.push(token);
         }
 
-        return { refs: refs, keywords: keywords, keywordMode: keywordMode };
+        return { refs: refs, keywords: keywords, noteRefs: noteRefs, keywordMode: keywordMode };
+    }
+
+    // 解析「注 / 串出处」形式的检索词：
+    //   创1:26注2、创1:26串1、1:26注2（沿用前文书卷 / 全部书卷）、1:26上注1
+    // 返回 { bookId(可为 null=不限书卷), chapter, verse, part, kind:'n'|'r', label }，不是这种形式则返回 null
+    parseNoteReference(token, currentBookId, currentChapter) {
+        // 注号是数字（注2），串珠标号是字母（串a），两者都要认
+        const m = token.match(/^(.+?)\s*(?:串珠|注|串)\s*([0-9a-zA-Z]+)$/);
+        if (!m) return null;
+        const head = m[1].trim();
+        const label = m[2];
+        // kind：token 里写「注」是注解，写「串 / 串珠」是串珠
+        const kind = /串/.test(token.slice(m[1].length)) ? 'r' : 'n';
+        if (!head) return null;
+        let bookId = null, chapter = null, verse = null, part = '';
+        // 形如「创1:26」「约三2」等带书卷名的写法
+        let rest = head;
+        for (const sn of BOOK_SHORT_NAMES) {
+            if (rest.startsWith(sn)) {
+                const book = BOOK_MAP[sn];
+                if (!book) return null;
+                bookId = book.id;
+                rest = rest.slice(sn.length);
+                break;
+            }
+        }
+        if (bookId === null && currentBookId !== null) bookId = currentBookId;
+        // 去掉上/下半节标记
+        const partMatch = rest.match(/^(.*?)([上下])$/);
+        if (partMatch) { part = partMatch[2]; rest = partMatch[1]; }
+        const rangeParts = rest.split(/[-~～]/);
+        if (rangeParts.length > 2) return null;
+        const cv = this.parseChapterVerse(rangeParts[0]);
+        if (cv) {
+            chapter = cv.chapter;
+            verse = cv.verse;
+        } else if (bookId !== null) {
+            // 只有节号：沿用当前章（如紧跟「罗马书八」之后搜「28注1」）
+            const vs = parseNumber(rangeParts[0]);
+            if (isNaN(vs) || vs <= 0) return null;
+            chapter = currentChapter || 1;
+            verse = vs;
+        } else {
+            return null;
+        }
+        if (bookId === null && !/^[一二三四五六七八九十百零〇\d]+[:：]\d+$/.test(rest)) {
+            // 完全没有书卷上下文时只认「章:节」形式，避免把随意的词当成章节
+            return null;
+        }
+        return { bookId: bookId, chapter: chapter, verse: verse, part: part, kind: kind, label: label };
+    }
+
+    // 取某一节里指定标号的那条注解 / 串珠（串珠附上被引用的经文）
+    findNoteEntry(item, kind, label) {
+        if (!item || item.type !== 'verse') return null;
+        if (!this.plugin || !this.plugin.getVerseNotes) return null;
+        const nd = this.plugin.getVerseNotes(item.bookId, item.chapter, item.verse, item.part);
+        if (!nd) return null;
+        const list = kind === 'r' ? (nd.r || []) : (nd.n || []);
+        // 串珠标号是字母，大小写不敏感；注解标号是数字
+        const key = String(label).toLowerCase();
+        const hit = list.find(x => String(x[0]).toLowerCase() === key);
+        if (!hit) return null;
+        let text = hit[1] || '';
+        if (kind === 'r') {
+            const quoted = [];
+            for (const t of (hit[2] || [])) {
+                const verses = this.plugin.getVersesForTarget
+                    ? this.plugin.getVersesForTarget(t, item.versionKey)
+                    : [];
+                for (const v of verses) {
+                    quoted.push(v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content);
+                }
+            }
+            if (quoted.length) text = text + '\n' + quoted.join('\n');
+        }
+        return { text: text };
     }
 
     parseVerseReference(part) {
@@ -1658,6 +1798,9 @@ class BibleProjectionOverlay {
     }
 
     buildSlides() {
+        // 切换模式时必须先清空旧 slides，否则 setMode / 重复进入会不断向数组追加，
+        // currentSlide 仍指向旧模式的某一页，导致「按 QWE 切换后内容没变、翻页才生效」的问题
+        this.slides = [];
         const selected = this.results;
         if (this.mode === 'focus') {
             // 逐节模式：每个选中项单独一页（sideBySide 只在混合模式生效）
@@ -1808,7 +1951,7 @@ class BibleProjectionOverlay {
                 this.focusProjection(true);
             }
             // 焦点落在投影内的按钮上（非输入框）时，空格/回车会被按钮吞掉导致无法翻页，先交回投影
-            if (ae && ae.tagName === 'BUTTON' && ae.closest && ae.closest('.bible-proj-fullscreen') && (e.key === ' ' || e.key === 'Enter')) {
+            if (ae && ae.tagName === 'BUTTON' && ae.closest && ae.closest('.bible-projection-fullscreen, .bible-proj-fullscreen') && (e.key === ' ' || e.key === 'Enter')) {
                 ae.blur();
             }
             if (e.key === 'ArrowRight' || e.key === ' ') this.nextSlide();
@@ -1827,13 +1970,17 @@ class BibleProjectionOverlay {
             else if (e.key === 'c' || e.key === 'C') this.toggleCentered();
             else if (e.key === 'r' || e.key === 'R') { this.fontSize = 48; this.updateFontSize(); }
             else if (e.key === 'q' || e.key === 'Q' || e.key === 'w' || e.key === 'W' || e.key === 'e' || e.key === 'E') {
-                // Q/W/E 故意不在这里直接切模式，而是放给插件级全局监听统一分派：
-                // 未投影时等同点击当前界面（检索页 / 阅读页 / 经文弹窗）的「投影」按钮；
-                // 投影中且没有可见插件界面时才退化为「切换模式」。
-                // 关键点：本处理器注册在「捕获阶段」，若在此 stopPropagation，事件根本到不了
-                // 冒泡阶段的全局监听，就会表现为「按 QWE 内容不刷新、点投影按钮才刷新」。
-                // 所以这里只在投影独占屏幕时拦掉默认输入（防止写进笔记正文），不消费事件。
-                if (ownsScreen) { try { e.preventDefault(); } catch (err) { /* 忽略 */ } }
+                // 已经处在投影里（投影独占屏幕）时，Q/W/E 就是切换排版模式：直接在这里切并阻断传播。
+                // 原先这里刻意不消费事件，交给插件级监听统一分派，但那条路径在「侧边栏插件界面可见 /
+                // 投影处于分屏搜索态」等情况下会先命中「点击界面上的投影按钮」分支，表现出来就是
+                // 按 QWE 没反应（或只是重投影一次）。投影独占屏幕时用户的意图必然是切模式，
+                // 因此这里自行处理；返回 true 让外层阻断传播，避免两层监听各执行一次。
+                if (ownsScreen && !(this.plugin && this.plugin.currentTooltipProjector)) {
+                    const map = { q: 'focus', w: 'parallel', e: 'mixed' };
+                    const next = map[String(e.key).toLowerCase()];
+                    if (next) this.setMode(next);
+                    return true;
+                }
                 return false;
             }
             else return false;
@@ -1953,18 +2100,24 @@ class BibleProjectionOverlay {
                     textDiv.style.opacity = '0.7';
                     textDiv.style.marginBottom = '16px';
                 } else {
-                    const shouldShowRef = this.showSource || item.type === 'verse';
+                    // 经文、注解 / 串珠都显示出處（主题 / 纲目仅在开启「显示出处」时显示）
+                    const shouldShowRef = this.showSource || item.type === 'verse' || item.type === 'note' || item.type === 'chain';
                     if (shouldShowRef) {
                         const refDiv = wrapper.createEl('div', { cls: 'bible-proj-ref bible-proj-focus-ref', text: this.getItemRef(item) });
                         refDiv.style.marginBottom = '20px';
                         if (item.type === 'theme') refDiv.classList.add('bible-proj-focus-theme-ref');
                         else if (item.type === 'outline') refDiv.classList.add('bible-proj-focus-outline-ref');
                     }
-                    const textDiv = wrapper.createEl('div', { cls: 'bible-proj-text bible-proj-focus-text', text: this.getItemContent(item) });
+                    const fDelta = this.projTypeDelta(item);
+                    const fpx = this.fontSize + fDelta;
+                    const textDiv = wrapper.createEl('div', { cls: 'bible-proj-text bible-proj-focus-text' });
                     textDiv.style.lineHeight = '1.8';
-                    textDiv.style.fontSize = this.fontSize + 'px';
+                    textDiv.dataset.projDelta = String(fDelta);
+                    textDiv.style.fontSize = fpx + 'px';
                     if (item.type === 'theme') textDiv.classList.add('bible-proj-focus-theme');
                     else if (item.type === 'outline') textDiv.classList.add('bible-proj-focus-outline');
+                    if (item.type === 'verse') this.fillProjVerseText(wrapper, textDiv, item, fpx, 1);
+                    else this.fillProjItemText(textDiv, item);
                 }
             }
         } else {
@@ -1980,11 +2133,16 @@ class BibleProjectionOverlay {
                     
                     const refDiv = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-mixed-ref', text: this.getItemRef(item) });
                     
-                    const textDiv = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-mixed-text', text: this.getItemContent(item) });
-                    textDiv.style.cssText = 'line-height:1.8;font-size:' + this.fontSize + 'px;';
+                    const mDelta = this.projTypeDelta(item);
+                    const mpx = this.fontSize + mDelta;
+                    const textDiv = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-mixed-text' });
+                    textDiv.dataset.projDelta = String(mDelta);
+                    textDiv.style.cssText = 'line-height:1.8;font-size:' + mpx + 'px;';
                     
                     itemEl.appendChild(refDiv);
                     itemEl.appendChild(textDiv);
+                    if (item.type === 'verse') this.fillProjVerseText(itemEl, textDiv, item, mpx, 1);
+                    else this.fillProjItemText(textDiv, item);
                     wrapper.appendChild(itemEl);
                 }
             } else {
@@ -2005,19 +2163,26 @@ class BibleProjectionOverlay {
                         const pText = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-parallel-text', text: this.getItemContent(item) });
                         pText.style.lineHeight = '1.7';
                         pText.classList.add('bible-proj-compare-text');
-                        pText.style.fontSize = (this.fontSize * 0.7) + 'px';
+                        pText.dataset.projDelta = String(this.projTypeDelta(item));
+                        pText.style.fontSize = (this.fontSize * 0.7 + this.projTypeDelta(item)) + 'px';
                         pText.style.opacity = '0.7';
                     } else {
-                        const shouldShowRef = this.showSource || item.type === 'verse';
+                        const shouldShowRef = this.showSource || item.type === 'verse' || item.type === 'note' || item.type === 'chain';
                         if (shouldShowRef) {
                             const pRef = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-parallel-ref', text: this.getItemRef(item) });
                             pRef.style.marginBottom = '8px';
                             pRef.style.fontWeight = '600';
                         }
-                        const pText = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-parallel-text', text: this.getItemContent(item) });
+                        const pDelta = this.projTypeDelta(item);
+                        const ppx = this.fontSize * 0.85 + pDelta;
+                        const pText = itemEl.createEl('div', { cls: 'bible-proj-text bible-proj-parallel-text' });
                         pText.style.lineHeight = '1.7';
                         if (item.type === 'theme') pText.classList.add('bible-proj-parallel-theme-text');
                         else if (item.type === 'outline') pText.classList.add('bible-proj-parallel-outline-text');
+                        pText.dataset.projDelta = String(pDelta);
+                        pText.style.fontSize = ppx + 'px';
+                        if (item.type === 'verse') this.fillProjVerseText(itemEl, pText, item, ppx, 0.85);
+                        else this.fillProjItemText(pText, item);
                     }
                     wrapper.appendChild(itemEl);
                 }
@@ -2034,7 +2199,7 @@ class BibleProjectionOverlay {
     updateFontSize() {
         const fontSizeEl = this.overlay.querySelector('.bible-proj-font-size');
         if (fontSizeEl) fontSizeEl.textContent = this.fontSize + 'px';
-        this.overlay.querySelectorAll('.bible-proj-focus-text').forEach(el => { el.style.fontSize = this.fontSize + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-focus-text').forEach(el => { el.style.fontSize = (this.fontSize + (parseInt(el.dataset.projDelta || '0', 10))) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-ref').forEach(el => {
             el.style.fontSize = (this.fontSize * 0.6) + 'px';
             // 主题/纲目引用的颜色由 CSS 控制（.bible-proj-focus-theme-ref / -outline-ref），不在此覆盖
@@ -2042,7 +2207,7 @@ class BibleProjectionOverlay {
                 el.style.color = this.isDark ? '#a0a0a0' : '#666';
             }
         });
-        this.overlay.querySelectorAll('.bible-proj-parallel-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-parallel-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85 + (parseInt(el.dataset.projDelta || '0', 10))) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-parallel-ref').forEach(el => {
             el.style.fontSize = (this.fontSize * 0.55) + 'px';
             // 主题/纲目引用（对照版）的颜色由 CSS 控制，不在此覆盖
@@ -2052,12 +2217,17 @@ class BibleProjectionOverlay {
         });
         this.overlay.querySelectorAll('.bible-proj-focus-theme').forEach(el => { el.style.fontSize = (this.fontSize * 1.15) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-theme-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; });
-        this.overlay.querySelectorAll('.bible-proj-focus-outline').forEach(el => { el.style.fontSize = (this.fontSize * 0.95) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-outline-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.6) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-parallel-theme-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85 * 1.15) + 'px'; });
-        this.overlay.querySelectorAll('.bible-proj-compare-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.75) + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-compare-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.75 + (parseInt(el.dataset.projDelta || '0', 10))) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-compare-ref').forEach(el => { el.style.fontSize = (this.fontSize * 0.5) + 'px'; });
-        this.overlay.querySelectorAll('.bible-proj-mixed-text').forEach(el => { el.style.fontSize = this.fontSize + 'px'; });
+        this.overlay.querySelectorAll('.bible-proj-mixed-text').forEach(el => { el.style.fontSize = (this.fontSize + (parseInt(el.dataset.projDelta || '0', 10))) + 'px'; });
+        // 投影里展开的注解 / 串珠：字号跟随所在经文（同一系数与微调量）
+        this.overlay.querySelectorAll('.bible-proj-notes').forEach(el => {
+            const d = parseInt(el.dataset.projDelta || '0', 10);
+            const s = parseFloat(el.dataset.projFontScale || '1');
+            el.style.fontSize = (this.fontSize * s + d) + 'px';
+        });
         this.overlay.querySelectorAll('.bible-proj-mixed-ref').forEach(el => {
             el.style.fontSize = (this.fontSize * 0.6) + 'px';
             el.style.color = this.isDark ? '#a0a0a0' : '#666';
@@ -2130,6 +2300,7 @@ class BibleProjectionOverlay {
         }
         if (item.type === 'theme') return item.bookFullName + ' 主题';
         if (item.type === 'outline') return item.bookFullName + ' 纲目';
+        if (item.type === 'note' || item.type === 'chain') return item.ref || '';
         return item.bookShortName + item.chapter + ':' + item.verse + (item.part || '');
     }
 
@@ -2137,7 +2308,97 @@ class BibleProjectionOverlay {
         if (item._isCompare) return item.content;
         if (item.type === 'theme') return '主题：' + item.content;
         if (item.type === 'outline') return item.content;
+        if (item.type === 'note' || item.type === 'chain') return item.content || '';
         return item.content;
+    }
+
+    // 投影里作为独立项显示的注解 / 串珠：按段落呈现，段与段之间留一个空行，
+    // 并加左侧色条 + 淡底，避免和被投影的经文正文混淆
+    fillProjItemText(textDiv, item) {
+        if (item.type !== 'note' && item.type !== 'chain') {
+            textDiv.setText(this.getItemContent(item));
+            return;
+        }
+        textDiv.classList.add('bible-proj-item-' + item.type);
+        const paras = String(item.content || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
+        if (!paras.length) { textDiv.setText(''); return; }
+        for (const p of paras) textDiv.createDiv({ cls: 'bible-proj-text-para', text: p });
+    }
+
+    // 投影默认字号微调：经文 +1、纲目 -6、主题不变，点 +/− 时整体缩放仍在此基础上生效
+    projTypeDelta(item) {
+        if (!item) return 0;
+        if (item.type === 'verse') return 1;
+        if (item.type === 'outline') return -6;
+        return 0;
+    }
+
+    // 经文投影：正文里嵌入注 / 串上标，点击上标展开对应的注解或串珠（展开面板字号与经文一致）
+    // scale：该处经文的字号系数（逐节 / 混合 = 1，并列 = 0.85）
+    fillProjVerseText(container, textDiv, item, fontPx, scale) {
+        const content = this.getItemContent(item);
+        const plugin = this.plugin;
+        const nd = (plugin && plugin.settings && plugin.settings.showNotes && plugin.notesData && item.type === 'verse')
+            ? plugin.getVerseNotes(item.bookId, item.chapter, item.verse, item.part)
+            : null;
+        if (!nd || !nd.m || !nd.m.length) { textDiv.setText(content); return; }
+        const pk = plugin.getPrimaryVersionKey ? plugin.getPrimaryVersionKey() : null;
+        const panel = document.createElement('div');
+        panel.className = 'bible-proj-notes';
+        panel.style.display = 'none';
+        panel.style.fontSize = fontPx + 'px';
+        panel.dataset.projDelta = textDiv.dataset.projDelta || '0';
+        panel.dataset.projFontScale = String(scale || 1);
+        const show = (kind, label) => {
+            const key = kind + ':' + label;
+            if (panel.style.display === 'block' && panel.getAttribute('data-note-key') === key) {
+                panel.style.display = 'none';
+                return;
+            }
+            this.fillProjNotePanel(panel, nd, kind, label, pk);
+            panel.setAttribute('data-note-key', key);
+            panel.style.display = 'block';
+        };
+        plugin.renderTextWithMarkers(textDiv, content, nd.m, show);
+        container.appendChild(panel);
+    }
+
+    // 投影里展开的注解 / 串珠内容（字号由外层面板统一控制，与经文一致）
+    // 与经文的关系：上方一条分割线隔开 + 淡背景 + 左侧重点色条 + 类型徽标，
+    // 观感上明确是「附注内容」而不是经文正文；正文按段落分块，段落之间留出一个空行
+    fillProjNotePanel(panel, nd, kind, label, pk) {
+        panel.empty();
+        const paras = (text) => String(text || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
+        const addLabel = (row, kindLabel, kindCls, title) => {
+            const chip = row.createEl('span', { cls: 'bible-proj-note-label ' + kindCls, text: kindLabel });
+            chip.title = title;
+            return chip;
+        };
+        if (kind === 'n') {
+            for (const n of (nd.n || []).filter(x => x[0] === label)) {
+                const row = panel.createDiv({ cls: 'bible-proj-note bible-proj-note-kind-note' });
+                const head = row.createDiv({ cls: 'bible-proj-note-head' });
+                addLabel(head, '注 ' + n[0], 'bible-proj-note-label-note', '恢复本注解');
+                const body = row.createDiv({ cls: 'bible-proj-note-body' });
+                for (const p of paras(n[1])) body.createDiv({ cls: 'bible-proj-note-para', text: p });
+            }
+            return;
+        }
+        for (const r of (nd.r || []).filter(x => x[0] === label)) {
+            const row = panel.createDiv({ cls: 'bible-proj-note bible-proj-note-kind-ref' });
+            const head = row.createDiv({ cls: 'bible-proj-note-head' });
+            addLabel(head, '串珠 ' + r[0], 'bible-proj-note-label-ref', '恢复本串珠');
+            head.createEl('span', { cls: 'bible-proj-note-refs', text: r[1] });
+            const body = row.createDiv({ cls: 'bible-proj-note-body' });
+            for (const t of (r[2] || [])) {
+                for (const v of this.plugin.getVersesForTarget(t, pk)) {
+                    body.createEl('div', {
+                        cls: 'bible-proj-note-ref-verse',
+                        text: v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content
+                    });
+                }
+            }
+        }
     }
 
     close() {
@@ -2586,8 +2847,10 @@ class BibleProjectionView extends ItemView {
 // 保证同名经文在不同窗口之间能正确去重、同步。
 function verseIdentity(item, isCompare) {
     if (!item) return '';
+    // 注解 / 串珠条目与经文共用同一套选中机制，靠 noteKey 区分同一节里的多条注 / 串
     return (isCompare ? 'cmp|' : 'main|') + item.versionKey + '|' + item.bookId + '|' +
-        item.chapter + '|' + item.verse + '|' + item.type + '|' + item.content;
+        item.chapter + '|' + item.verse + '|' + item.type + '|' + item.content +
+        (item.noteKey ? '|' + item.noteKey : '');
 }
 
 class BibleSearchView extends ItemView {
@@ -2630,6 +2893,9 @@ class BibleSearchView extends ItemView {
         this._poolVersion = 0;
         this._renderedPoolVersion = 0;
         this._lastReaderChapterKey = null;
+        // 检索页：从经文上标展开的注解 / 串珠选中项（与检索结果共用序号 / 复制 / 投影）
+        // 每项：{ item: noteItem, selected, order, sideBySide }
+        this.searchNoteEntries = [];
     }
     getViewType() { return BIBLE_SEARCH_VIEW_TYPE; }
     getDisplayText() { return '圣经检索'; }
@@ -2771,17 +3037,6 @@ class BibleSearchView extends ItemView {
             notesStatus.style.color = installed ? 'var(--interactive-success)' : 'var(--text-muted)';
         };
         syncNotesStatus();
-
-        const searchNotesRow = notesBox.createDiv({ cls: 'bible-compare-modal-notes-row' });
-        const searchNotesLabel = searchNotesRow.createEl('label', { cls: 'bible-compare-modal-notes-label' });
-        const searchNotesCb = searchNotesLabel.createEl('input', { type: 'checkbox' });
-        searchNotesCb.checked = !!this.plugin.settings.searchIncludeNotes;
-        searchNotesLabel.createSpan({ text: '检索时包含注解正文' });
-        searchNotesCb.addEventListener('change', async () => {
-            this.plugin.settings.searchIncludeNotes = searchNotesCb.checked;
-            await this.plugin.saveSettings();
-            if (this.searchNotesCheckbox) this.searchNotesCheckbox.checked = searchNotesCb.checked;
-        });
 
         const notesDlBtn = notesBox.createEl('button', { cls: 'bible-small-btn', text: '' });
         const syncNotesDl = () => {
@@ -3079,7 +3334,15 @@ class BibleSearchView extends ItemView {
     getSearchSelections() {
         const list = [];
         for (const r of this.results) {
-            if (r.selected) list.push({ item: r.item, selected: true, order: r.order, sideBySide: !!r.sideBySide, _isCompare: false });
+            if (r.selected) list.push({
+                item: r.isNote ? this.noteResultItem(r) : r.item,
+                selected: true, order: r.order, sideBySide: !!r.sideBySide, _isCompare: false
+            });
+        }
+        // 经文上标展开的注解 / 串珠：同一套序号，跟着一起复制 / 投影
+        for (const e of (this.searchNoteEntries || [])) {
+            if (!e.selected) continue;
+            list.push({ item: e.item, selected: true, order: e.order, sideBySide: !!e.sideBySide, _isCompare: false });
         }
         for (const c of this.getCompareSelected()) list.push(c);
         list.sort((a, b) => a.order - b.order);
@@ -3168,6 +3431,8 @@ class BibleSearchView extends ItemView {
         for (const r of this.results) { r.selected = false; r.sideBySide = false; r.order = 0; }
         this.compareSelections = {};
         this.cmpOrder = [];
+        // 经文上标展开的注 / 串选中项一并清除
+        this.searchNoteEntries = [];
         this.selectCounter = 0;
     }
 
@@ -3347,12 +3612,17 @@ class BibleSearchView extends ItemView {
             this.readerResults = [];
             this.readerSelectCounter = 0;
             this.refreshAllReaderCards();
+            // 展开中的注解 / 串珠面板里也有候选框，一并刷新，避免残留选中序号
+            this.refreshNotePanels();
         } else {
             for (const r of this.results) { r.selected = false; r.sideBySide = false; r.order = 0; }
             this.compareSelections = {};
             this.cmpOrder = [];
+            // 经文上标展开的注 / 串也一并清空（展开面板里的候选框同步刷新）
+            this.searchNoteEntries = [];
             this.selectCounter = 0;
             this.renderResults();
+            this.refreshNotePanels();
         }
         this.updateKeepCandidatesUI();
     }
@@ -3365,6 +3635,8 @@ class BibleSearchView extends ItemView {
         this.selectCounter = 0;
         this.readerSelectCounter = 0;
         this.refreshCurrentView();
+        // 阅读页展开的注解 / 串珠面板里的候选框也要跟着清空
+        this.refreshNotePanels();
         this.updateKeepCandidatesUI();
     }
 
@@ -3431,22 +3703,32 @@ class BibleSearchView extends ItemView {
         const inputRow = fixedTop.createDiv({ cls: 'bible-input-row' });
         this.searchInput = inputRow.createEl('input', {
             cls: 'bible-search-input',
-            attr: { type: 'text', placeholder: '输入经文出处或词语，如：加1:1 或 恩典' }
+            attr: { type: 'text', placeholder: '经文出处 / 关键词 / 注串出处，如：加1:1、恩典、创1:26注2' }
         });
         const clearBtn = inputRow.createEl('button', { cls: 'bible-input-btn', text: '✕' });
         const searchBtn = inputRow.createEl('button', { cls: 'bible-input-btn bible-search-btn', text: '🔍 查询' });
 
         this.searchHint = fixedTop.createEl('div', {
             cls: 'bible-search-hint',
-            text: '支持：太1:1、路一1～3、太1:1-2:5 或 关键词（空格分隔）'
+            text: '支持：太1:1、路一1～3、太1:1-2:5、创1:26注2 或 关键词（空格分隔）'
         });
 
-        // ② 检索范围（移到搜索框下方）
-        const rangeSection = fixedTop.createDiv({ cls: 'bible-section' });
+        // 区块槽位：搜索框下方依次为 检索范围 → 检索种类 → 全局操作 → 本页操作 → 结果简要 → 分页。
+        // 先占位、后往各槽里填区块，保证 DOM 顺序（=视觉顺序）不受源码书写顺序影响
+        const rangeSlot = fixedTop.createDiv({ cls: 'bible-slot' });
+        const typeSlot = fixedTop.createDiv({ cls: 'bible-slot' });
+        const actionSlot = fixedTop.createDiv({ cls: 'bible-slot' });
+        const pageActionSlot = fixedTop.createDiv({ cls: 'bible-slot' });
+
+        // ② 检索范围（紧跟搜索框下方；默认收起，需要调整时再点开）
+        const rangeSection = rangeSlot.createDiv({ cls: 'bible-section' });
         const rangeHeader = rangeSection.createDiv({ cls: 'bible-section-header' });
-        const rangeIcon = rangeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
+        const rangeIcon = rangeHeader.createEl('span', { cls: 'bible-section-icon', text: '▶' });
         rangeHeader.createEl('span', { text: '检索范围' });
+        // 收起时在标题右侧显示已选书卷数，不必展开也能知道检索范围
+        this.rangeCountEl = rangeHeader.createEl('span', { cls: 'bible-range-count', text: '' });
         const rangeBody = rangeSection.createDiv({ cls: 'bible-section-body' });
+        rangeBody.style.display = 'none';
         rangeHeader.addEventListener('click', () => {
             const isCollapsed = rangeBody.style.display === 'none';
             rangeBody.style.display = isCollapsed ? 'block' : 'none';
@@ -3488,16 +3770,18 @@ class BibleSearchView extends ItemView {
             }
             this.updateBookSelectUI();
         };
-        oldTestBtn.addEventListener('click', () => selectOnlyTestament('old'));
-        newTestBtn.addEventListener('click', () => selectOnlyTestament('new'));
+        oldTestBtn.addEventListener('click', () => { selectOnlyTestament('old'); this.scheduleRealTimeSearch(); });
+        newTestBtn.addEventListener('click', () => { selectOnlyTestament('new'); this.scheduleRealTimeSearch(); });
 
         selectAllBooksBtn.addEventListener('click', () => {
             for (const book of BIBLE_BOOKS) { this.selectedBookIds.add(book.id); }
             this.updateBookSelectUI();
+            this.scheduleRealTimeSearch();
         });
         clearBooksBtn.addEventListener('click', () => {
             this.selectedBookIds.clear();
             this.updateBookSelectUI();
+            this.scheduleRealTimeSearch();
         });
 
         // 默认即「全选」状态：初始化书卷按钮高亮与计数显示
@@ -3522,7 +3806,7 @@ class BibleSearchView extends ItemView {
             if (this.paginationEl) this.paginationEl.empty();
         });
 
-        const actionSection = fixedTop.createDiv({ cls: 'bible-section bible-action-section' });
+        const actionSection = actionSlot.createDiv({ cls: 'bible-section bible-action-section' });
         const actionHeader = actionSection.createDiv({ cls: 'bible-section-header' });
         const actionIcon = actionHeader.createEl('span', { cls: 'bible-section-icon', text: '⚡' });
         actionHeader.createEl('span', { text: '全局操作' });
@@ -3548,7 +3832,7 @@ class BibleSearchView extends ItemView {
         const parallelBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '并列投影' });
         const mixedBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '混合投影' });
 
-        const typeSection = fixedTop.createDiv({ cls: 'bible-section' });
+        const typeSection = typeSlot.createDiv({ cls: 'bible-section' });
         const typeHeader = typeSection.createDiv({ cls: 'bible-section-header' });
         const typeIcon = typeHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
         typeHeader.createEl('span', { text: '检索种类' });
@@ -3564,6 +3848,7 @@ class BibleSearchView extends ItemView {
             cb.checked = true;
             this.typeCheckboxes[type] = cb;
             label.createSpan({ text: type === 'theme' ? '主题' : type === 'outline' ? '纲目' : '经文' });
+            cb.addEventListener('change', () => this.scheduleRealTimeSearch());
         }
         // 恢复本注解：勾选后把注解正文一并纳入检索范围
         const notesLabel = typeBody.createEl('label', { cls: 'bible-checkbox-label' });
@@ -3583,7 +3868,7 @@ class BibleSearchView extends ItemView {
                 this.plugin.attachNotesToItems();
                 if (this.resultsCount) this.resultsCount.setText('');
             }
-            if (this.results && this.results.length > 0 && this.lastSearchQuery) {
+            if (this.lastSearchQuery) {
                 await this.performSearch();
             }
         });
@@ -3591,7 +3876,7 @@ class BibleSearchView extends ItemView {
         this.resultsHeader = fixedTop.createDiv({ cls: 'bible-results-header' });
         this.resultsCount = this.resultsHeader.createEl('span', { cls: 'bible-results-count', text: '' });
 
-        const pageActionSection = fixedTop.createDiv({ cls: 'bible-section' });
+        const pageActionSection = pageActionSlot.createDiv({ cls: 'bible-section' });
         const pageActionHeader = pageActionSection.createDiv({ cls: 'bible-section-header' });
         const pageActionIcon = pageActionHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
         pageActionHeader.createEl('span', { text: '本页操作' });
@@ -3612,6 +3897,7 @@ class BibleSearchView extends ItemView {
 
         searchBtn.addEventListener('click', () => this.performSearch());
         this.searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.performSearch(); });
+        this.searchInput.addEventListener('input', () => this.scheduleRealTimeSearch());
         selectAllBtn.addEventListener('click', () => this.selectAll());
         deselectAllBtn.addEventListener('click', () => this.deselectAll());
         pageSelectAllBtn.addEventListener('click', () => this.selectPageAll());
@@ -3645,6 +3931,7 @@ class BibleSearchView extends ItemView {
             btn.classList.add('active');
         }
         this.updateBookSelectCount();
+        this.scheduleRealTimeSearch();
     }
 
     updateBookSelectUI() {
@@ -3673,6 +3960,11 @@ class BibleSearchView extends ItemView {
     updateBookSelectCount() {
         const count = this.selectedBookIds.size;
         if (this.bookSelectCount) this.bookSelectCount.setText('已选 ' + count + ' 卷');
+        // 检索范围收起时，把「已选 N 卷」显示在标题右侧
+        if (this.rangeCountEl) {
+            const total = BIBLE_BOOKS.length;
+            this.rangeCountEl.setText(count === total ? '（全部）' : '（已选 ' + count + ' 卷）');
+        }
     }
 
     toggleFocusMode() {
@@ -3723,6 +4015,10 @@ class BibleSearchView extends ItemView {
             new Notice('注解显示已关闭，请在「对照 → 恢复本注解」里打开');
         }
 
+        // 先解析一次查询：检出「按注 / 串出处检索」这类查询后，即使没勾「注解」也要保证注解数据在位
+        const preParsed = this.plugin.searchEngine ? this.plugin.searchEngine.parseQuery(query) : null;
+        const hasNoteRef = !!(preParsed && preParsed.noteRefs && preParsed.noteRefs.length > 0);
+
         const rangeValue = this.getRangeValue();
         let bookIds = [];
         if (rangeValue === 'multi') {
@@ -3736,6 +4032,10 @@ class BibleSearchView extends ItemView {
 
         const primaryKey = this.getPrimaryVersion();
         if (!primaryKey) { new Notice('未设置主版本，请先在「对照」设置中选择一个版本'); return; }
+
+        if (hasNoteRef && !this.plugin.settings.showNotes) {
+            new Notice('检索注 / 串出处需要先开启「恢复本注解」，请在「对照 → 恢复本注解」里打开');
+        }
 
         // 结果项要显示注/串标记，先确保注解数据已加载（与「是否搜注解正文」是两件事）
         if (this.plugin.settings.showNotes) {
@@ -3758,6 +4058,8 @@ class BibleSearchView extends ItemView {
         this.selectCounter = 0;
         this.compareSelections = {};  // 清空对照经文选中状态
         this.cmpOrder = [];
+        // 上一轮结果里展开的注 / 串选中项随结果一起作废
+        this.searchNoteEntries = [];
 
         // 保存搜索条件，用于版本顺序改变后重新搜索
         this.lastSearchQuery = query;
@@ -3765,10 +4067,34 @@ class BibleSearchView extends ItemView {
         this.lastRangeValue = rangeValue;
         this.lastBookIds = bookIds;
 
-        const parsed = this.plugin.searchEngine.parseQuery(query);
+        const parsed = preParsed || this.plugin.searchEngine.parseQuery(query);
         this.keywords = parsed.keywords;
         this.updateKeepCandidatesUI();
         this.renderResults();
+    }
+
+    // 实时检索：搜索框输入 / 检索范围变化 / 检索种类变化后自动刷新结果（去抖），不再强依赖「查询」按钮
+    scheduleRealTimeSearch() {
+        if (this._searchDebounceTimer) clearTimeout(this._searchDebounceTimer);
+        this._searchDebounceTimer = setTimeout(() => this.performSearchLive(), 250);
+    }
+
+    performSearchLive() {
+        const query = this.searchInput.value.trim();
+        if (!query) {
+            // 输入为空：清空结果并恢复空态，不打扰用户（不弹 Notice）
+            this.results = [];
+            this.keywords = [];
+            this.lastSearchQuery = '';
+            if (this.resultsContainer) {
+                this.resultsContainer.empty();
+                this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容后点击查询' });
+            }
+            if (this.resultsCount) this.resultsCount.setText('');
+            if (this.paginationEl) this.paginationEl.empty();
+            return;
+        }
+        this.performSearch();
     }
 
     getPagedResults() {
@@ -3872,9 +4198,9 @@ class BibleSearchView extends ItemView {
             const item = result.item;
 
             // 选中状态：可能来自当前视图，也可能来自「保留候选」的候选池
-            // 注解结果：只显示「出处 + 注解正文」，不参与候选/选中
+            // 注解结果：显示「出处 + 注解正文」，与经文结果共用同一套选中 / 复制 / 投影
             if (result.isNote) {
-                this.renderNoteResultCard(result);
+                this.renderNoteResultCard(result, globalIdx);
                 continue;
             }
 
@@ -3907,7 +4233,7 @@ class BibleSearchView extends ItemView {
                 : null;
             if (nd && nd.m && nd.m.length) {
                 this.plugin.renderTextWithMarkers(contentEl, displayText, nd.m, (kind, label) => {
-                    this.toggleVerseNotePanel(card, item, nd, kind, label);
+                    this.toggleVerseNotePanel(card, item, nd, kind, label, 'search');
                 }, item.type === 'verse' ? this.keywords : null);
             } else if (this.keywords.length > 0 && item.type === 'verse') {
                 this.highlightKeywords(contentEl, displayText, this.keywords);
@@ -4020,12 +4346,18 @@ class BibleSearchView extends ItemView {
                 selected.push({ cmpKey, type: 'compare', order: cmp.order });
             }
         }
+        // 经文上标展开的注 / 串与检索结果统一编号
+        for (const e of (this.searchNoteEntries || [])) {
+            if (e.selected) selected.push({ noteEntry: e, type: 'note', order: e.order });
+        }
         // 按原始顺序重新编号
         selected.sort((a, b) => a.order - b.order);
         for (let i = 0; i < selected.length; i++) {
             const entry = selected[i];
             if (entry.type === 'main') {
                 entry.result.order = i + 1;
+            } else if (entry.type === 'note') {
+                entry.noteEntry.order = i + 1;
             } else {
                 this.compareSelections[entry.cmpKey].order = i + 1;
             }
@@ -4076,8 +4408,10 @@ class BibleSearchView extends ItemView {
     toggleSelection(index) {
         const result = this.results[index];
         if (!result) return;
+        // 注解结果用包装出的注条目参与选中，与经文结果共用同一套序号
+        const selItem = result.isNote ? this.noteResultItem(result) : result.item;
         // 取消选中：同时移出候选池并清除局部选中（勾选「保留候选」时两者是镜像关系）
-        const poolIdx = this.poolIndexOf(result.item, false);
+        const poolIdx = this.poolIndexOf(selItem, false);
         if (poolIdx !== -1 || result.selected) {
             if (poolIdx !== -1) this.poolRemoveAt(poolIdx);
             result.selected = false;
@@ -4088,7 +4422,7 @@ class BibleSearchView extends ItemView {
             result.selected = true;
             result.order = this.selectCounter;
             // 勾选「保留候选」时实时进入候选池，计数立即更新
-            this.poolSyncSelect(result.item, false, false, 'search');
+            this.poolSyncSelect(selItem, false, false, 'search');
         }
         this.recalcOrders();
         this.updateKeepCandidatesUI();
@@ -4098,7 +4432,7 @@ class BibleSearchView extends ItemView {
     toggleSideBySide(index) {
         const result = this.results[index];
         if (!result) return;
-        const poolIdx = this.poolIndexOf(result.item, false);
+        const poolIdx = this.poolIndexOf(result.isNote ? this.noteResultItem(result) : result.item, false);
         if (poolIdx !== -1) {
             const p = this.candidatePool[poolIdx];
             p.sideBySide = !p.sideBySide;
@@ -4129,7 +4463,6 @@ class BibleSearchView extends ItemView {
     selectAll() {
         this.selectCounter = 0;
         for (const result of this.results) {
-            if (result.isNote) continue;   // 注解结果不是可选经文
             result.selected = true; result.sideBySide = false; this.selectCounter++; result.order = this.selectCounter;
         }
         // 全选对照经文
@@ -4146,6 +4479,9 @@ class BibleSearchView extends ItemView {
 
     deselectAll() {
         for (const result of this.results) { result.selected = false; result.sideBySide = false; result.order = 0; }
+        // 经文上标展开的注 / 串也一并取消
+        if (this.searchNoteEntries) this.searchNoteEntries = [];
+        if (this.readerContent) this.refreshNotePanels();
         this.selectCounter = 0;
         // 取消全选对照经文
         for (const cmpKey of this.cmpOrder) {
@@ -4163,7 +4499,6 @@ class BibleSearchView extends ItemView {
         for (let i = 0; i < paged.length; i++) {
             const globalIdx = startOffset + i;
             const result = this.results[globalIdx];
-            if (result.isNote) continue;
             if (!result.selected) { this.selectCounter++; result.selected = true; result.order = this.selectCounter; }
         }
         // 勾选「保留候选」时，本页选中的经文实时进入候选池
@@ -4182,6 +4517,7 @@ class BibleSearchView extends ItemView {
                 lines.push(`⌈${item.versionKey.toLowerCase()}⌋${item.bookShortName}${item.chapter}:${item.verse}${item.part || ''} ${item.content}`);
             } else if (item.type === 'theme') lines.push(item.bookFullName + ' 主题：' + item.content);
             else if (item.type === 'outline') lines.push('> ' + item.content);
+            else if (item.type === 'note' || item.type === 'chain') lines.push((item.ref || '') + '\n' + item.content);
             else lines.push(item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + ' ' + item.content);
         }
         this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + selected.length + ' 条内容'); }).catch(() => new Notice('复制失败'));
@@ -4466,9 +4802,7 @@ class BibleSearchView extends ItemView {
             // 按顺序选中此卷书所有章节的主版本内容
             const allItems = [...allBookThemeItems, ...allBookItems];
             for (const item of allItems) {
-                const existingIdx = this.readerResults.findIndex(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
-                );
+                const existingIdx = this.readerEntryIdx(item);
                 if (existingIdx === -1) {
                     this.readerResults.push({ item: item, selected: true, order: 0, sideBySide: false });
                 } else {
@@ -4495,6 +4829,8 @@ class BibleSearchView extends ItemView {
             this.poolClear();  // 同时清空保留的候选
             this.updateKeepCandidatesUI();
             this.refreshAllReaderCards();
+            // 注解 / 串珠的候选框嵌在展开面板里，不属于经文卡片，需要单独刷新
+            this.refreshNotePanels();
             new Notice('已取消全部选中');
         };
 
@@ -4506,6 +4842,8 @@ class BibleSearchView extends ItemView {
                     lines.push(`⌈${item.versionKey.toLowerCase()}⌋${item.bookShortName}${item.chapter}:${item.verse}${item.part || ''} ${item.content}`);
                 } else if (item.type === 'theme') lines.push(item.bookFullName + ' 主题：' + item.content);
                 else if (item.type === 'outline') lines.push('> ' + item.content);
+                // 注解 / 串珠：行首用带标记号的出处（如「创1:26注2」「创1:26串a」），正文另起行
+                else if (item.type === 'note' || item.type === 'chain') lines.push((item.ref || '') + '\n' + (item.content || ''));
                 else lines.push(item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + ' ' + item.content);
             }
             return lines;
@@ -4524,9 +4862,7 @@ class BibleSearchView extends ItemView {
             // 按顺序选中当前章的主版本内容；第一章额外选中主题
             const pageItems = this.readerChapter === 1 ? [...themeItems, ...items] : [...items];
             for (const item of pageItems) {
-                const existingIdx = this.readerResults.findIndex(r =>
-                    r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
-                );
+                const existingIdx = this.readerEntryIdx(item);
                 if (existingIdx === -1) {
                     this.readerResults.push({ item: item, selected: true, order: 0, sideBySide: false });
                 } else {
@@ -4579,55 +4915,86 @@ class BibleSearchView extends ItemView {
         this.updateKeepCandidatesUI();
     }
 
-    showBookPicker(anchorEl) {
-        const menu = document.body.createEl('div', { cls: 'bible-reader-nav-menu bible-reader-nav-menu-books' });
-        const groups = [
-            ['旧约', BIBLE_BOOKS.filter(b => b.testament === 'old')],
-            ['新约', BIBLE_BOOKS.filter(b => b.testament === 'new')]
-        ];
-        const wrap = menu.createDiv({ cls: 'bible-reader-nav-menu-grid' });
-        for (const [gname, books] of groups) {
-            const col = wrap.createDiv({ cls: 'bible-reader-nav-menu-col' });
-            col.createEl('div', { cls: 'bible-reader-nav-menu-group', text: gname });
-            for (const b of books) {
-                const item = col.createEl('div', { cls: 'bible-reader-nav-menu-item' + (b.id === this.readerBook.id ? ' active' : ''), text: b.id + '. ' + b.shortName });
-                item.addEventListener('click', () => {
-                    menu.remove();
-                    this.readerBook = b;
-                    this.readerChapter = 1;
-                    this.renderReader();
-                });
-            }
+    // 打开 / 关闭下拉面板的统一入口：再点同一个锚点即关闭，点其它锚点则换到新锚点。
+    // build(menu, closeFn) 负责填充面板内容；关闭时同步把箭头指示回正。
+    togglePopupMenu(anchorEl, build, menuCls) {
+        const prev = this._popupMenu;
+        if (prev && prev.el && prev.el.isConnected) {
+            prev.el.remove();
+            if (prev.cleanup) prev.cleanup();
+            this._popupMenu = null;
+            this.setNavCaret(prev.anchor, '▼');
+            // 点同一个锚点＝关闭，不再重新打开
+            if (prev.anchor === anchorEl) return null;
         }
+        const menu = document.body.createEl('div', { cls: menuCls });
+        const close = () => {
+            if (!menu.isConnected) return;
+            menu.remove();
+            if (this._popupMenu && this._popupMenu.el === menu) this._popupMenu = null;
+            this.setNavCaret(anchorEl, '▼');
+        };
+        build(menu, close);
         this.positionPopupMenu(menu, anchorEl);
         const closeHandler = (e) => {
             if (!menu.contains(e.target)) {
                 menu.remove();
                 document.removeEventListener('click', closeHandler);
+                if (this._popupMenu && this._popupMenu.el === menu) this._popupMenu = null;
+                this.setNavCaret(anchorEl, '▼');
             }
         };
+        // 延后注册，避免打开面板的同一次点击立刻把它关掉
         setTimeout(() => document.addEventListener('click', closeHandler), 0);
+        this._popupMenu = { el: menu, anchor: anchorEl, cleanup: () => document.removeEventListener('click', closeHandler) };
+        this.setNavCaret(anchorEl, '▲');
+        return menu;
+    }
+
+    // 锚点里的 ▼ / ▲ 指示符
+    setNavCaret(anchorEl, ch) {
+        if (!anchorEl) return;
+        const caret = anchorEl.querySelector('.bible-reader-nav-caret');
+        if (caret) caret.textContent = ' ' + ch;
+    }
+
+    showBookPicker(anchorEl) {
+        const menu = this.togglePopupMenu(anchorEl, (menu, close) => {
+            const groups = [
+                ['旧约', BIBLE_BOOKS.filter(b => b.testament === 'old')],
+                ['新约', BIBLE_BOOKS.filter(b => b.testament === 'new')]
+            ];
+            const wrap = menu.createDiv({ cls: 'bible-reader-nav-menu-grid' });
+            for (const [gname, books] of groups) {
+                const col = wrap.createDiv({ cls: 'bible-reader-nav-menu-col' });
+                col.createEl('div', { cls: 'bible-reader-nav-menu-group', text: gname });
+                for (const b of books) {
+                    const item = col.createEl('div', { cls: 'bible-reader-nav-menu-item' + (b.id === this.readerBook.id ? ' active' : ''), text: b.id + '. ' + b.shortName });
+                    item.addEventListener('click', () => {
+                        close();
+                        this.readerBook = b;
+                        this.readerChapter = 1;
+                        this.renderReader();
+                    });
+                }
+            }
+        }, 'bible-reader-nav-menu bible-reader-nav-menu-books');
+        return menu;
     }
 
     showChapterPicker(anchorEl, book) {
-        const menu = document.body.createEl('div', { cls: 'bible-reader-nav-menu bible-reader-nav-menu-chapters' });
-        const grid = menu.createDiv({ cls: 'bible-reader-nav-menu-chapter-grid' });
-        for (let i = 1; i <= book.maxChapters; i++) {
-            const item = grid.createEl('div', { cls: 'bible-reader-nav-menu-chip' + (i === this.readerChapter ? ' active' : ''), text: i + '章' });
-            item.addEventListener('click', () => {
-                menu.remove();
-                this.readerChapter = i;
-                this.renderReader();
-            });
-        }
-        this.positionPopupMenu(menu, anchorEl);
-        const closeHandler = (e) => {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener('click', closeHandler);
+        const menu = this.togglePopupMenu(anchorEl, (menu, close) => {
+            const grid = menu.createDiv({ cls: 'bible-reader-nav-menu-chapter-grid' });
+            for (let i = 1; i <= book.maxChapters; i++) {
+                const item = grid.createEl('div', { cls: 'bible-reader-nav-menu-chip' + (i === this.readerChapter ? ' active' : ''), text: i + '章' });
+                item.addEventListener('click', () => {
+                    close();
+                    this.readerChapter = i;
+                    this.renderReader();
+                });
             }
-        };
-        setTimeout(() => document.addEventListener('click', closeHandler), 0);
+        }, 'bible-reader-nav-menu bible-reader-nav-menu-chapters');
+        return menu;
     }
 
     positionPopupMenu(menu, anchorEl) {
@@ -4704,9 +5071,7 @@ class BibleSearchView extends ItemView {
     }
 
     renderReaderItemCard(container, item) {
-        const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
-        );
+        const existingIdx = this.readerEntryIdx(item);
         const isSelected = existingIdx !== -1 && this.readerResults[existingIdx].selected;
         const result = existingIdx !== -1 ? this.readerResults[existingIdx] : null;
         // 选中状态：可能来自当前章节，也可能来自「保留候选」的候选池
@@ -4749,7 +5114,7 @@ class BibleSearchView extends ItemView {
             const nd = this.plugin.getVerseNotes(item.bookId, item.chapter, item.verse, item.part);
             if (nd && nd.m && nd.m.length) {
                 this.plugin.renderTextWithMarkers(textEl, item.content, nd.m, (kind, label) => {
-                    this.toggleVerseNotePanel(card, item, nd, kind, label);
+                    this.toggleVerseNotePanel(card, item, nd, kind, label, 'reader');
                 });
                 // 命中高亮：检索注解正文时给经文打底
                 if (this._noteHitKey && this._noteHitKey === (item.bookId + '-' + item.chapter + '-' + item.verse)) {
@@ -4828,8 +5193,9 @@ class BibleSearchView extends ItemView {
 
     // ==================== 恢复本注解 / 串珠展开面板 ====================
     // 点击经文里的 ¹ ᵃ 上标，在该节卡片下方展开对应注解 / 串珠；再点一次收起
-    toggleVerseNotePanel(card, item, nd, kind, label) {
+    toggleVerseNotePanel(card, item, nd, kind, label, host) {
         const key = kind + ':' + label;
+        const inHost = host || this.activeTab || 'search';
         let panel = card.querySelector(':scope > .bible-note-panel');
         if (panel && panel.getAttribute('data-note-key') === key) {
             panel.remove();
@@ -4839,10 +5205,98 @@ class BibleSearchView extends ItemView {
         panel = card.createDiv({ cls: 'bible-note-panel' });
         panel.setAttribute('data-note-key', key);
         panel.addEventListener('click', (e) => e.stopPropagation());
-        this.fillVerseNotePanel(panel, item, nd, kind, label);
+        // 记住展开上下文：选中序号变化时可原样重绘面板
+        panel._noteCtx = { item: item, nd: nd, kind: kind, label: label, host: inHost };
+        this.fillVerseNotePanel(panel, item, nd, kind, label, inHost);
     }
 
-    fillVerseNotePanel(panel, item, nd, kind, label) {
+    // 阅读页候选项定位：注解 / 串珠条目与经文字段结构一致，靠 noteKey 区分同一节里的多条注 / 串
+    readerEntryIdx(item) {
+        return this.readerResults.findIndex(r =>
+            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse &&
+            r.item.type === item.type && r.item.content === item.content && !r._isCompare &&
+            (r.item.noteKey || '') === (item.noteKey || '')
+        );
+    }
+
+    // 注解 / 串珠条目的候选框：与所在页面的经文共用同一套序号、候选池、复制与投影。
+    // host='reader' 走阅读页选中逻辑，host='search' 走检索页选中逻辑（默认按当前标签页判断）
+    renderNoteEntryBoxes(rowEl, noteItem, host) {
+        const onSearch = (host || this.activeTab) === 'search';
+        if (!onSearch) {
+            const idx = this.readerEntryIdx(noteItem);
+            const local = idx !== -1 ? this.readerResults[idx] : null;
+            const st = this.getSelectionState(noteItem, false, !!(local && local.selected),
+                local ? local.order : 0, local ? local.sideBySide : false);
+            return this.plugin.renderNoteEntryBoxes(rowEl, st, {
+                onToggle: () => this.toggleReaderItemSelection(noteItem),
+                onToggleSide: () => this.toggleReaderSideBySide(noteItem)
+            });
+        }
+        const entry = this.getSearchNoteEntry(noteItem);
+        const st = this.getSelectionState(noteItem, false, entry.selected, entry.order, entry.sideBySide);
+        return this.plugin.renderNoteEntryBoxes(rowEl, st, {
+            onToggle: () => this.toggleSearchNoteSelection(noteItem),
+            onToggleSide: () => this.toggleSearchNoteSide(noteItem)
+        });
+    }
+
+    // 检索页：同一条注 / 串在不同经文卡片里展开时用同一个选中项（按 noteKey 认定）
+    getSearchNoteEntry(noteItem) {
+        if (!this.searchNoteEntries) this.searchNoteEntries = [];
+        const key = noteItem.noteKey || '';
+        let e = this.searchNoteEntries.find(x => (x.item.noteKey || '') === key);
+        if (!e) {
+            e = { item: noteItem, selected: false, order: 0, sideBySide: false };
+            this.searchNoteEntries.push(e);
+        } else if (e.item !== noteItem) {
+            e.item = noteItem;
+        }
+        return e;
+    }
+
+    toggleSearchNoteSelection(noteItem) {
+        const e = this.getSearchNoteEntry(noteItem);
+        const poolIdx = this.poolIndexOf(noteItem, false);
+        if (e.selected || poolIdx !== -1) {
+            if (poolIdx !== -1) this.poolRemoveAt(poolIdx);
+            e.selected = false; e.sideBySide = false; e.order = 0;
+        } else {
+            this.selectCounter++;
+            e.selected = true; e.sideBySide = false; e.order = this.selectCounter;
+            // 勾选「保留候选」时实时进入候选池，计数立即更新
+            this.poolSyncSelect(noteItem, false, false, 'search');
+        }
+        this.recalcOrders();
+        this.updateKeepCandidatesUI();
+        this.refreshNotePanels();
+    }
+
+    toggleSearchNoteSide(noteItem) {
+        const e = this.getSearchNoteEntry(noteItem);
+        if (!e.selected) return;
+        const poolIdx = this.poolIndexOf(noteItem, false);
+        if (poolIdx !== -1) {
+            this.candidatePool[poolIdx].sideBySide = !this.candidatePool[poolIdx].sideBySide;
+            e.sideBySide = this.candidatePool[poolIdx].sideBySide;
+        } else {
+            e.sideBySide = !e.sideBySide;
+        }
+        this.refreshNotePanels();
+    }
+
+    // 刷新展开中的注解 / 串珠面板（选中序号变化时同步候选框显示）
+    refreshNotePanels() {
+        const panels = [];
+        if (this.readerContent) this.readerContent.querySelectorAll('.bible-note-panel').forEach(p => panels.push(p));
+        if (this.resultsContainer) this.resultsContainer.querySelectorAll('.bible-note-panel').forEach(p => panels.push(p));
+        for (const p of panels) {
+            const ctx = p._noteCtx;
+            if (ctx) this.fillVerseNotePanel(p, ctx.item, ctx.nd, ctx.kind, ctx.label, ctx.host);
+        }
+    }
+
+    fillVerseNotePanel(panel, item, nd, kind, label, host) {
         panel.empty();
         if (kind === 'n') {
             const list = (nd.n || []).filter(n => n[0] === label);
@@ -4852,8 +5306,16 @@ class BibleSearchView extends ItemView {
             }
             for (const n of list) {
                 const row = panel.createDiv({ cls: 'bible-note-item' });
-                row.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
-                appendNoteBody(row, n[1]);
+                const refText = item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + '注' + n[0];
+                this.renderNoteEntryBoxes(row, this.plugin.buildNoteItem(item, 'n', n[0], n[1], refText), host);
+                const content = row.createDiv({ cls: 'bible-note-content' });
+                content.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
+                appendNoteBody(content, n[1]);
+                content.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (e.target.closest('.bible-note-ref-addr')) return;
+                    if (row._noteToggle) row._noteToggle();
+                });
             }
             return;
         }
@@ -4864,12 +5326,27 @@ class BibleSearchView extends ItemView {
         }
         for (const r of list) {
             const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
-            const head = row.createDiv({ cls: 'bible-note-ref-head' });
+            const quoted = [];
+            for (const t of (r[2] || [])) {
+                for (const v of this.getVersesForTarget(t)) {
+                    quoted.push(v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content);
+                }
+            }
+            const refText = item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + '串' + r[0];
+            const bodyText = r[1] + (quoted.length ? '\n' + quoted.join('\n') : '');
+            this.renderNoteEntryBoxes(row, this.plugin.buildNoteItem(item, 'r', r[0], bodyText, refText), host);
+            const content = row.createDiv({ cls: 'bible-note-content' });
+            content.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (e.target.closest('.bible-note-ref-addr')) return;
+                if (row._noteToggle) row._noteToggle();
+            });
+            const head = content.createDiv({ cls: 'bible-note-ref-head' });
             head.createEl('span', { cls: 'bible-note-label bible-note-label-ref', text: '串' + r[0] });
             head.createEl('span', { cls: 'bible-note-refs', text: r[1] });
             for (const t of (r[2] || [])) {
                 for (const v of this.getVersesForTarget(t)) {
-                    const vr = row.createDiv({ cls: 'bible-note-ref-verse' });
+                    const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
                     const addr = vr.createEl('span', {
                         cls: 'bible-note-ref-addr',
                         text: v.bookShortName + v.chapter + ':' + v.verse
@@ -4894,14 +5371,37 @@ class BibleSearchView extends ItemView {
         return this.plugin.getVersesForTarget(t, this.getReaderPrimaryVersion());
     }
 
+    // 检索结果里的注解条目：包装成候选项，与检索页的经文共用同一套序号 / 复制 / 投影
+    noteResultItem(result) {
+        const kind = (result.noteKind === 'r') ? 'chain' : 'note';
+        const mark = (result.noteKind === 'r') ? '串' : '注';
+        if (!result.noteItem || result.noteItem.noteKey.indexOf(':' + String(result.noteLabel)) === -1) {
+            const it = result.item;
+            result.noteItem = this.plugin.buildNoteItem(it, kind, result.noteLabel, result.noteText,
+                it.bookShortName + it.chapter + ':' + it.verse + (it.part || '') + mark + result.noteLabel);
+        }
+        return result.noteItem;
+    }
+
     // 检索结果里的注解条目：出处（如「创6:3注2」）+ 注解正文，命中关键词高亮
-    renderNoteResultCard(result) {
+    renderNoteResultCard(result, globalIdx) {
         const item = result.item;
-        const card = this.resultsContainer.createDiv({ cls: 'bible-result-card bible-result-note-card' });
+        const noteMark = (result.noteKind === 'r') ? '串' : '注';
+        const refText = item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + noteMark + result.noteLabel;
+        const noteItem = this.noteResultItem(result);
+        const st = this.getSelectionState(noteItem, false, !!result.selected, result.order, result.sideBySide);
+        const card = this.resultsContainer.createDiv({
+            cls: 'bible-result-card bible-result-note-card' + (st.selected ? ' selected' : '')
+        });
         const header = card.createDiv({ cls: 'bible-result-header' });
+        // 候选框 / 并候选框：与检索页经文一致，直接用页面原有的选中逻辑
+        this.plugin.renderNoteEntryBoxes(header, st, {
+            onToggle: () => this.toggleSelection(globalIdx),
+            onToggleSide: () => this.toggleSideBySide(globalIdx)
+        });
         const ref = header.createEl('span', {
             cls: 'bible-result-ref',
-            text: item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + '注' + result.noteLabel
+            text: refText
         });
         ref.style.cursor = 'pointer';
         ref.title = '点击跳转到该节';
@@ -4972,6 +5472,7 @@ class BibleSearchView extends ItemView {
 
     refreshAllReaderCards() {
         // 刷新当前章节所有可见经文卡片的选中状态
+        if (!this.readerContent) return;
         const allItems = [...(this.currentChapterThemeItems || []), ...(this.currentChapterItems || [])];
         const cards = this.readerContent.querySelectorAll('.bible-reader-verse-card');
         for (const card of cards) {
@@ -5004,9 +5505,7 @@ class BibleSearchView extends ItemView {
         const card = this.readerPanel.querySelector('.bible-reader-verse-card[data-line-index="' + item.lineIndex + '"]');
         if (!card) return;
 
-        const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
-        );
+        const existingIdx = this.readerEntryIdx(item);
         const isSelected = existingIdx !== -1 && this.readerResults[existingIdx].selected;
         const result = existingIdx !== -1 ? this.readerResults[existingIdx] : null;
         // 选中状态：可能来自当前章节，也可能来自「保留候选」的候选池
@@ -5086,12 +5585,11 @@ class BibleSearchView extends ItemView {
                 }
             }
         }
-    }    toggleReaderItemSelection(item) {
+    }
+    toggleReaderItemSelection(item) {
         // 取消选中：同时移出候选池并清除局部选中（勾选「保留候选」时两者是镜像关系）
         const poolIdx = this.poolIndexOf(item, false);
-        const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
-        );
+        const existingIdx = this.readerEntryIdx(item);
 
         if (poolIdx !== -1 || (existingIdx !== -1 && this.readerResults[existingIdx].selected)) {
             if (poolIdx !== -1) this.poolRemoveAt(poolIdx);
@@ -5114,23 +5612,24 @@ class BibleSearchView extends ItemView {
         this.recalcReaderOrders();
         this.updateKeepCandidatesUI();
         this.refreshAllReaderCards();
+        this.refreshNotePanels();
     }
 
     toggleReaderSideBySide(item) {
         const poolIdx = this.poolIndexOf(item, false);
-        const existingIdx = this.readerResults.findIndex(r =>
-            r.item.bookId === item.bookId && r.item.chapter === item.chapter && r.item.verse === item.verse && r.item.type === item.type && r.item.content === item.content && !r._isCompare
-        );
+        const existingIdx = this.readerEntryIdx(item);
         if (poolIdx !== -1) {
             const p = this.candidatePool[poolIdx];
             p.sideBySide = !p.sideBySide;
             if (existingIdx !== -1) this.readerResults[existingIdx].sideBySide = p.sideBySide;
             this.refreshReaderItemCard(item);
+            this.refreshNotePanels();
             return;
         }
         if (existingIdx !== -1 && this.readerResults[existingIdx].selected) {
             this.readerResults[existingIdx].sideBySide = !this.readerResults[existingIdx].sideBySide;
             this.refreshReaderItemCard(item);
+            this.refreshNotePanels();
         }
     }
 
@@ -5199,7 +5698,8 @@ class BibleSearchPlugin extends Plugin {
         await this.loadSettings();
         await this.syncScannedVersions();
         this.parser = new BibleParser(this.app, this.settings, this.manifest.dir);
-        this.searchEngine = new BibleSearchEngine();
+        // 引擎持有插件引用：支持按注 / 串出处检索时读取某一节的注解 / 串珠数据
+        this.searchEngine = new BibleSearchEngine(this);
         this.allItems = [];
         this.currentProjection = null;  // 当前打开的投影覆盖层引用（用于投影内打开检索并复用）
         this.notesData = null;          // 恢复本注解/串珠（null = 尚未加载）
@@ -5333,6 +5833,10 @@ class BibleSearchPlugin extends Plugin {
             //    已有投影时两者都会调用 reloadResults 原地刷新内容
             const view = this.getVisibleSearchView();
             if (view) {
+                // 投影还开着但侧边栏当前没有任何选中项：此时「重新投影」只会弹提示，
+                // 用户想做的是切换模式，退化成 setMode
+                const selCount = (typeof view.getAllSelections === 'function') ? view.getAllSelections().length : 0;
+                if (selCount === 0 && this.currentProjection) { this.currentProjection.setMode(mode); return; }
                 if (view.activeTab === 'reader' && typeof view.openReaderProjection === 'function') {
                     view.openReaderProjection(mode);
                 } else if (typeof view.openProjection === 'function') {
@@ -5626,10 +6130,47 @@ class BibleSearchPlugin extends Plugin {
     // 开关「显示注解」：切换时清空缓存，让下次访问重新按需加载
     async setShowNotes(on) {
         this.settings.showNotes = !!on;
+        if (!on) {
+            // 关闭：直接置空缓存即可，下次要用会重新读
+            this.notesData = {};
+            this.notesSearchIndex = null;
+            this._notesAttached = false;
+            await this.saveSettings();
+            this.refreshNotesViews();
+            return;
+        }
         this.notesData = null;
         this.notesSearchIndex = null;
         this._notesAttached = false;
         await this.saveSettings();
+        // 开启：立即加载（本机没有数据时会提示下载），并刷新已打开的视图，不必重启插件
+        await this.refreshNotesViews();
+    }
+
+    // 开启注解但本机没有数据文件时提示下载。延迟到当前流程之后再弹，避免打断初始化；
+    // 同一轮会话只提示一次，用户选择“暂不下载”后不再打扰。
+    promptInstallNotes() {
+        if (this._notesPromptShown) return;
+        this._notesPromptShown = true;
+        setTimeout(() => {
+            try {
+                if (this.notesData && Object.keys(this.notesData).length > 0) return;
+                new NotesMissingModal(this.app, this).open();
+            } catch (e) {
+                console.error('[Bible] 提示下载注解数据失败:', e);
+            }
+        }, 400);
+    }
+
+    // 注解数据安装 / 开关变化后刷新：重新挂接注解并重绘已打开的视图，让上标与面板立即生效
+    async refreshNotesViews() {
+        await this.loadNotesData();
+        this._notesAttached = false;
+        this.attachNotesToItems();
+        const view = this.getSearchView ? this.getSearchView() : null;
+        if (!view) return;
+        if (typeof view.refreshCurrentView === 'function') view.refreshCurrentView();
+        if (typeof view.refreshNotePanels === 'function') view.refreshNotePanels();
     }
 
     // 注解数据体量约 6MB，与主圣经数据分开存放，首次用到时再读，避免拖慢启动
@@ -5640,7 +6181,12 @@ class BibleSearchPlugin extends Plugin {
             try {
                 if (!this.settings.showNotes) { this.notesData = {}; return this.notesData; }
                 const p = `.obsidian/plugins/bible-search-reader/${NOTES_FILE}`;
-                if (!(await this.app.vault.adapter.exists(p))) { this.notesData = {}; return this.notesData; }
+                if (!(await this.app.vault.adapter.exists(p))) {
+                    this.notesData = {};
+                    // 功能已开启却没有数据：提示一次，让用户选择是否下载（每轮会话只提示一次）
+                    this.promptInstallNotes();
+                    return this.notesData;
+                }
                 const raw = await this.app.vault.adapter.read(p);
                 const j = JSON.parse(raw);
                 const ch = (j && j.chapters) || {};
@@ -5743,6 +6289,9 @@ class BibleSearchPlugin extends Plugin {
                 this.settings.notesInstalled = true;
                 await this.saveSettings();
                 await this.loadNotesData();
+                this._notesAttached = false;
+                this.attachNotesToItems();
+                this.refreshNotesViews();   // 下载完成后立即挂载数据并刷新已打开的视图
                 if (manual) new Notice('注解数据已安装');
                 return true;
             } catch (e) {
@@ -5754,27 +6303,146 @@ class BibleSearchPlugin extends Plugin {
         return false;
     }
 
+    // ===== 注解 / 串珠条目（检索页 / 阅读页 / 经文弹窗通用）=====
+    // 注 / 串不再单独存放候选：每条注 / 串包装成一个候选条目（type='note' / 'chain'），
+    // 交给所在页面原有的选中逻辑处理——与页面里的经文共用同一套序号、复制与投影按钮。
+    // kind：'n' | 'note' = 注解；'r' | 'chain' = 串珠
+    buildNoteItem(vi, kind, label, bodyText, refText) {
+        const isNote = (kind === 'n' || kind === 'note');
+        const src = (vi && vi.item) ? vi.item : vi;
+        // 注解正文在源数据里用空行分段，且从第二段起常带全角空格缩进。
+        // 逐段去首尾空白后重新拼接（注解段间留一个空行，串珠按行排），
+        // 否则复制出去再贴进 Obsidian，第二段起会被当成缩进块。
+        const parts = String(bodyText || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
+        const body = isNote ? parts.join('\n\n') : parts.join('\n');
+        return {
+            type: isNote ? 'note' : 'chain',
+            versionKey: src.versionKey || (this.getPrimaryVersionKey ? this.getPrimaryVersionKey() : ''),
+            bookId: src.bookId,
+            bookShortName: src.bookShortName,
+            bookFullName: src.bookFullName,
+            chapter: src.chapter,
+            verse: src.verse,
+            part: src.part || '',
+            ref: refText || '',
+            content: body,
+            noteKey: (isNote ? 'note' : 'chain') + ':' + src.bookId + ':' + src.chapter + ':' +
+                src.verse + ':' + (src.part || '') + ':' + label
+        };
+    }
+
+    // 在一条注解 / 串珠条目左侧渲染「候选框」+「并」候选框（样式复用经文候选框）
+    // st: { selected, order, sideBySide }；handlers: { onToggle, onToggleSide }
+    renderNoteEntryBoxes(rowEl, st, handlers) {
+        if (rowEl) rowEl._noteToggle = (handlers && handlers.onToggle) ? handlers.onToggle : null;
+        const wrap = rowEl.createDiv({ cls: 'bible-nc-boxes' });
+        const cb = wrap.createDiv({ cls: 'bible-result-checkbox bible-nc-checkbox' + (st.selected ? ' checked' : '') });
+        if (st.selected) cb.setText(String(st.order));
+        cb.title = '选为候选（与所在页面共用复制 / 投影）';
+        cb.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (handlers && handlers.onToggle) handlers.onToggle();
+        });
+        if (st.selected) {
+            const sideTag = wrap.createDiv({ cls: 'bible-side-tag' + (st.sideBySide ? ' active' : '') });
+            sideTag.setText(st.sideBySide ? '✓ 并列' : '并');
+            sideTag.title = '并列投影（再点取消）';
+            sideTag.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (handlers && handlers.onToggleSide) handlers.onToggleSide();
+            });
+        }
+        return wrap;
+    }
+
+    // 经文弹窗里的注 / 串：候选框与弹窗里的经文共用同一套序号 / 复制 / 投影
+    // ctx: { getView, sessionKey, refresh }
+    renderTooltipNoteBoxes(rowEl, noteItem, ctx) {
+        const view = (ctx && ctx.getView) ? ctx.getView() : null;
+        const keepOn = !!(view && view.keepCandidates);
+        const ownIdx = this.tooltipPoolIndexOf(noteItem);
+        let selected = ownIdx !== -1;
+        let order = ownIdx !== -1 ? ownIdx + 1 : 0;
+        let sideBySide = ownIdx !== -1 ? !!this.getTooltipPool()[ownIdx].sideBySide : false;
+        if (keepOn) {
+            const pi = view.poolIndexOf(noteItem, false);
+            if (pi !== -1) {
+                selected = true; order = pi + 1; sideBySide = !!view.candidatePool[pi].sideBySide;
+            } else if (selected) {
+                order = view.getAllSelections().length;
+            }
+        }
+        return this.renderNoteEntryBoxes(rowEl, { selected: selected, order: order, sideBySide: sideBySide }, {
+            onToggle: () => {
+                if (selected) {
+                    this.tooltipPoolRemove(noteItem);
+                    if (view) view.poolSyncDeselect(noteItem, false);
+                } else {
+                    this.tooltipPoolAdd(noteItem, false);
+                    if (view && view.keepCandidates) {
+                        view.poolSyncSelect(noteItem, false, false, 'tooltip', ctx && ctx.sessionKey);
+                    }
+                }
+                if (view) view.updateKeepCandidatesUI();
+                if (ctx && ctx.refresh) ctx.refresh();
+            },
+            onToggleSide: () => {
+                if (!selected) return;
+                const next = !sideBySide;
+                this.tooltipPoolSetSide(noteItem, next);
+                if (view && view.poolSetSideBySide) view.poolSetSideBySide(noteItem, false, next);
+                if (view) view.updateKeepCandidatesUI();
+                if (ctx && ctx.refresh) ctx.refresh();
+            }
+        });
+    }
+
     // 经文弹窗里的注解 / 串珠面板
     // kind / label 指定时只显示对应的那一条注解或串珠
-    fillTooltipNotePanel(panel, nd, v, kind, label) {
+    fillTooltipNotePanel(panel, nd, v, kind, label, ctx) {
         panel.empty();
         panel.addEventListener('click', (e) => e.stopPropagation());
         const pk = (v && v.item) ? v.item.versionKey : null;
+        const vi = (v && v.item) ? v.item : v;
+        const shortName = (vi && vi.bookShortName) || '';
         const notes = (kind === 'r') ? [] : (nd.n || []).filter(n => !kind || n[0] === label);
         const refs = (kind === 'n') ? [] : (nd.r || []).filter(r => !kind || r[0] === label);
         for (const n of notes) {
             const row = panel.createDiv({ cls: 'bible-note-item' });
-            row.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
-            appendNoteBody(row, n[1]);
+            const refText = shortName + (vi ? vi.chapter : '') + ':' + (vi ? vi.verse : '') + (vi ? (vi.part || '') : '') + '注' + n[0];
+            this.renderTooltipNoteBoxes(row, this.buildNoteItem(vi, 'n', n[0], n[1], refText), ctx);
+            const content = row.createDiv({ cls: 'bible-note-content' });
+            content.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
+            appendNoteBody(content, n[1]);
+            content.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (e.target.closest('.bible-note-ref-addr')) return;
+                if (row._noteToggle) row._noteToggle();
+            });
         }
         for (const r of refs) {
             const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
-            const head = row.createDiv({ cls: 'bible-note-ref-head' });
+            const quoted = [];
+            for (const t of (r[2] || [])) {
+                for (const tv of this.getVersesForTarget(t, pk)) {
+                    quoted.push(tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') + ' ' + tv.content);
+                }
+            }
+            const refText = shortName + (vi ? vi.chapter : '') + ':' + (vi ? vi.verse : '') + (vi ? (vi.part || '') : '') + '串' + r[0];
+            const bodyText = r[1] + (quoted.length ? '\n' + quoted.join('\n') : '');
+            this.renderTooltipNoteBoxes(row, this.buildNoteItem(vi, 'r', r[0], bodyText, refText), ctx);
+            const content = row.createDiv({ cls: 'bible-note-content' });
+            content.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (e.target.closest('.bible-note-ref-addr')) return;
+                if (row._noteToggle) row._noteToggle();
+            });
+            const head = content.createDiv({ cls: 'bible-note-ref-head' });
             head.createEl('span', { cls: 'bible-note-label bible-note-label-ref', text: '串' + r[0] });
             head.createEl('span', { cls: 'bible-note-refs', text: r[1] });
             for (const t of (r[2] || [])) {
                 for (const tv of this.getVersesForTarget(t, pk)) {
-                    const vr = row.createDiv({ cls: 'bible-note-ref-verse' });
+                    const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
                     vr.createEl('span', { cls: 'bible-note-ref-addr', text: tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') });
                     vr.createEl('span', { cls: 'bible-note-ref-text', text: tv.content });
                 }
@@ -5786,7 +6454,8 @@ class BibleSearchPlugin extends Plugin {
     attachNotesToItems() {
         if (this._notesAttached || !this.notesData) return;
         const idx = this.buildNotesSearchIndex();
-        for (const item of this.allItems) {
+        const all = this.allItems || [];
+        for (const item of all) {
             if (item.type !== 'verse') continue;
             const t = idx.get(item.bookId + '-' + item.chapter + '-' + notesVerseKey(item.verse, item.part));
             if (t) item.notesText = t;
@@ -5859,21 +6528,28 @@ class BibleSearchPlugin extends Plugin {
             const p = pos[ci - 1];
             return p === undefined ? text.length : p + 1;
         };
+        // 计数落点是「第 ci 个非标点字符之后」，其后紧邻的标点在原文里位于上标之前
+        // （如「神说，¹我们要」），因此在后面还有实词时把落点推过这些标点。
+        // 用源文件逐节比对：计数 89.00% / 锚点优先 88.35% / 跳过标点 99.85%。
+        const skipPunct = (i) => {
+            let j = i;
+            while (j < text.length && NOTE_PUNC_RE.test(text[j])) j++;
+            return j < text.length ? j : i;   // 后面没有实词了就不动
+        };
 
         let cursor = 0;        // 原文游标
-        let seqFrom = 0;       // 锚点搜索起点（单调递增，避免重复匹配）
         const frag = document.createDocumentFragment();
         for (const mk of markers) {
             const ci = mk[0], kind = mk[1], label = mk[2], anchor = mk[3];
+            // 定位以「前面有多少个非标点字符」为准：经文正文与注解数据源出同源（逐字一致），
+            // 计数定位永远精确；锚点（前若干非标点字符）在经文内有重复文句时会命中靠前的位置
+            // （如创 1:26 的注2 前面都是「着我们的」），因此只作计数越界时的兜底。
             let target = ci;
-            if (anchor) {
-                const found = seq.indexOf(anchor, seqFrom);
-                if (found !== -1) {
-                    target = found + anchor.length;
-                    seqFrom = found;
-                }
+            if (target > seq.length && anchor) {
+                const found = seq.indexOf(anchor);
+                if (found !== -1) target = found + anchor.length;
             }
-            let at = cutAt(target);
+            let at = skipPunct(cutAt(target));
             if (at < cursor) at = cursor;   // 不回退
             if (at > cursor) this.appendHighlighted(frag, text.slice(cursor, at), keywords);
             const sup = document.createElement('sup');
@@ -6404,12 +7080,18 @@ class BibleSearchPlugin extends Plugin {
             const fragment = document.createDocumentFragment();
             let lastIndex = 0;
             for (const match of matches) {
-                if (match.start > lastIndex) {
-                    fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.start)));
+                let mStart = match.start;
+                let mEnd = match.end;
+                // 与前面已渲染的高亮重叠时（如括号弱引用覆盖了其中被阶段1单独识别的强引用），
+                // 裁剪起点，避免把重叠文字重复输出（修复「约一4」之类重复显示的问题）
+                if (mStart < lastIndex) mStart = lastIndex;
+                if (mEnd <= mStart) continue;
+                if (mStart > lastIndex) {
+                    fragment.appendChild(document.createTextNode(text.slice(lastIndex, mStart)));
                 }
                 const span = document.createElement('span');
                 span.className = 'bible-inline-ref';
-                span.textContent = match.text;
+                span.textContent = text.slice(mStart, mEnd);
                 span.dataset.bookId = match.bookId;
                 span.dataset.chapter = match.allRefs[0].chapter;
                 span.dataset.verse = match.allRefs[0].verse || '';
@@ -6433,7 +7115,7 @@ class BibleSearchPlugin extends Plugin {
                     this.jumpToBibleReader(match);
                 });
                 fragment.appendChild(span);
-                lastIndex = match.end;
+                lastIndex = mEnd;
             }
             if (lastIndex < text.length) {
                 fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
@@ -7009,13 +7691,25 @@ class BibleSearchPlugin extends Plugin {
         }
         // 纯节号后若紧跟 章/篇/节 或另一个数字，则不是纯节号，让位给 X章 / 连写
         const afterSeparator = /^[章节篇\d一二三四五六七八九十百零〇]/;
+        // 「章 X 节 Y」之后若紧跟范围分隔符 + 数字，补出结束节（如「罗马书八28-30」「约3:16-17」）
+        const extendRange = (consumed, verse) => {
+            let p = consumed;
+            let verseEnd = null;
+            const rg = text.slice(p).match(/^[\s　]*[～~\-－至–—‐][\s　]*(\d+)/);
+            if (rg) {
+                const v2 = parseNumber(rg[1]);
+                if (!isNaN(v2) && v2 > verse) { verseEnd = v2; p += rg[0].length; }
+            }
+            return { verseEnd: verseEnd, consumed: p };
+        };
         // 模式A: 章:节
         const m1 = remaining.match(/^([一二三四五六七八九十百零〇]+|\d+)[:：]\s*([一二三四五六七八九十百零〇]+|\d+)/);
         if (m1) {
             const chapter = parseNumber(m1[1]);
             const verse = parseNumber(m1[2]);
             if (!isNaN(chapter) && chapter >= 1 && chapter <= currentBook.maxChapters && !isNaN(verse) && verse >= 1) {
-                return { chapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m1[0].length };
+                const rg = extendRange(pos + m1[0].length, verse);
+                return { chapter, verse, verseEnd: rg.verseEnd, suffix: null, book: currentBook, consumed: rg.consumed };
             }
         }
         // 模式B: 章节节（中文量词）
@@ -7024,7 +7718,8 @@ class BibleSearchPlugin extends Plugin {
             const chapter = parseNumber(m2[1]);
             const verse = parseNumber(m2[2]);
             if (!isNaN(chapter) && chapter >= 1 && chapter <= currentBook.maxChapters && !isNaN(verse) && verse >= 1) {
-                return { chapter, verse, verseEnd: null, suffix: null, book: currentBook, consumed: pos + m2[0].length };
+                const rg = extendRange(pos + m2[0].length, verse);
+                return { chapter, verse, verseEnd: rg.verseEnd, suffix: null, book: currentBook, consumed: rg.consumed };
             }
         }
         // 模式B2: 中文章 + 空格 + 阿拉伯节（如“一 1”“一 20～23”“一 1～二 3”“一 2 上”）
@@ -7209,8 +7904,9 @@ class BibleSearchPlugin extends Plugin {
     // 阶段5：行内空白（或行首）后的“中文章+阿拉伯节”连写，如纲目行末“　一2”依附前一个书卷/章
     findInlineContinuationRefs(text, coveredRanges, resolveCtx) {
         const matches = [];
-        // 前面必须是行首或空白/破折号；中文数字章 + 阿拉伯节；后面不跟数字（避免吃掉更长连写）
-        const re = /(^|[\s　–—‐\-])([一二三四五六七八九十百零〇]+)(\d+)(?![\d一二三四五六七八九十百零〇])/g;
+        // 前面必须是行首、空白或任意标点 / 符号（同阶段6，不再逐个枚举分隔符）；
+        // 中文数字章 + 阿拉伯节；后面不跟数字（避免吃掉更长连写）
+        const re = /(^|[\s　\p{P}\p{S}])([一二三四五六七八九十百零〇]+)(\d+)(?![\d一二三四五六七八九十百零〇])/gu;
         let m;
         while ((m = re.exec(text)) !== null) {
             const start = m.index + m[1].length;
@@ -7238,7 +7934,10 @@ class BibleSearchPlugin extends Plugin {
     // 不含行首（行首由 findLineStartRefs 负责）
     findWeakContinuationRefs(text, coveredRanges, resolveCtx) {
         const matches = [];
-        const re = /([\s　（〔(–—‐\-])(?![\s　])/g;
+        // 边界字符：任意空白、任意 Unicode 标点（\p{P}：中英文句读、括号、引号、破折号、斜杠、连接符等）
+        // 与任意 Unicode 符号（\p{S}：─━⌈⌊等制图符、箭头、货币符等）。不再逐个枚举，换任何一种标点
+        // 都能触发弱引用识别（如「─五11」「，五11」「。五11」「/五11」「<五11」「【五11】」「⌈五11⌋」）
+        const re = /(^|[\s　\p{P}\p{S}])(?![\s　])/gu;
         let runningChapter = null;
         let m;
         while ((m = re.exec(text)) !== null) {
@@ -7582,9 +8281,17 @@ class BibleSearchPlugin extends Plugin {
 
         // 每处经文：候选框 + 出处（双击跳转）+ 内容
         const rows = [];
+        // 注解 / 串珠的候选框上下文：与弹窗里的经文共用同一套序号 / 复制 / 投影
+        const noteCtx = {
+            sessionKey: sessionKey,
+            getView: () => view,
+            refresh: () => { refreshOrders(); refreshTooltipNotePanels(); }
+        };
         if (verses.length === 0) {
             contentEl.createDiv({ cls: 'bible-inline-tooltip-verse', text: '未找到经文' });
         }
+        // 整个弹窗只保留一个注解/串珠面板：新点开的顶替旧的，避免多次点开堆叠在下方
+        let notePanel = null;
         for (const v of verses) {
             const row = contentEl.createDiv({ cls: 'bible-inline-tooltip-verse' });
             // 候选框：与圣经搜索 / 圣经阅读一致——未选中是空框，选中后直接显示选中顺序数字
@@ -7608,38 +8315,32 @@ class BibleSearchPlugin extends Plugin {
             const textEl = row.createEl('span', { cls: 'bible-inline-tooltip-verse-text' });
             // 恢复本注解 / 串珠：经文内嵌 ¹ ᵃ 上标，点击展开对应注解或串珠
             const nd = this.getVerseNotes(match.bookId, v.chapter, v.verse, v.item.part);
-            let npanel = null;
-            if (nd && ((nd.n && nd.n.length) || (nd.r && nd.r.length))) {
-                const parts = [];
-                if (nd.n && nd.n.length) parts.push('注' + nd.n.length);
-                if (nd.r && nd.r.length) parts.push('串' + nd.r.length);
-                const nbar = contentEl.createDiv({ cls: 'bible-inline-tooltip-notes-bar' });
-                const nbtn = nbar.createEl('button', { cls: 'bible-notes-toggle-btn', text: parts.join(' · ') });
-                nbtn.title = '展开该节全部注解 / 串珠';
-                npanel = contentEl.createDiv({ cls: 'bible-note-panel' });
-                npanel.style.display = 'none';
-                nbtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (npanel.style.display === 'none') {
-                        this.fillTooltipNotePanel(npanel, nd, v);
-                        npanel.setAttribute('data-note-key', 'all');
-                        npanel.style.display = 'block';
-                    } else {
-                        npanel.style.display = 'none';
-                    }
-                });
-            }
+            // 经文里已内嵌 ¹ ᵃ 注 / 串上标（每条注 / 串都能点到），不再额外给「注N·串N」按钮
             if (nd && nd.m && nd.m.length) {
                 this.renderTextWithMarkers(textEl, v.item.content, nd.m, (kind, label) => {
-                    const p = npanel || (npanel = contentEl.createDiv({ cls: 'bible-note-panel' }));
-                    const key = kind + ':' + label;
-                    if (p.style.display === 'block' && p.getAttribute('data-note-key') === key) {
-                        p.style.display = 'none';
+                    // key 带上章/节/上(下)半节，避免不同经的「注1」「串1」被误判为同一面板
+                    const key = v.chapter + ':' + v.verse + (v.item.part || '') + ':' + kind + ':' + label;
+                    if (!notePanel) notePanel = contentEl.createDiv({ cls: 'bible-note-panel' });
+                    if (notePanel.style.display === 'block' && notePanel.getAttribute('data-note-key') === key) {
+                        // 收起注解/串珠面板时同步取消该条的选中：点击标记收起即视为「取消」该注解，
+                        // 否则面板收起后序号看不见、但「保留候选」计数仍把它算进去，造成不一致
+                        const wantKey = (kind === 'n' ? 'note' : 'chain') + ':' + v.item.bookId + ':' +
+                            v.chapter + ':' + v.verse + ':' + (v.item.part || '') + ':' + label;
+                        const selItem = this.getTooltipPool().map(p => p.item).find(it => it && it.noteKey === wantKey)
+                            || (view ? view.candidatePool.map(p => p.item).find(it => it && it.noteKey === wantKey) : null);
+                        if (selItem) {
+                            this.tooltipPoolRemove(selItem);
+                            if (view) view.poolSyncDeselect(selItem, false);
+                        }
+                        notePanel.style.display = 'none';
+                        if (view) view.updateKeepCandidatesUI();
+                        if (noteCtx && noteCtx.refresh) noteCtx.refresh();
                         return;
                     }
-                    this.fillTooltipNotePanel(p, nd, v, kind, label);
-                    p.setAttribute('data-note-key', key);
-                    p.style.display = 'block';
+                    notePanel._noteCtx = { nd: nd, v: v, kind: kind, label: label };
+                    this.fillTooltipNotePanel(notePanel, nd, v, kind, label, noteCtx);
+                    notePanel.setAttribute('data-note-key', key);
+                    notePanel.style.display = 'block';
                 });
             } else {
                 textEl.setText(v.item.content);
@@ -7684,6 +8385,7 @@ class BibleSearchPlugin extends Plugin {
             }
             if (view) view.updateKeepCandidatesUI();
             refreshOrders();
+            refreshTooltipNotePanels();        // 经文勾选变化时同步刷新注解/串珠候选框的选中序号
             updateSelToggleBtn();
         };
 
@@ -7697,6 +8399,7 @@ class BibleSearchPlugin extends Plugin {
                 view.updateKeepCandidatesUI();
             }
             refreshOrders();
+            refreshTooltipNotePanels();        // 并列状态变化也同步刷新注解/串珠候选框
         };
 
         // ---- 刷新每行的选中状态（候选框显示顺序数字 / 「并」标签）+ 标题栏计数 ----
@@ -7735,6 +8438,17 @@ class BibleSearchPlugin extends Plugin {
             keepCb.checked = keepOn;
         };
 
+        // 刷新弹窗中展开的注解 / 串珠面板（选中序号变化时同步候选框显示）
+        const refreshTooltipNotePanels = () => {
+            const panels = tooltip.querySelectorAll('.bible-note-panel');
+            for (const p of panels) {
+                const c = p._noteCtx;
+                if (!c) continue;
+                if (p.style.display === 'none') continue;
+                this.fillTooltipNotePanel(p, c.nd, c.v, c.kind, c.label, noteCtx);
+            }
+        };
+
         // ---- 全选 / 取消（同一按钮自动切换文案，与「全局全选」一样重置并列）----
         const isAllChecked = () => rows.length > 0 && rows.every(r => r.selected);
         const updateSelToggleBtn = () => {
@@ -7750,6 +8464,21 @@ class BibleSearchPlugin extends Plugin {
                 if (next) { r.sideBySide = false; setRowChecked(r, true); }
                 else setRowChecked(r, false);
             }
+            // 「取消」要同时清掉本弹窗里选中的注解 / 串珠——它们与经文共用同一候选库，
+            // 否则点「取消」后经文被取消、注/串却仍残留勾选与序号
+            if (!next) {
+                for (const p of this.getTooltipPool().slice()) {
+                    if (p.item && (p.item.type === 'note' || p.item.type === 'chain')) {
+                        this.tooltipPoolRemove(p.item);
+                        if (view) view.poolSyncDeselect(p.item, false);
+                    }
+                }
+                if (view) view.updateKeepCandidatesUI();
+            }
+            // 上面清掉注/串后必须重算标题栏计数：setRowChecked 内部的 refreshOrders 跑在清注/串之前，
+            // 若不清掉这步，「保留候选 (1)」会残留在已取消的状态上（重新打开弹窗才复位），因此需补一次
+            refreshOrders();
+            refreshTooltipNotePanels();
             updateSelToggleBtn();
         });
 
@@ -7789,6 +8518,7 @@ class BibleSearchPlugin extends Plugin {
             this.tooltipPoolClearAll();                 // 全部经文弹窗的候选（不只是当前这一处引用）
             for (const r of rows) { r.selected = false; r.sideBySide = false; }
             refreshOrders();
+            refreshTooltipNotePanels();                 // 同步刷新展开中的注解 / 串珠候选框，清掉残留的选中序号
             updateSelToggleBtn();
             new Notice(hadOther
                 ? '已清空全部候选经文（经文弹窗 / 圣经搜索 / 圣经阅读）'
@@ -7800,7 +8530,11 @@ class BibleSearchPlugin extends Plugin {
         // 本弹窗窗口自己的候选（跨弹窗保留）
         const ownList = () => this.tooltipPoolList();
         const formatOwn = () => this.getTooltipPool()
-            .map(p => `${p.bookShortName || match.bookShortName}${p.chapter}:${p.verse} ${p.item.content}`).join('\n');
+            .map(p => {
+                const it = p.item;
+                if (it.type === 'note' || it.type === 'chain') return (it.ref || '') + '\n' + it.content;
+                return `${p.bookShortName || match.bookShortName}${p.chapter}:${p.verse} ${it.content}`;
+            }).join('\n');
         const keepOn = () => !!(view && view.keepCandidates);
 
         // 本弹窗之外（候选池 / 圣经搜索 / 圣经阅读）仍有选中项 → 复制时需要选择范围
