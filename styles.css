@@ -1495,6 +1495,12 @@
     color: #a0a0a0;
 }
 
+/* 投影文字允许被选中与复制（显式开启，避免被外层继承的 user-select 影响） */
+.bible-projection-fullscreen .bible-proj-slide-wrapper {
+    user-select: text;
+    -webkit-user-select: text;
+}
+
 /* ===== 经文投影：正文内嵌注 / 串上标，点击上标展开（字号与经文一致）===== */
 .bible-proj-text sup.bible-note-mark {
     display: inline-block;
@@ -1578,12 +1584,32 @@
     border-radius: 0 6px 6px 0;
     background-color: rgba(255, 255, 255, 0.07);
     color: rgba(255, 255, 255, 0.86);
+    cursor: pointer;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-notes {
     border-top-color: rgba(0, 0, 0, 0.2);
     border-left-color: rgba(74, 111, 165, 0.55);
     background-color: rgba(0, 0, 0, 0.045);
     color: #4a5568;
+    cursor: pointer;
+}
+/* 收起提示：整块面板可点击关闭，这里给一个显式提示，便于投影演示时收起 */
+.bible-proj-note-dismiss {
+    display: inline-block;
+    float: right;
+    margin: 0 0 0.4em 0.8em;
+    padding: 0 0.45em;
+    font-size: 0.72em;
+    line-height: 1.7;
+    border-radius: 4px;
+    opacity: 0.5;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    user-select: none;
+    white-space: nowrap;
+}
+.bible-proj-notes:hover .bible-proj-note-dismiss { opacity: 0.9; }
+.bible-projection-fullscreen.light-mode .bible-proj-note-dismiss {
+    border-color: rgba(0, 0, 0, 0.25);
 }
 .bible-proj-note {
     margin: 0 0 0.5em 0;
@@ -1631,6 +1657,10 @@
 /* 正文分段：每段独立成块，段间留一个空行 */
 .bible-proj-note-body {
     margin-top: 0.1em;
+    /* 注解 / 串珠正文允许被选中复制（覆盖任何外层继承限制） */
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
 }
 .bible-proj-note-para {
     margin: 0 0 0.85em 0;
@@ -2423,7 +2453,9 @@
 .bible-result-card .bible-note-panel,
 .bible-reader-verse-card .bible-note-panel,
 .bible-inline-tooltip .bible-note-panel {
-    margin: 6px 0 4px 0;
+    /* 面板展开在它所注解的那一节经文下方：上间距收紧、下间距放宽，
+       视觉上就明显归属于上一节，与下一节自然分开 */
+    margin: 3px 0 8px 0;
     padding: 8px 10px;
     border-left: 3px solid var(--interactive-accent);
     border-radius: 0 6px 6px 0;

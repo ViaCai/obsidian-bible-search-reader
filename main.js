@@ -101,7 +101,10 @@ const BOOK_ALIASES = {
     '但以理': '但', '何西阿': '何', '约珥': '珥', '阿摩司': '摩',
     '俄巴底亚': '俄', '约拿': '拿', '弥迦': '弥', '那鸿': '鸿',
     '哈巴谷': '哈', '西番雅': '番', '哈该': '该', '撒迦利亚': '亚',
-    '玛拉基': '玛', '罗马': '罗', '哥林多前': '林前', '哥林多后': '林后',
+    '玛拉基': '玛',     '罗马': '罗', '哥林多前': '林前', '哥林多后': '林后',
+    // 「行传」是使徒行传的常见简称，必须放在「传」（传道书）之前生效；
+    // buildBookNameList 按长度降序排列，2 字的「行传」会先于 1 字的「传」被解析
+    '行传': '徒', '徒行传': '徒',
     '加拉太': '加', '以弗所': '弗', '腓立比': '腓', '歌罗西': '西',
     '帖撒罗尼迦前': '帖前', '帖撒罗尼迦后': '帖后',
     '提多': '多', '腓利门': '门', '希伯来': '来', '雅各': '雅',
@@ -203,7 +206,11 @@ function parseConnectedChapterVerse(text, pos, book) {
     }
     
     // 模式3: 纯阿拉伯数字连写 (如 "约316" → 第三章第16节)
-    const m3 = remaining.match(/^(\d+)(\d+)/);
+    // 注意：consumed 必须是整个数字串的长度，只返回切分点会把后半截数字留在高亮之外
+    // （旧写法 consumed:i 会把「17节」错切成 1:7 且只高亮「1」）。
+    // 同时限制总位数 2～3 位：4 位以上（年份「2026」、编号等）一律不当连写，
+    // 否则会被切成 2:26 这类莫须有的引用。
+    const m3 = remaining.match(/^(\d{2,3})(?!\d)/);
     if (m3) {
         const allDigits = m3[0];
         // 尝试不同分割方式
@@ -212,7 +219,7 @@ function parseConnectedChapterVerse(text, pos, book) {
             const verse = parseInt(allDigits.substring(i));
             if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters && 
                 !isNaN(verse) && verse >= 1 && verse <= 176) {
-                return { chapter, verse, consumed: i };
+                return { chapter, verse, consumed: allDigits.length };
             }
         }
     }
@@ -1615,13 +1622,8 @@ class BibleSearchEngine {
         let text = hit[1] || '';
         if (kind === 'r') {
             const quoted = [];
-            for (const t of (hit[2] || [])) {
-                const verses = this.plugin.getVersesForTarget
-                    ? this.plugin.getVersesForTarget(t, item.versionKey)
-                    : [];
-                for (const v of verses) {
-                    quoted.push(v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content);
-                }
+            for (const v of this.plugin.getChainReferencedVerses(hit, item.versionKey)) {
+                quoted.push(v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content);
             }
             if (quoted.length) text = text + '\n' + quoted.join('\n');
         }
@@ -1892,6 +1894,19 @@ class BibleProjectionOverlay {
 
         document.body.appendChild(this.overlay);
         if (this.plugin) this.plugin.currentProjection = this;
+        // 点击注解 / 串珠面板以外的任何区域即收起已展开的面板。
+        // 上标（sup）自身的点击处理器里调了 stopPropagation，不会冒泡到这里，
+        // 所以「点上标开关面板」与「点别处自动收起」两套逻辑互不干扰。
+        this._noteOutsideHandler = (e) => {
+            const t = e && e.target;
+            if (t && t.closest) {
+                const inside = t.closest('.bible-proj-notes');
+                // 只认属于本投影的面板，避免误判成「内部」而不收起
+                if (inside && this.overlay && this.overlay.contains(inside)) return;
+            }
+            this.closeProjNotePanels();
+        };
+        document.addEventListener('click', this._noteOutsideHandler);
         this.bindEvents(toolCenter, bottomRow);
         this.renderSlide();
         // 投影刚打开就把键盘焦点从笔记编辑器 / 输入框收回投影：
@@ -2347,14 +2362,29 @@ class BibleProjectionOverlay {
         panel.className = 'bible-proj-notes';
         panel.style.display = 'none';
         panel.style.fontSize = fontPx + 'px';
+        panel.style.cursor = 'pointer';
         panel.dataset.projDelta = textDiv.dataset.projDelta || '0';
         panel.dataset.projFontScale = String(scale || 1);
+        // 点击已展开的注解 / 串珠面板：若用户只是在面板内拖选文字（已产生选区），则不收起，
+        // 便于选中注解 / 串珠正文后复制；只有「无选区的普通点击」才视为收起（与「再点上标」「点经文正文」同为关闭方式）
+        panel.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const sel = (typeof window !== 'undefined' && window.getSelection) ? window.getSelection() : null;
+            if (sel && sel.toString().trim().length > 0) return; // 正在选字，不关闭
+            this.closeProjNotePanels();
+        });
         const show = (kind, label) => {
             const key = kind + ':' + label;
             if (panel.style.display === 'block' && panel.getAttribute('data-note-key') === key) {
-                panel.style.display = 'none';
+                // 再点同一个上标＝收起
+                this.closeProjNotePanels();
                 return;
             }
+            // 同一时刻只展开一个：展开新的自动收起旧的（旧面板可能属于同一页上的另一节经文）
+            this.closeProjNotePanels(panel);
+            // 在展开前记下当前滚动位置：注解 / 串珠往往很长需要滚动查看，
+            // 关闭后按这个位置还原，避免画面跳走、要重新找之前的经文位置
+            this._saveProjNoteScroll();
             this.fillProjNotePanel(panel, nd, kind, label, pk);
             panel.setAttribute('data-note-key', key);
             panel.style.display = 'block';
@@ -2363,11 +2393,50 @@ class BibleProjectionOverlay {
         container.appendChild(panel);
     }
 
+    // 收起投影里已展开的注解 / 串珠面板；exceptPanel 传入时保留它（用于「展开新的自动收起旧的」）
+    closeProjNotePanels(exceptPanel) {
+        if (!this.overlay) return;
+        let closed = false;
+        this.overlay.querySelectorAll('.bible-proj-notes').forEach(p => {
+            if (exceptPanel && p === exceptPanel) return;
+            if (p.style.display === 'block') { p.style.display = 'none'; closed = true; }
+        });
+        // 关闭面板后内容高度回缩，把滚动位置还原到展开前的位置，避免画面跳走
+        if (closed) this._restoreProjNoteScroll();
+    }
+
+    // 记录当前投影幻灯片的滚动位置（展开注解 / 串珠前调用）
+    _saveProjNoteScroll() {
+        const els = this._getProjScrollContainers();
+        if (els) this._projNoteScroll = els.map(el => ({ el, top: el.scrollTop }));
+    }
+
+    // 把滚动位置还原到展开注解 / 串珠前的位置（关闭面板后调用）
+    _restoreProjNoteScroll() {
+        if (!this._projNoteScroll) return;
+        for (const s of this._projNoteScroll) {
+            try { s.el.scrollTop = s.top; } catch (e) { /* 元素已不存在时忽略 */ }
+        }
+    }
+
+    // 投影幻灯片里真正发生滚动的容器：slide wrapper（带 overflow-y:auto; max-height:100%），
+    // 以及外层 contentArea，两者一并记下、关闭时一并还原
+    _getProjScrollContainers() {
+        const list = [];
+        const wrapper = this.contentArea && this.contentArea.querySelector('.bible-proj-slide-wrapper');
+        if (wrapper) list.push(wrapper);
+        if (this.contentArea && list.indexOf(this.contentArea) === -1) list.push(this.contentArea);
+        return list.length ? list : null;
+    }
+
     // 投影里展开的注解 / 串珠内容（字号由外层面板统一控制，与经文一致）
     // 与经文的关系：上方一条分割线隔开 + 淡背景 + 左侧重点色条 + 类型徽标，
     // 观感上明确是「附注内容」而不是经文正文；正文按段落分块，段落之间留出一个空行
     fillProjNotePanel(panel, nd, kind, label, pk) {
         panel.empty();
+        // 顶部收起按钮：面板内部已改为「选字时不关闭」，这里给一个显式的收起入口
+        const dismiss = panel.createDiv({ cls: 'bible-proj-note-dismiss', text: '✕ 收起' });
+        dismiss.addEventListener('click', (e) => { e.stopPropagation(); this.closeProjNotePanels(); });
         const paras = (text) => String(text || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
         const addLabel = (row, kindLabel, kindCls, title) => {
             const chip = row.createEl('span', { cls: 'bible-proj-note-label ' + kindCls, text: kindLabel });
@@ -2390,13 +2459,11 @@ class BibleProjectionOverlay {
             addLabel(head, '串珠 ' + r[0], 'bible-proj-note-label-ref', '恢复本串珠');
             head.createEl('span', { cls: 'bible-proj-note-refs', text: r[1] });
             const body = row.createDiv({ cls: 'bible-proj-note-body' });
-            for (const t of (r[2] || [])) {
-                for (const v of this.plugin.getVersesForTarget(t, pk)) {
-                    body.createEl('div', {
-                        cls: 'bible-proj-note-ref-verse',
-                        text: v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content
-                    });
-                }
+            for (const v of this.plugin.getChainReferencedVerses(r, pk)) {
+                body.createEl('div', {
+                    cls: 'bible-proj-note-ref-verse',
+                    text: v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content
+                });
             }
         }
     }
@@ -3828,6 +3895,7 @@ class BibleSearchView extends ItemView {
         const selectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局全选' });
         const deselectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '取消全选' });
         const copyAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局复制' });
+        this.captureCopySelection(copyAllBtn);
         const focusBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '逐节投影' });
         const parallelBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '并列投影' });
         const mixedBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '混合投影' });
@@ -3902,6 +3970,7 @@ class BibleSearchView extends ItemView {
         deselectAllBtn.addEventListener('click', () => this.deselectAll());
         pageSelectAllBtn.addEventListener('click', () => this.selectPageAll());
         copyAllBtn.addEventListener('click', () => this.copyAll());
+        this.captureCopySelection(pageCopyBtn);
         pageCopyBtn.addEventListener('click', () => this.copyPageAll());
         focusBtn.addEventListener('click', () => this.openProjection('focus'));
         parallelBtn.addEventListener('click', () => this.openProjection('parallel'));
@@ -4524,6 +4593,7 @@ class BibleSearchView extends ItemView {
     }
 
     copyAll() {
+        if (this.copyPendingSelectionIfAny()) return;
         // 全局复制：候选池中保留的候选项排在前面，其后是当前视图选中的项
         this.copySelected(this.getAllSelections());
     }
@@ -4584,7 +4654,28 @@ class BibleSearchView extends ItemView {
         }
     }
 
+    // 在「复制」按钮上记录用户当前高亮的文字（mousedown 时抓，避免点击后选中被清空）
+    captureCopySelection(btn) {
+        if (!btn) return;
+        btn.addEventListener('mousedown', () => {
+            try { const s = window.getSelection(); this._pendingCopyText = s ? s.toString() : ''; }
+            catch (e) { this._pendingCopyText = ''; }
+        });
+    }
+
+    // 若用户已高亮文字，则优先复制该文字并返回 true（调用方应直接 return）
+    copyPendingSelectionIfAny() {
+        const sel = (this._pendingCopyText || '').trim();
+        this._pendingCopyText = '';
+        if (!sel) return false;
+        this.copyToClipboard(sel)
+            .then(() => new Notice('已复制选中的文字'))
+            .catch(() => new Notice('复制失败'));
+        return true;
+    }
+
     copyPageAll() {
+        if (this.copyPendingSelectionIfAny()) return;
         const paged = this.getPagedResults();
         // 本页包含的经文（主版本 + 其对照版本）
         const pageKeys = new Set();
@@ -4737,6 +4828,7 @@ class BibleSearchView extends ItemView {
         const selectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局全选' });
         const deselectAllBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局取消' });
         const copySelectedBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '全局复制' });
+        this.captureCopySelection(copySelectedBtn);
         const focusProjBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '逐节投影' });
         const parallelProjBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '并列投影' });
         const mixedProjBtn = actionBody.createEl('button', { cls: 'bible-action-btn', text: '混合投影' });
@@ -4850,6 +4942,7 @@ class BibleSearchView extends ItemView {
         };
 
         const doGlobalCopy = () => {
+            if (this.copyPendingSelectionIfAny()) return;
             // 全局复制：候选池中保留的候选项排在前面，其后是当前视图选中的项
             const selected = this.getAllSelections();
             if (selected.length === 0) { new Notice('请先选择要复制的内容'); return; }
@@ -4880,11 +4973,49 @@ class BibleSearchView extends ItemView {
         };
 
         const doPageCopy = () => {
+            if (this.copyPendingSelectionIfAny()) return;
             // 本章选中项（含候选池中属于本章的保留项）
             const pageSelected = this.getAllSelections().filter(s => s.item.bookId === book.id && s.item.chapter === chapter);
             if (pageSelected.length === 0) { new Notice('本章没有选中的内容'); return; }
             const lines = buildCopyLines(pageSelected);
             this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + pageSelected.length + ' 条本章选中项'); });
+        };
+
+        // 本页操作「经文 / 纲目」：只选中本章该类型的全部内容（取消本页其它类型的选中）
+        const selectPageByType = (type) => {
+            const pageItems = this.readerChapter === 1 ? [...themeItems, ...items] : [...items];
+            const newlySelected = [];
+            const deselected = [];
+            for (const item of pageItems) {
+                const existingIdx = this.readerEntryIdx(item);
+                if (item.type === type) {
+                    if (existingIdx === -1) {
+                        const entry = { item: item, selected: true, order: 0, sideBySide: false };
+                        this.readerResults.push(entry);
+                        newlySelected.push(entry);
+                    } else {
+                        const e = this.readerResults[existingIdx];
+                        e.selected = true; e.sideBySide = false; e.order = 0;
+                        newlySelected.push(e);
+                    }
+                } else {
+                    if (existingIdx !== -1 && this.readerResults[existingIdx].selected) {
+                        const e = this.readerResults[existingIdx];
+                        e.selected = false; e.sideBySide = false; e.order = 0;
+                        deselected.push(item);
+                    }
+                }
+            }
+            this.recalcReaderOrders();
+            if (this.keepCandidates) {
+                for (const e of newlySelected) this.poolSyncSelect(e.item, !!e._isCompare, false, 'reader');
+                for (const it of deselected) this.poolSyncDeselect(it, false);
+            }
+            this.updateKeepCandidatesUI();
+            this.refreshAllReaderCards();
+            this.refreshNotePanels();
+            const label = type === 'verse' ? '经文' : '纲目';
+            new Notice('已只选中本章' + label + '（本页）');
         };
 
         // ========== 事件绑定 ==========
@@ -4896,21 +5027,11 @@ class BibleSearchView extends ItemView {
         mixedProjBtn.addEventListener('click', () => this.openReaderProjection('mixed'));
 
         pageSelectAllBtn.addEventListener('click', doPageSelectAll);
+        this.captureCopySelection(pageCopyBtn);
         pageCopyBtn.addEventListener('click', doPageCopy);
 
-        copyVersesBtn.addEventListener('click', () => {
-            const verses = items.filter(i => i.type === 'verse');
-            if (verses.length === 0) { new Notice('本章没有经文内容'); return; }
-            const lines = verses.map(v => v.bookShortName + v.chapter + ':' + v.verse + ' ' + v.content);
-            this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + verses.length + ' 节经文'); });
-        });
-
-        copyOutlinesBtn.addEventListener('click', () => {
-            const outlines = items.filter(i => i.type === 'outline');
-            if (outlines.length === 0) { new Notice('本章没有纲目内容'); return; }
-            const lines = outlines.map(o => '> ' + o.content);
-            this.copyToClipboard(lines.join('\n\n')).then(() => { new Notice('已复制 ' + outlines.length + ' 条纲目'); });
-        });
+        copyVersesBtn.addEventListener('click', () => selectPageByType('verse'));
+        copyOutlinesBtn.addEventListener('click', () => selectPageByType('outline'));
 
         this.updateKeepCandidatesUI();
     }
@@ -5326,11 +5447,10 @@ class BibleSearchView extends ItemView {
         }
         for (const r of list) {
             const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
+            const verses = this.plugin.getChainReferencedVerses(r, this.getReaderPrimaryVersion());
             const quoted = [];
-            for (const t of (r[2] || [])) {
-                for (const v of this.getVersesForTarget(t)) {
-                    quoted.push(v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content);
-                }
+            for (const v of verses) {
+                quoted.push(v.bookShortName + v.chapter + ':' + v.verse + (v.part || '') + ' ' + v.content);
             }
             const refText = item.bookShortName + item.chapter + ':' + item.verse + (item.part || '') + '串' + r[0];
             const bodyText = r[1] + (quoted.length ? '\n' + quoted.join('\n') : '');
@@ -5344,24 +5464,22 @@ class BibleSearchView extends ItemView {
             const head = content.createDiv({ cls: 'bible-note-ref-head' });
             head.createEl('span', { cls: 'bible-note-label bible-note-label-ref', text: '串' + r[0] });
             head.createEl('span', { cls: 'bible-note-refs', text: r[1] });
-            for (const t of (r[2] || [])) {
-                for (const v of this.getVersesForTarget(t)) {
-                    const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
-                    const addr = vr.createEl('span', {
-                        cls: 'bible-note-ref-addr',
-                        text: v.bookShortName + v.chapter + ':' + v.verse
+            for (const v of verses) {
+                const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
+                const addr = vr.createEl('span', {
+                    cls: 'bible-note-ref-addr',
+                    text: v.bookShortName + v.chapter + ':' + v.verse
+                });
+                addr.title = '点击跳转到该节';
+                addr.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.jumpToBibleReader({
+                        bookId: v.bookId,
+                        bookShortName: v.bookShortName,
+                        allRefs: [{ chapter: v.chapter, verse: v.verse, verseEnd: null, suffix: null, endChapter: null, endVerse: null }]
                     });
-                    addr.title = '点击跳转到该节';
-                    addr.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.jumpToBibleReader({
-                            bookId: v.bookId,
-                            bookShortName: v.bookShortName,
-                            allRefs: [{ chapter: v.chapter, verse: v.verse, verseEnd: null, suffix: null, endChapter: null, endVerse: null }]
-                        });
-                    });
-                    vr.createEl('span', { cls: 'bible-note-ref-text', text: v.content });
-                }
+                });
+                vr.createEl('span', { cls: 'bible-note-ref-text', text: v.content });
             }
         }
     }
@@ -5760,6 +5878,8 @@ class BibleSearchPlugin extends Plugin {
         // 构建书卷名列表（用于引用识别）
         this.allBookNames = this.buildBookNameList();
         this.verseIndex = new Map();
+        // 章 → 该章节数（供「只写到章」的引用在弹窗里展开整章）
+        this.chapterVerseCounts = new Map();
 
         // 注册文章内圣经引用自动高亮
         this.registerMarkdownPostProcessor((element, context) => {
@@ -6265,6 +6385,105 @@ class BibleSearchPlugin extends Plugin {
         return pool.filter(i => hit(i) && i.bookId === bid && i.chapter === cap && i.verse >= v1 && i.verse <= hi).slice(0, 20);
     }
 
+    // 串珠目标 -> 实际引用的经文条目（补全数据里缺失的目标）
+    // 有些串珠的「文字」（如「太十三54～58；路四16～24」）提到了多个引用，但 targets 数组只列了其中一部分，
+    // 导致展开时只显示部分经文。这里以串珠文字为权威来源：解析出所有被引的（书卷+章+节），
+    // 凡是 targets 里没有覆盖的，都从经文数据里取出来补上，保证「提到几处就显示几处」。
+    getChainReferencedVerses(r, primaryKey) {
+        if (!r) return [];
+        const pk = primaryKey || this.getPrimaryVersionKey();
+        const out = [];
+        const seen = new Set();
+        const addVerses = (verses) => {
+            for (const v of (verses || [])) {
+                const k = v.bookId + '-' + v.chapter + '-' + v.verse + '-' + (v.part || '');
+                if (!seen.has(k)) { seen.add(k); out.push(v); }
+            }
+        };
+        // 1) 先按串珠文字顺序取（保证显示顺序与文字一致）
+        for (const ref of this.parseChainRefText(r[1])) {
+            addVerses(this.fetchRefVerses(ref, pk));
+        }
+        // 2) 再补上 targets 里有、但文字解析没覆盖到的孤立目标（极少见，兜底）
+        for (const t of (r[2] || [])) {
+            for (const v of this.getVersesForTarget(t, pk)) {
+                const k = v.bookId + '-' + v.chapter + '-' + v.verse + '-' + (v.part || '');
+                if (!seen.has(k)) { seen.add(k); out.push(v); }
+            }
+        }
+        return out;
+    }
+
+    // 解析串珠文字里提到的所有引用，返回 [{bookId, chapter, verse, verseEnd, endChapter, endVerse}]
+    // 处理：去掉开头的「N～M节：」当前经文范围；「参」前缀；书名沿用（去掉书名只写章节时沿用上一个书名）；
+    // 章/节可为中文或阿拉伯数字；支持同章范围与跨章范围（如「利五1～六7」「出七1～十三1」）。
+    // 书名表排除易歧义的「约一/约二/约三」，避免把「约一51」误判为约翰一书（恢复本里「约」指约翰福音）。
+    parseChainRefText(text) {
+        if (!text) return [];
+        // 同 findBibleReferences：恢复本串珠文字中的零偶尔也用白色圆圈○(U+25CB)，先归一为汉字〇(U+3007)
+        text = text.replace(/○/g, '〇');
+        let s = text.replace(/^\s*\d+[～~\-至]+\d+节\s*[：:]?\s*/, '');
+        const refs = [];
+        const seen = new Set();
+        let curBook = null;
+        const NAMES = BOOK_SHORT_NAMES.filter(n => n !== '约一' && n !== '约二' && n !== '约三');
+        const cn = '[一二三四五六七八九十百零〇]';
+        const numRe = new RegExp('^(' + cn + '+|\\d+)');
+        for (const raw of s.split(/[；;、，,　]/)) {
+            let part = raw.trim();
+            if (!part) continue;
+            if (part.startsWith('参')) part = part.slice(1);
+            let bookName = null;
+            for (const nm of NAMES) { if (part.startsWith(nm)) { bookName = nm; part = part.slice(nm.length); break; } }
+            if (!bookName) bookName = curBook; else curBook = bookName;
+            if (!bookName) continue;
+            const book = BOOK_MAP[bookName] || BOOK_MAP[BOOK_ALIASES[bookName]];
+            if (!book) continue;
+            const cm = part.match(numRe);
+            if (!cm) continue;
+            const ch = /^\d/.test(cm[1]) ? parseInt(cm[1]) : chineseToNumber(cm[1]);
+            part = part.slice(cm[0].length);
+            const vm = part.match(new RegExp('^[:：]?\\s*(' + cn + '+|\\d+)\\s*节?'));
+            if (!vm) continue;
+            const v1 = /^\d/.test(vm[1]) ? parseInt(vm[1]) : chineseToNumber(vm[1]);
+            part = part.slice(vm[0].length);
+            let v2 = v1, endChapter = null, endVerse = null;
+            const rm = part.match(new RegExp('^[～~-－至–—‐]+\\s*(' + cn + '+|\\d+)'));
+            if (rm) {
+                const endStr = rm[1];
+                const ecm = endStr.match(new RegExp('^(' + cn + '+|\\d+)\\s*[章篇]?\\s*(' + cn + '+|\\d+)?'));
+                if (ecm && ecm[2] != null) {
+                    endChapter = /^\d/.test(ecm[1]) ? parseInt(ecm[1]) : chineseToNumber(ecm[1]);
+                    endVerse = /^\d/.test(ecm[2]) ? parseInt(ecm[2]) : chineseToNumber(ecm[2]);
+                } else {
+                    v2 = /^\d/.test(endStr) ? parseInt(endStr) : chineseToNumber(endStr);
+                }
+            }
+            const sig = book.id + ':' + ch + ':' + v1 + (endChapter ? ('~' + endChapter + ':' + endVerse) : ('-' + v2));
+            if (!seen.has(sig)) { seen.add(sig); refs.push({ bookId: book.id, chapter: ch, verse: v1, verseEnd: v2, endChapter: endChapter, endVerse: endVerse }); }
+        }
+        return refs;
+    }
+
+    // 按引用取经文条目（支持跨章范围，如「利五1～六7」）
+    fetchRefVerses(ref, primaryKey) {
+        const pk = primaryKey || this.getPrimaryVersionKey();
+        const pool = this.allItems || [];
+        const hit = (i) => i.versionKey === pk && i.type === 'verse';
+        if (ref.endChapter && ref.endChapter !== ref.chapter) {
+            const res = [];
+            for (const i of pool) {
+                if (!hit(i) || i.bookId !== ref.bookId) continue;
+                const afterStart = (i.chapter > ref.chapter) || (i.chapter === ref.chapter && i.verse >= ref.verse);
+                const beforeEnd = (i.chapter < ref.endChapter) || (i.chapter === ref.endChapter && i.verse <= ref.endVerse);
+                if (afterStart && beforeEnd) res.push(i);
+            }
+            return res.slice(0, 40);
+        }
+        const v1 = ref.verse, hi = (ref.verseEnd && ref.verseEnd > v1) ? ref.verseEnd : v1;
+        return pool.filter(i => hit(i) && i.bookId === ref.bookId && i.chapter === ref.chapter && i.verse >= v1 && i.verse <= hi).slice(0, 20);
+    }
+
     // 下载 / 更新注解数据文件（约 6MB）。raw.githubusercontent 失败时回退 jsDelivr
     async installNotesData(manual = true) {
         const p = `.obsidian/plugins/bible-search-reader/${NOTES_FILE}`;
@@ -6422,11 +6641,10 @@ class BibleSearchPlugin extends Plugin {
         }
         for (const r of refs) {
             const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
+            const verses = this.plugin.getChainReferencedVerses(r, pk);
             const quoted = [];
-            for (const t of (r[2] || [])) {
-                for (const tv of this.getVersesForTarget(t, pk)) {
-                    quoted.push(tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') + ' ' + tv.content);
-                }
+            for (const tv of verses) {
+                quoted.push(tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') + ' ' + tv.content);
             }
             const refText = shortName + (vi ? vi.chapter : '') + ':' + (vi ? vi.verse : '') + (vi ? (vi.part || '') : '') + '串' + r[0];
             const bodyText = r[1] + (quoted.length ? '\n' + quoted.join('\n') : '');
@@ -6440,12 +6658,10 @@ class BibleSearchPlugin extends Plugin {
             const head = content.createDiv({ cls: 'bible-note-ref-head' });
             head.createEl('span', { cls: 'bible-note-label bible-note-label-ref', text: '串' + r[0] });
             head.createEl('span', { cls: 'bible-note-refs', text: r[1] });
-            for (const t of (r[2] || [])) {
-                for (const tv of this.getVersesForTarget(t, pk)) {
-                    const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
-                    vr.createEl('span', { cls: 'bible-note-ref-addr', text: tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') });
-                    vr.createEl('span', { cls: 'bible-note-ref-text', text: tv.content });
-                }
+            for (const tv of verses) {
+                const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
+                vr.createEl('span', { cls: 'bible-note-ref-addr', text: tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') });
+                vr.createEl('span', { cls: 'bible-note-ref-text', text: tv.content });
             }
         }
     }
@@ -7021,6 +7237,8 @@ class BibleSearchPlugin extends Plugin {
 
     buildVerseIndex() {
         this.verseIndex.clear();
+        // 章 → 该章最大节号（用于「只写到章」的引用在弹窗里展开整章）
+        this.chapterVerseCounts = new Map();
         const primaryKey = this.getPrimaryVersionKey();
         if (!primaryKey) return;
         for (const item of this.allItems) {
@@ -7030,7 +7248,17 @@ class BibleSearchPlugin extends Plugin {
             let arr = this.verseIndex.get(key);
             if (!arr) { arr = []; this.verseIndex.set(key, arr); }
             arr.push(item);
+            const ck = `${item.bookId}-${item.chapter}`;
+            if (item.verse > (this.chapterVerseCounts.get(ck) || 0)) this.chapterVerseCounts.set(ck, item.verse);
         }
+    }
+
+    // 某章的节数；数据缺失时按 150 兜底（避免“创世记一章”只弹出前几节）
+    getChapterVerseCount(bookId, chapter) {
+        if (this.chapterVerseCounts && this.chapterVerseCounts.has(`${bookId}-${chapter}`)) {
+            return this.chapterVerseCounts.get(`${bookId}-${chapter}`);
+        }
+        return 150;
     }
 
     getPrimaryVersionKey() {
@@ -7042,10 +7270,10 @@ class BibleSearchPlugin extends Plugin {
     // MarkdownPostProcessor 对每个块元素单独调用，局部变量无法跨块传递，因此存到实例上。
     refCtxReset(docPath, lineNo) {
         const c = this._refCtx;
-        if (!c) { this._refCtx = { docPath: docPath || null, lineNo: lineNo == null ? -1 : lineNo, bookId: null, chapter: null, strongChapter: null }; return; }
+        if (!c) { this._refCtx = { docPath: docPath || null, lineNo: lineNo == null ? -1 : lineNo, bookId: null, chapter: null, strongChapter: null, dormantChapter: null }; return; }
         // 换文档，或行号回退（说明是一次新的渲染，从文档开头重新处理）→ 重置上下文
         if ((docPath && c.docPath && docPath !== c.docPath) || (lineNo != null && lineNo <= c.lineNo)) {
-            this._refCtx = { docPath: docPath || c.docPath, lineNo: lineNo == null ? -1 : lineNo, bookId: null, chapter: null, strongChapter: null };
+            this._refCtx = { docPath: docPath || c.docPath, lineNo: lineNo == null ? -1 : lineNo, bookId: null, chapter: null, strongChapter: null, dormantChapter: null };
             return;
         }
         if (docPath && !c.docPath) c.docPath = docPath;
@@ -7072,10 +7300,11 @@ class BibleSearchPlugin extends Plugin {
         let globalLastBookId = ctx.bookId != null ? ctx.bookId : null;
         let globalLastChapter = ctx.chapter != null ? ctx.chapter : null;
         let globalLastStrongChapter = ctx.strongChapter != null ? ctx.strongChapter : null;
+        let globalLastDormantChapter = ctx.dormantChapter != null ? ctx.dormantChapter : null;
         for (const textNode of textNodes) {
             const text = textNode.textContent;
             if (!text || text.trim().length === 0) continue;
-            const matches = this.findBibleReferences(text, globalLastBookId, globalLastChapter);
+            const matches = this.findBibleReferences(text, globalLastBookId, globalLastChapter, globalLastStrongChapter, globalLastDormantChapter);
             if (matches.length === 0) continue;
             const fragment = document.createDocumentFragment();
             let lastIndex = 0;
@@ -7128,14 +7357,19 @@ class BibleSearchPlugin extends Plugin {
             const lastRefOfMatch = lastMatch.allRefs[lastMatch.allRefs.length - 1];
             // 跨章范围（如“路一1-二2”）之后的弱引用应续接结束章（第二章），而不是起始章
             const endedChapter = this.refEndChapter(lastRefOfMatch);
-            if (endedChapter != null) globalLastChapter = endedChapter;
+            if (endedChapter != null) {
+                globalLastChapter = endedChapter;
+                globalLastDormantChapter = endedChapter;
+            }
             // 如果是强引用（有 bookName），更新强引用上下文
             if (lastMatch.bookName) {
                 globalLastStrongChapter = endedChapter != null ? endedChapter : globalLastStrongChapter;
             }
             // 若文本以句号/问号/感叹号结束，重置章上下文（新句子不再沿用章号）；
-            // 但书卷上下文保留——只写章节未写书卷时，仍沿用前面段落最后出现的书卷
+            // 但书卷上下文保留——只写章节未写书卷时，仍沿用前面段落最后出现的书卷。
+            // 被清掉的章号存为“休眠章”，供后续出现的明确经节标记（（16）/——16/17节）复用。
             if (/[。！？]/.test(text.trim().slice(-1))) {
+                if (globalLastChapter != null) globalLastDormantChapter = globalLastChapter;
                 globalLastChapter = null;
                 globalLastStrongChapter = null;
             }
@@ -7143,6 +7377,7 @@ class BibleSearchPlugin extends Plugin {
         ctx.bookId = globalLastBookId;
         ctx.chapter = globalLastChapter;
         ctx.strongChapter = globalLastStrongChapter;
+        ctx.dormantChapter = globalLastDormantChapter;
     }
 
     shouldSkipNode(node) {
@@ -7176,7 +7411,13 @@ class BibleSearchPlugin extends Plugin {
         return true;
     }
 
-    findBibleReferences(text, lastBookId, lastChapter, lastStrongChapter) {
+    // dormantChapter：被句末句号清掉的“上一个章号”。只有遇到明确的经节标记时才复用它，
+    // 这样“创一1。”之后另起一句仍不会把正文数字当成节号，但“（16）”“——16”“17节”能接上。
+    findBibleReferences(text, lastBookId, lastChapter, lastStrongChapter, dormantChapter) {
+        // 恢复本（及多数中文和合本）引用中的零常写作白色圆圈「○」(U+25CB)，如「诗一○二27」；
+        // 而中文数字解析只认汉字〇(U+3007)与「零」。这里统一归一为〇——两者都是单码元、长度不变，
+        // 后续高亮所用字符偏移不受影响。一处归一即可覆盖全部中文数字正则。
+        text = text.replace(/○/g, '〇');
         const matches = [];
         const coveredRanges = [];
         // 已确定的引用按位置组成“时间线”。弱引用（未写书卷、只写章节或节号）解析时，
@@ -7219,8 +7460,8 @@ class BibleSearchPlugin extends Plugin {
                 }
             }
         }
-        // 阶段2: 括号内弱引用
-        const bracketMatches = this.findBracketRefs(text, coveredRanges, matches, resolveCtx);
+        // 阶段2: 括号内弱引用（括号本身就是明确标记，可以直接复用休眠章上下文）
+        const bracketMatches = this.findBracketRefs(text, coveredRanges, matches, resolveCtx, dormantChapter);
         for (const m of bracketMatches) pushMatch(m);
         // 阶段3: 行首弱引用（每行按自身位置取上下文）
         const hasCtx = (lastBookId != null) || timeline.length > 0;
@@ -7236,13 +7477,18 @@ class BibleSearchPlugin extends Plugin {
         // 阶段6: 行内省略书卷名/章号的弱引用（如纲目行“　一 1”“　一1”“　一2上”“　24～25”“　一1～二3”），
         // 依附本段或跨段落上下文；能完整吞并范围/后缀/跨章，须在阶段5之前运行
         if (hasCtx) {
-            const weakCont = this.findWeakContinuationRefs(text, coveredRanges, resolveCtx);
+            const weakCont = this.findWeakContinuationRefs(text, coveredRanges, resolveCtx, dormantChapter);
             for (const m of weakCont) pushMatch(m);
         }
         // 阶段5: 行首/行内空白后的连写延续（如“　一2”），作为阶段6未覆盖的兜底（如行首起始处）
         if (hasCtx) {
             const contMatches = this.findInlineContinuationRefs(text, coveredRanges, resolveCtx);
             for (const m of contMatches) pushMatch(m);
+        }
+        // 阶段7: 动词引导的裸“N节”（如“从十二节…到十七节”）
+        if (hasCtx) {
+            const verbLead = this.findVerbLeadVerseRefs(text, coveredRanges, resolveCtx, dormantChapter);
+            for (const m of verbLead) pushMatch(m);
         }
         matches.sort((a, b) => a.start - b.start);
         return matches;
@@ -7294,6 +7540,9 @@ class BibleSearchPlugin extends Plugin {
                     pos = rangeEnd.endPos;
                     // 吞掉范围结束后的“节”字（如“一章二十五至二十八节”）
                     if (text[pos] === '节') pos++;
+                    // 再吞掉范围结束后的上/中/下（如“弗一15～20上”“弗一16下～20节上”）
+                    const endSfx = text.slice(pos).match(/^[上中下]/);
+                    if (endSfx) pos += 1;
                     continue;
                 }
             }
@@ -7593,7 +7842,7 @@ class BibleSearchPlugin extends Plugin {
         return null;
     }
 
-    findBracketRefs(text, coveredRanges, strongMatches, resolveCtx) {
+    findBracketRefs(text, coveredRanges, strongMatches, resolveCtx, dormantChapter) {
         const matches = [];
         const pattern = /[（〔(]([^）〕)]+)[）〕)]/g;
         let m;
@@ -7611,7 +7860,7 @@ class BibleSearchPlugin extends Plugin {
             const c = resolveCtx(start);
             const book = c.bookId != null ? BOOK_ID_MAP[c.bookId] : null;
             if (!book) continue;
-            const initialChapter = c.chapter != null ? c.chapter : null;
+            const initialChapter = c.chapter != null ? c.chapter : dormantChapter;
             const refContent = m[1];
             const refs = this.parseWeakRefList(refContent, book, initialChapter);
             if (refs && refs.length > 0) {
@@ -7672,6 +7921,46 @@ class BibleSearchPlugin extends Plugin {
         return refs;
     }
 
+    // 裸节号（只写节号，章号沿用上下文）。支持中文与阿拉伯数字，也支持
+    // 「17节」「18节上」「16下～20节上」「19～20节上」「20节下～22节中」这类
+    // 恢复本纲目常见写法——旧实现会在后缀 / “节”字处截断，只剩 1:16、1:20 甚至
+    // 退化成连写被切成 1:7。
+    // 注意：数字后面若紧跟 章/篇/冒号 或另一个数字，说明它其实是章号或连写的
+    // 前半截，必须让位给「X章Y节」/ 连写解析。
+    parseBareVerse(text, pos, lastChapter, book) {
+        if (lastChapter == null) return null;
+        const remaining = text.slice(pos);
+        const m = remaining.match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+|\d+)节?/);
+        if (!m) return null;
+        const verse = parseNumber(m[1]);
+        if (isNaN(verse) || verse < 1 || verse > 200) return null;
+        const after = remaining.slice(m[0].length);
+        if (/^[章篇:：\d一二三四五六七八九十百零〇]/.test(after)) return null;
+        let p = pos + m[0].length;
+        let suffix = null, verseEnd = null;
+        // ① 先后缀后范围：「16下～20节上」「20节下～22节中」
+        const sm = text.slice(p).match(/^([上中下])[\s　]*[～~\-－至–—‐][\s　]*([一二三四五六七八九十百零〇]+|\d+)节?([上中下])?/);
+        if (sm) {
+            const v2 = parseNumber(sm[2]);
+            if (!isNaN(v2) && v2 > verse) { suffix = sm[1]; verseEnd = v2; p += sm[0].length; }
+        }
+        // ② 先范围（可带收尾的“节”与后缀）：「19～20节上」
+        if (verseEnd == null) {
+            const rg = text.slice(p).match(/^[\s　]*[～~\-－至–—‐][\s　]*([一二三四五六七八九十百零〇]+|\d+)节?([上中下])?/);
+            if (rg) {
+                const v2 = parseNumber(rg[1]);
+                if (!isNaN(v2) && v2 > verse) { verseEnd = v2; p += rg[0].length; }
+            }
+        }
+        // ③ 只剩后缀：「18节上」「十七节下」
+        if (suffix == null) {
+            const sfx = text.slice(p).match(/^([上中下])/);
+            if (sfx) { suffix = sfx[1]; p += 1; }
+        }
+        if (p <= pos) return null;
+        return { chapter: lastChapter, verse, verseEnd, suffix, endChapter: null, endVerse: null, book: book, consumed: p - pos };
+    }
+
     parseWeakRef(text, book, lastChapter) {
         let pos = 0;
         while (pos < text.length && /\s/.test(text[pos])) pos++;
@@ -7689,8 +7978,6 @@ class BibleSearchPlugin extends Plugin {
                 break;
             }
         }
-        // 纯节号后若紧跟 章/篇/节 或另一个数字，则不是纯节号，让位给 X章 / 连写
-        const afterSeparator = /^[章节篇\d一二三四五六七八九十百零〇]/;
         // 「章 X 节 Y」之后若紧跟范围分隔符 + 数字，补出结束节（如「罗马书八28-30」「约3:16-17」）
         const extendRange = (consumed, verse) => {
             let p = consumed;
@@ -7746,36 +8033,8 @@ class BibleSearchPlugin extends Plugin {
         }
         // 模式C: 只有节号（优先当 lastChapter 已知）
         if (lastChapter !== null) {
-            // 纯数字（如 "18"）应被视为节号
-            const m4 = remaining.match(/^(\d+)/);
-            if (m4 && !afterSeparator.test(remaining.slice(m4[0].length))) {
-                const verse = parseInt(m4[1]);
-                if (!isNaN(verse) && verse >= 1 && verse <= 200) {
-                    let p = pos + m4[0].length;
-                    const r4 = text.slice(p).match(/^[\s　]*[～~\-－至–—‐][\s　]*(\d+)/);
-                    let verseEnd = null;
-                    if (r4) { const v2 = parseInt(r4[1]); if (!isNaN(v2) && v2 >= verse) { verseEnd = v2; p += r4[0].length; } }
-                    const s4 = text.slice(p).match(/^[上中下]半?/);
-                    let suffix = s4 ? s4[0] : null;
-                    if (suffix) p += suffix.length;
-                    return { chapter: lastChapter, verse, verseEnd, suffix, endChapter: null, endVerse: null, book: currentBook, consumed: p - pos };
-                }
-            }
-            // 中文数字节号
-            const m5 = remaining.match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+)[节]?/);
-            if (m5 && !afterSeparator.test(remaining.slice(m5[0].length))) {
-                const verse = parseNumber(m5[1]);
-                if (!isNaN(verse) && verse >= 1) {
-                    let p = pos + m5[0].length;
-                    const r5 = text.slice(p).match(/^[\s　]*[～~\-－至–—‐][\s　]*(\d+)/);
-                    let verseEnd = null;
-                    if (r5) { const v2 = parseNumber(r5[1]); if (!isNaN(v2) && v2 >= verse) { verseEnd = v2; p += r5[0].length; } }
-                    const s5 = text.slice(p).match(/^[上中下]半?/);
-                    let suffix = s5 ? s5[0] : null;
-                    if (suffix) p += suffix.length;
-                    return { chapter: lastChapter, verse, verseEnd, suffix, endChapter: null, endVerse: null, book: currentBook, consumed: p - pos };
-                }
-            }
+            const bare = this.parseBareVerse(text, pos, lastChapter, currentBook);
+            if (bare) return bare;
         }
         // 模式D: 连写（使用智能解析）。remaining 已是切片，offset 传 0
         const m6 = parseConnectedChapterVerse(remaining, 0, currentBook);
@@ -7808,7 +8067,9 @@ class BibleSearchPlugin extends Plugin {
                 const book = c.bookId != null ? BOOK_ID_MAP[c.bookId] : null;
                 if (!book) { pos += line.length + 1; continue; }
                 let p = 0;
-                const ref = this.parseWeakRef(trimmed.slice(p), book, c.chapter);
+                let ref = this.parseWeakRef(trimmed.slice(p), book, c.chapter);
+                // 行首的裸数字若后面紧跟文字（“第五日神说”），是正文不是经节
+                if (ref && this.looksLikeProseNumber(trimmed, 0, ref.consumed, !!ref.verseEnd, !!ref.suffix)) ref = null;
                 if (ref) {
                     // 行首显式写了书卷名时（如“赛四二4”），归属及后续延续都应以切换后的书卷为准
                     const effBook = ref.book || book;
@@ -7932,7 +8193,7 @@ class BibleSearchPlugin extends Plugin {
     // 阶段6：行内省略书卷名/章号的弱引用（如纲目行“　一 1”“　一 2 上”“　24～25”“　一 1～二 3”），
     // 依附本段或跨段落上下文；边界为空白（含全角空格　）、左括号或破折号（如“难处—二14~15”），
     // 不含行首（行首由 findLineStartRefs 负责）
-    findWeakContinuationRefs(text, coveredRanges, resolveCtx) {
+    findWeakContinuationRefs(text, coveredRanges, resolveCtx, dormantChapter) {
         const matches = [];
         // 边界字符：任意空白、任意 Unicode 标点（\p{P}：中英文句读、括号、引号、破折号、斜杠、连接符等）
         // 与任意 Unicode 符号（\p{S}：─━⌈⌊等制图符、箭头、货币符等）。不再逐个枚举，换任何一种标点
@@ -7951,6 +8212,19 @@ class BibleSearchPlugin extends Plugin {
             const book = c.bookId != null ? BOOK_ID_MAP[c.bookId] : null;
             if (!book) { re.lastIndex = start + 1; continue; }
             if (c.chapter != null) runningChapter = c.chapter;
+            // 章上下文被句号清掉时，只有「明确的经节标记」才允许复用前文最后提到的章：
+            // ① 自身带 节 / 上中下 / 范围（如“—17节”“—16下～20节上”）
+            // ② 被括号 / 引号 / 破折号包裹（如“——16”“【16】”“「16」”）
+            // 空格后的裸数字（如“　3”）不算明确标记，仍按旧规则不沿用，避免正文数字被误认
+            if (runningChapter == null && dormantChapter != null) {
+                const probe = this.parseWeakRef(text.slice(start), book, dormantChapter);
+                if (probe && probe.consumed > 0) {
+                    const slice = text.slice(start, start + probe.consumed);
+                    if (/[节上中下～~\-－至–—‐]/.test(slice) || this.isWrappedByPunct(text, start, start + probe.consumed)) {
+                        runningChapter = dormantChapter;
+                    }
+                }
+            }
             const ref = this.parseWeakRef(text.slice(start), book, runningChapter);
             if (!ref || ref.consumed <= 0) { re.lastIndex = start + 1; continue; }
             // 弱引用内部可能显式切换了书卷（如“　俄3”依附约叁上下文），归属应以切换后的书卷为准
@@ -7976,18 +8250,9 @@ class BibleSearchPlugin extends Plugin {
             const isBareCn = /^[一二三四五六七八九十百零〇]+$/.test(matchedSlice);
             const prevCh = start > 0 ? text[start - 1] : '';
             if (isBareCn && /[（〔(]/.test(prevCh) && /^[\s　]*[）〕)]/.test(text.slice(end))) { re.lastIndex = start + 1; continue; }
-            // 纯数字（中文/阿拉伯，可带“第/节”前后缀，如“一”“（四）”“第五”）若未带范围/后缀，
-            // 视为结构标记或正文数字，必须后跟范围/后缀/收尾标点/行尾/括号闭合才认可，
-            // 避免误认纲目标记（“一”）与正文数字（“第五日”“31 岁”）；行尾（含换行）视为边界
-            const bareNum = matchedSlice.replace(/^第/, '').replace(/节$/, '');
-            const pureNum = /^[一二三四五六七八九十百零〇]+$/.test(bareNum) || /^\d+$/.test(bareNum);
-            if (pureNum && !ref.verseEnd && !ref.suffix) {
-                const afterSlice = text.slice(end);
-                // 只跳过空格/制表符，换行保留下来作为“行尾边界”判断依据
-                const skipSpace = afterSlice.match(/^[ \t　]*/);
-                const nextChar = afterSlice.slice(skipSpace ? skipSpace[0].length : 0)[0];
-                if (nextChar && !/[\d～~\-－–—‐上中下）〕)\],，。、；;\n]/.test(nextChar)) { re.lastIndex = start + 1; continue; }
-            }
+            // 裸数字最容易误伤（纲目标记“一”、正文“第五日”“31 岁”）：后面紧跟文字就不算经节。
+            // 反过来，被 【】「」『』（）—— 之类符号包裹的节号后面是标点，能正常被认出来。
+            if (this.looksLikeProseNumber(text, start, end, !!ref.verseEnd, !!ref.suffix)) { re.lastIndex = start + 1; continue; }
             matches.push({
                 text: text.slice(start, end), start, end,
                 bookId: effBook.id, bookName: effBook.fullName, bookShortName: effBook.shortName,
@@ -7995,6 +8260,62 @@ class BibleSearchPlugin extends Plugin {
             });
             const refEndCh = this.refEndChapter(refs[refs.length - 1]);
             if (refEndCh != null) runningChapter = refEndCh;
+            re.lastIndex = end;
+        }
+        return matches;
+    }
+
+    // [start, end) 是否被成对的括号 / 引号包裹（如【16】「16」『16』（16））
+    // 或前面带破折号（如“——16”）。这类位置上的数字几乎不可能是正文，可以放心当经节。
+    isWrappedByPunct(text, start, end) {
+        const prev = start > 0 ? text[start - 1] : '';
+        const next = text[end] || '';
+        if (!prev) return false;
+        if (/[（〔(【「『“‘]/.test(prev) && /[）〕)】」』”’]/.test(next)) return true;
+        if (/[–—‐\-－]/.test(prev)) return true;
+        return false;
+    }
+
+    // 裸数字（中文 / 阿拉伯）若既没带范围也没带上中下后缀，后面又紧接文字，
+    // 说明它只是正文里的一部分（“第五日”“31 岁”“1.标题”），不作经文出处。
+    looksLikeProseNumber(text, start, end, hasRange, hasSuffix) {
+        if (hasRange || hasSuffix) return false;
+        const slice = text.slice(start, end).replace(/^第/, '').replace(/节$/, '');
+        const pureNum = /^[一二三四五六七八九十百零〇]+$/.test(slice) || /^\d+$/.test(slice);
+        if (!pureNum) return false;
+        const afterSlice = text.slice(end);
+        // 只跳过空格/制表符，换行保留下来作为“行尾边界”判断依据
+        const skipSpace = afterSlice.match(/^[ \t　]*/);
+        const nextChar = afterSlice.slice(skipSpace ? skipSpace[0].length : 0)[0];
+        if (!nextChar) return false;
+        // 紧跟汉字 / 字母 / 数字 → 正文。紧跟英文句点 → 列表编号（“1.神爱世人”）
+        if (/[\p{L}\p{N}]/u.test(nextChar) || nextChar === '.') return true;
+        return false;
+    }
+
+    // 阶段7：动词引导的裸“N节”（如“看以西结二十八章，从十二节末句读起，到十七节”）。
+    // 这类节号前面是汉字（“从”“到”），不属于任何边界字符，前面六个阶段都抓不到；
+    // 动词本身不进入高亮，只把“十二节”“十七节”标成经文。
+    findVerbLeadVerseRefs(text, coveredRanges, resolveCtx, dormantChapter) {
+        const matches = [];
+        const re = /(从|到|由)([一二三四五六七八九十百零〇]+|\d+)\s*节/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            const start = m.index + m[1].length;
+            const end = m.index + m[0].length;
+            if (this.isCovered(start, coveredRanges)) { re.lastIndex = end; continue; }
+            const c = resolveCtx(start);
+            const book = c.bookId != null ? BOOK_ID_MAP[c.bookId] : null;
+            if (!book) { re.lastIndex = end; continue; }
+            let chapter = c.chapter != null ? c.chapter : dormantChapter;
+            if (chapter == null) { re.lastIndex = end; continue; }
+            const verse = parseNumber(m[2]);
+            if (!(verse >= 1 && verse <= 200)) { re.lastIndex = end; continue; }
+            matches.push({
+                text: text.slice(start, end), start, end,
+                bookId: book.id, bookName: book.fullName, bookShortName: book.shortName,
+                allRefs: [{ chapter, verse, verseEnd: null, suffix: null, endChapter: null, endVerse: null }]
+            });
             re.lastIndex = end;
         }
         return matches;
@@ -8143,7 +8464,6 @@ class BibleSearchPlugin extends Plugin {
         this.openTooltipPool(sessionKey);
         // 收集弹窗中要显示的经文（每处一节，便于单独勾选与跳转）
         const verses = [];
-        let hasMore = false;
         for (const ref of refs) {
             const chapter = ref.chapter;
             const verse = ref.verse;
@@ -8174,13 +8494,14 @@ class BibleSearchPlugin extends Plugin {
                     verses.push({ chapter: chapter, verse: verse, item: item });
                 }
             } else {
-                for (let v = 1; v <= 3; v++) {
+                // 只写了章没写节（如“以西结二十八章”“创世记一章”）→ 展开整章，不再只显示前三节
+                const total = this.getChapterVerseCount(match.bookId, chapter);
+                for (let v = 1; v <= total; v++) {
                     const key = `${match.bookId}-${chapter}-${v}`;
                     for (const item of (this.verseIndex.get(key) || [])) {
                         verses.push({ chapter: chapter, verse: v, item: item });
                     }
                 }
-                hasMore = true;
             }
         }
 
@@ -8188,10 +8509,10 @@ class BibleSearchPlugin extends Plugin {
         let refText = match.bookShortName;
         const first = refs[0];
         refText += first.chapter;
-        if (first.verse) refText += `:${first.verse}`;
+        // 上/中/下 紧跟在起始节后面更直观：“弗1:16下-20”而不是“弗1:16-20下”
+        if (first.verse) refText += `:${first.verse}${first.suffix || ''}`;
         if (first.verseEnd) refText += `-${first.verseEnd}`;
         if (first.endChapter && first.endVerse) refText += `～${first.endChapter}:${first.endVerse}`;
-        if (first.suffix) refText += first.suffix;
         if (refs.length > 1) refText += ` 等${refs.length}处`;
 
         // 标题行：经文出处（双击跳转）+ 保留候选 + 候选计数 + 清空
@@ -8230,6 +8551,11 @@ class BibleSearchPlugin extends Plugin {
         const selToggleBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn', text: '全选' });
         const copyBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn bible-inline-tooltip-copy', text: '复制' });
         copyBtn.title = '复制勾选的经文';
+        // 抓取用户当前高亮的文字（如注解/串珠正文），点击复制时优先采用
+        let _tooltipCopyText = '';
+        copyBtn.addEventListener('mousedown', () => {
+            try { const s = window.getSelection(); _tooltipCopyText = s ? s.toString() : ''; } catch (_) { _tooltipCopyText = ''; }
+        });
         const projBtn = toolbar.createEl('button', { cls: 'bible-inline-tooltip-btn bible-inline-tooltip-proj', text: '投影' });
         projBtn.title = '投影选中的内容（逐节 / 并列 / 混合）';
         // 「注解」开关：显示 / 隐藏恢复本注解与串珠上标
@@ -8290,10 +8616,22 @@ class BibleSearchPlugin extends Plugin {
         if (verses.length === 0) {
             contentEl.createDiv({ cls: 'bible-inline-tooltip-verse', text: '未找到经文' });
         }
-        // 整个弹窗只保留一个注解/串珠面板：新点开的顶替旧的，避免多次点开堆叠在下方
-        let notePanel = null;
+        // 注解 / 串珠面板：每一节经文都自带一个隐藏的面板容器，紧跟在该节经文之后，
+        // 这样点哪一节的 ¹ / ᵃ 上标，注解就展开在那一节下方（而不是统一堆到弹窗末尾）。
+        // 同时只允许展开一个：点开新的一处会先收起旧的，避免多处同时展开堆叠
+        let openedNotePanel = null;
+        const closeOpenedNotePanel = () => {
+            if (openedNotePanel) {
+                openedNotePanel.style.display = 'none';
+                openedNotePanel.removeAttribute('data-note-key');
+                openedNotePanel = null;
+            }
+        };
         for (const v of verses) {
             const row = contentEl.createDiv({ cls: 'bible-inline-tooltip-verse' });
+            // 本节的注解 / 串珠面板容器：位置紧跟本节经文，默认隐藏（隐藏时不占位）
+            const verseNotePanel = contentEl.createDiv({ cls: 'bible-note-panel' });
+            verseNotePanel.style.display = 'none';
             // 候选框：与圣经搜索 / 圣经阅读一致——未选中是空框，选中后直接显示选中顺序数字
             const box = row.createDiv({ cls: 'bible-inline-tooltip-checkbox' });
             box.title = '点击选中 / 取消此节经文';
@@ -8320,8 +8658,7 @@ class BibleSearchPlugin extends Plugin {
                 this.renderTextWithMarkers(textEl, v.item.content, nd.m, (kind, label) => {
                     // key 带上章/节/上(下)半节，避免不同经的「注1」「串1」被误判为同一面板
                     const key = v.chapter + ':' + v.verse + (v.item.part || '') + ':' + kind + ':' + label;
-                    if (!notePanel) notePanel = contentEl.createDiv({ cls: 'bible-note-panel' });
-                    if (notePanel.style.display === 'block' && notePanel.getAttribute('data-note-key') === key) {
+                    if (verseNotePanel.style.display === 'block' && verseNotePanel.getAttribute('data-note-key') === key) {
                         // 收起注解/串珠面板时同步取消该条的选中：点击标记收起即视为「取消」该注解，
                         // 否则面板收起后序号看不见、但「保留候选」计数仍把它算进去，造成不一致
                         const wantKey = (kind === 'n' ? 'note' : 'chain') + ':' + v.item.bookId + ':' +
@@ -8332,15 +8669,20 @@ class BibleSearchPlugin extends Plugin {
                             this.tooltipPoolRemove(selItem);
                             if (view) view.poolSyncDeselect(selItem, false);
                         }
-                        notePanel.style.display = 'none';
+                        verseNotePanel.style.display = 'none';
+                        verseNotePanel.removeAttribute('data-note-key');
+                        openedNotePanel = null;
                         if (view) view.updateKeepCandidatesUI();
                         if (noteCtx && noteCtx.refresh) noteCtx.refresh();
                         return;
                     }
-                    notePanel._noteCtx = { nd: nd, v: v, kind: kind, label: label };
-                    this.fillTooltipNotePanel(notePanel, nd, v, kind, label, noteCtx);
-                    notePanel.setAttribute('data-note-key', key);
-                    notePanel.style.display = 'block';
+                    // 展开新的一处前先收起当前已展开的那处（可能是同一节的另一条，也可能是别的节的）
+                    closeOpenedNotePanel();
+                    verseNotePanel._noteCtx = { nd: nd, v: v, kind: kind, label: label };
+                    this.fillTooltipNotePanel(verseNotePanel, nd, v, kind, label, noteCtx);
+                    verseNotePanel.setAttribute('data-note-key', key);
+                    verseNotePanel.style.display = 'block';
+                    openedNotePanel = verseNotePanel;
                 });
             } else {
                 textEl.setText(v.item.content);
@@ -8367,9 +8709,6 @@ class BibleSearchPlugin extends Plugin {
                 if (e.target === box || e.target === sideTag) return;
                 setRowChecked(r, !r.selected);
             });
-        }
-        if (hasMore && verses.length > 0) {
-            contentEl.createDiv({ cls: 'bible-inline-tooltip-more', text: '...' });
         }
 
         // ---- 选中 / 取消：始终记入弹窗自己的候选库；勾选「保留候选」时再同步进候选池 ----
@@ -8584,6 +8923,9 @@ class BibleSearchPlugin extends Plugin {
         copyBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const hl = (_tooltipCopyText || '').trim();
+            _tooltipCopyText = '';
+            if (hl) { doCopyText(hl, 1); return; }
             const picked = pickedRows();
             const own = this.getTooltipPool();
             if (picked.length === 0 && own.length === 0) { new Notice('请先勾选要复制的经文'); return; }
