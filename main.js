@@ -260,7 +260,7 @@ const VERSION_MAP = {
     'RCUV': '和合本修订版',
     'CRV': '恢复本（推荐）',
     'RCV': '恢复本（推荐）',
-    'ERV': '英文恢复本（Recovery Version）',
+    'ERV': '英文恢复本',
     'CNVS': '新译本 简体',
     'CNVT': '新译本 繁体',
     'CNV': '新译本 简体',
@@ -287,7 +287,7 @@ const DATA_MANIFEST_URL = 'https://raw.githubusercontent.com/ViaCai/obsidian-bib
 const DEFAULT_VERSIONS = [
     { key: 'CRV', name: '恢复本（推荐）', file: 'bible-crv-data.json', url: DATA_RAW_BASE + 'bible-crv-data.json' },
     { key: 'CUVS', name: '简体新标点和合本（主流）', file: 'bible-cuvs-data.json', url: DATA_RAW_BASE + 'bible-cuvs-data.json' },
-    { key: 'ERV', name: '英文恢复本（Recovery Version）', file: 'bible-erv-data.json', url: DATA_RAW_BASE + 'bible-erv-data.json' }
+    { key: 'ERV', name: '英文恢复本', file: 'bible-erv-data.json', url: DATA_RAW_BASE + 'bible-erv-data.json' }
 ];
 
 // 恢复本注解 / 串珠数据（与 bible-crv-data.json 配套，按 书卷-章 分组）
@@ -6136,6 +6136,10 @@ class BibleSearchPlugin extends Plugin {
 
         // 更新现有版本的 installed 状态（真实反映文件是否存在）
         for (const ver of this.settings.versions) {
+            // 规范化显示名：VERSION_MAP 有定义就统一采用，修正旧版本遗留的 name=key
+            // （例如早期版本扫描 ERV 时 VERSION_MAP 尚无该条目，name 被存成 "ERV"，界面上显示成 "ERV（ERV）"）
+            const canonicalName = VERSION_MAP[ver.key];
+            if (canonicalName && ver.name !== canonicalName) ver.name = canonicalName;
             const found = scanned.find(s => s.key === ver.key);
             if (found) {
                 ver.installed = true;
@@ -6328,9 +6332,10 @@ class BibleSearchPlugin extends Plugin {
     promptInstallVersions() {
         if (this._versionPromptShown) return;
         this._versionPromptShown = true;
-        setTimeout(() => {
+        setTimeout(async () => {
             try {
-                this.showDownloadBanner();
+                // showDownloadBanner 内部会先 await loadNotesData，确保注解缺失判定基于磁盘真实状态
+                await this.showDownloadBanner();
             } catch (e) {
                 console.error('[Bible] 提示下载圣经版本失败:', e);
             }
@@ -6340,8 +6345,16 @@ class BibleSearchPlugin extends Plugin {
     // 统一的非阻塞下载提示横幅（固定右上角）：同时承载「缺失的圣经版本」与「缺失的注解数据」，
     // 一次只出现一个横幅，后台下载，不拦截操作，下载期间也不影响其它操作。
     // 提供逐条「下载」、底部「稍后」与「不再提醒」（仅抑制当前已列出的项）。
-    showDownloadBanner() {
+    // 注意：判断注解缺失前必须先按磁盘真实状态加载注解数据，否则重启后内存里 notesData 尚未就绪
+    // （仍为 null / 空对象），会把「本机已有注解」误判为缺失而每次开机都提醒。
+    async showDownloadBanner() {
         try {
+            // 注解缺失判定前，先确保注解数据已按磁盘真实状态加载完成；
+            // 文件存在则 notesData 会被填充为真实数据，notesMissing 才不会误判。
+            if (this.settings.showNotes) {
+                try { await this.loadNotesData(); } catch (e) { console.error('[Bible] 预加载注解数据失败:', e); }
+            }
+
             const id = 'bible-download-banner';
             const old = document.getElementById(id);
             if (old) old.remove();
