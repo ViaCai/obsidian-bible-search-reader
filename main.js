@@ -260,6 +260,7 @@ const VERSION_MAP = {
     'RCUV': '和合本修订版',
     'CRV': '恢复本（推荐）',
     'RCV': '恢复本（推荐）',
+    'ERV': '英文恢复本（Recovery Version）',
     'CNVS': '新译本 简体',
     'CNVT': '新译本 繁体',
     'CNV': '新译本 简体',
@@ -285,7 +286,8 @@ const DATA_MANIFEST_URL = 'https://raw.githubusercontent.com/ViaCai/obsidian-bib
 
 const DEFAULT_VERSIONS = [
     { key: 'CRV', name: '恢复本（推荐）', file: 'bible-crv-data.json', url: DATA_RAW_BASE + 'bible-crv-data.json' },
-    { key: 'CUVS', name: '简体新标点和合本（主流）', file: 'bible-cuvs-data.json', url: DATA_RAW_BASE + 'bible-cuvs-data.json' }
+    { key: 'CUVS', name: '简体新标点和合本（主流）', file: 'bible-cuvs-data.json', url: DATA_RAW_BASE + 'bible-cuvs-data.json' },
+    { key: 'ERV', name: '英文恢复本（Recovery Version）', file: 'bible-erv-data.json', url: DATA_RAW_BASE + 'bible-erv-data.json' }
 ];
 
 // 恢复本注解 / 串珠数据（与 bible-crv-data.json 配套，按 书卷-章 分组）
@@ -814,6 +816,8 @@ class FirstRunModal extends Modal {
         this.plugin.settings.hasSetup = true;
         await this.plugin.saveSettings();
         await this.plugin.loadBibleData();
+        // 首次确认版本选择后，按主版本同步注解模式（CRV 主版本→开注解，其它→关）
+        await this.plugin.reconcileNotesWithPrimary();
         this.plugin.activateSearchView();
         this.close();
     }
@@ -1086,47 +1090,12 @@ class DataUpdateModal extends Modal {
     }
 }
 
-// 注解数据缺失时的下载提示框：恢复本注解 / 串珠默认开启，本地没有数据文件时提示下载
-class NotesMissingModal extends Modal {
-    constructor(app, plugin) {
-        super(app);
-        this.plugin = plugin;
-    }
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.classList.add('bible-update-modal');
-        contentEl.createEl('h2', { text: '📖 恢复本注解 / 串珠数据未安装' });
-        contentEl.createEl('div', {
-            cls: 'setting-item-description',
-            text: '注解与串珠功能已开启，但本机还没有数据文件 bible-crv-notes.json（约 6MB，含全 66 卷 1189 章的注解与串珠）。'
-        });
-        const tips = contentEl.createEl('ul');
-        tips.createEl('li', { text: '下载后经文里会出现 ¹ ᵃ 上标，点开即可看对应的注解 / 串珠。' });
-        tips.createEl('li', { text: '数据来源为公开的网络资源，版权归水流职事站所有，请自行确认符合当地法规后再使用。' });
-        tips.createEl('li', { text: '不下载也可以正常使用检索与阅读，只是没有注解 / 串珠。' });
-        const btnWrap = contentEl.createDiv();
-        btnWrap.style.cssText = 'display:flex;gap:8px;margin-top:16px;';
-        const dlBtn = btnWrap.createEl('button', { text: '⬇️ 下载安装', cls: 'mod-cta' });
-        const laterBtn = btnWrap.createEl('button', { text: '暂不下载' });
-        const offBtn = btnWrap.createEl('button', { text: '关闭注解功能' });
-        dlBtn.addEventListener('click', async () => {
-            this.close();
-            await this.plugin.installNotesData(true);
-            await this.plugin.refreshNotesViews();
-        });
-        laterBtn.addEventListener('click', () => this.close());
-        offBtn.addEventListener('click', async () => {
-            this.close();
-            await this.plugin.setShowNotes(false);
-            new Notice('已关闭恢复本注解 / 串珠，可在设置里重新开启');
-            await this.plugin.refreshNotesViews();
-        });
-    }
-    onClose() {
-        this.contentEl.empty();
-    }
-}
+// 注解数据缺失时的下载提示：与版本缺失提示统一到左上角非阻塞横幅（见 BibleSearchPlugin.showDownloadBanner），
+// 不再使用阻塞式 Modal，避免打断用户操作。
+
+// 默认可下载版本缺失时的下载提示：本地没有某些默认可下载的圣经版本时，开机提示下载
+// 版本缺失与注解缺失提示已统一为左上角非阻塞横幅（见 BibleSearchPlugin.showDownloadBanner），
+// 不再使用阻塞式 Modal，避免打断用户操作。
 
 // ==================== 设置标签页 ====================
 class BibleSettingTab extends PluginSettingTab {
@@ -1229,6 +1198,8 @@ class BibleSettingTab extends PluginSettingTab {
                         if (firstEnabled) firstEnabled.isPrimary = true;
                         await this.plugin.saveSettings();
                         await this.plugin.loadBibleData();
+                        // 删除版本后主版本可能改变，同步注解模式
+                        await this.plugin.reconcileNotesWithPrimary();
                         this.display();
                     }
                 });
@@ -3097,6 +3068,8 @@ class BibleSearchView extends ItemView {
         const notesCb = notesLabel.createEl('input', { type: 'checkbox' });
         notesCb.checked = !!this.plugin.settings.showNotes;
         notesLabel.createSpan({ text: '恢复本注解 / 串珠' });
+        // 保存引用，便于主版本变化时把注解开关实时同步回这个 checkbox
+        this._compareNotesCb = notesCb;
         const notesStatus = notesRow.createEl('span', { cls: 'bible-compare-modal-notes-status', text: '' });
         const syncNotesStatus = () => {
             const installed = !!this.plugin.settings.notesInstalled;
@@ -3150,6 +3123,15 @@ class BibleSearchView extends ItemView {
             this._compareBackdrop.remove();
             this._compareBackdrop = null;
         }
+        this._compareNotesCb = null;
+    }
+
+    // 把对照 modal 里的「恢复本注解 / 串珠」开关实时同步为当前 settings.showNotes，
+    // 这样主版本切换导致注解模式自动开/关后，无需重开 modal 即可看到正确状态。
+    _syncCompareNotesCheckbox() {
+        if (this._compareNotesCb) {
+            this._compareNotesCb.checked = !!this.plugin.settings.showNotes;
+        }
     }
 
     _renderCompareModal() {
@@ -3193,6 +3175,13 @@ class BibleSearchView extends ItemView {
                 const firstEnabled = this.plugin.settings.versions.find(v => v.enabled && v.installed);
                 for (const v of this.plugin.settings.versions) v.isPrimary = false;
                 if (firstEnabled) firstEnabled.isPrimary = true;
+                const newPrimary = this.plugin.settings.versions.find(v => v.isPrimary)?.key;
+                if (oldPrimary !== newPrimary) {
+                    // 主版本改变：同步注解模式（CRV 主版本→开注解，其它版本→关注解）
+                    await this.plugin.reconcileNotesWithPrimary();
+                    // 注解模式可能已自动切换，实时回写对照 modal 的开关状态
+                    this._syncCompareNotesCheckbox();
+                }
                 await this.plugin.saveSettings();
                 await this.plugin.loadBibleData();
                 this._renderCompareModal();
@@ -3289,7 +3278,13 @@ class BibleSearchView extends ItemView {
             
             // 检查主版本是否改变
             const newPrimary = this.plugin.settings.versions.find(v => v.isPrimary)?.key;
-            
+            if (oldPrimary !== newPrimary) {
+                // 主版本改变：同步注解模式（CRV 主版本→开注解，其它版本→关注解）
+                await this.plugin.reconcileNotesWithPrimary();
+                // 注解模式可能已自动切换，实时回写对照 modal 的开关状态
+                this._syncCompareNotesCheckbox();
+            }
+
             if (this.activeTab === 'reader' && this.readerState === 'content') {
                 this.renderChapterContent();
             }
@@ -5995,9 +5990,14 @@ class BibleSearchPlugin extends Plugin {
         await this.loadBibleData();
 
         this.registerEvent(this.app.workspace.onLayoutReady(async () => {
+            // 启动即维持「注解模式」与主版本一致的不变式：CRV 主版本→开注解，其它主版本→关注解
+            try { await this.reconcileNotesWithPrimary(); } catch (e) { console.error('[Bible] 同步注解模式失败:', e); }
             const hasInstalledVersion = this.settings.versions.some(v => v.installed);
             if (!this.settings.hasSetup || !hasInstalledVersion) {
                 new FirstRunModal(this.app, this).open();
+            } else {
+                // 已配置且已有版本的用户：若有默认可下载版本本机缺失，开机提示下载
+                this.promptInstallVersions();
             }
             // 版本发生变化就显示最新版的更新说明（与更新渠道无关：自带更新 / 插件市场 / BRAT 都覆盖）
             let changelogShown = false;
@@ -6035,10 +6035,21 @@ class BibleSearchPlugin extends Plugin {
             // 已安装圣经数据的版本记录：{ 'bible-crv-data.json': '2026.10.12', ... }
             dataVersions: {},
             // 上次检测数据更新的时间戳（节流用）
-            lastDataCheckAt: 0
+            lastDataCheckAt: 0,
+            // 开机时「不再提醒」针对的各圣经版本 key：只抑制这些版本，新版本 / 版本更新仍会提醒
+            dismissedVersionPrompts: [],
+            // 注解数据缺失提示是否被「不再提醒」关闭（安装成功后会复位为 false，便于日后更新仍提醒）
+            dismissedNotesPrompt: false
         };
         const loaded = await this.loadData() || {};
         this.settings = Object.assign({}, defaults, loaded);
+        // 兼容旧版布尔标志：曾点过「不再提示」的用户，按当时缺失的默认版本写入数组
+        if (loaded && loaded.skipMissingVersionPrompt === true && (!this.settings.dismissedVersionPrompts || this.settings.dismissedVersionPrompts.length === 0)) {
+            this.settings.dismissedVersionPrompts = (this.settings.versions || [])
+                .filter(v => DEFAULT_VERSIONS.some(d => d.key === v.key) && !v.installed)
+                .map(v => v.key);
+        }
+        if (loaded && typeof loaded.skipMissingVersionPrompt !== 'undefined') delete this.settings.skipMissingVersionPrompt;
     }
 
     async saveSettings() {
@@ -6086,6 +6097,21 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         this.settings.versions = deduped;
+
+        // 确保所有默认可下载版本都出现在版本列表中（即使本机尚未安装），
+        // 以便设置页显示对应下载按钮；现有用户升级后也能看到新增的默认可下载版本（如英文恢复本）
+        for (const dv of DEFAULT_VERSIONS) {
+            if (!this.settings.versions.find(v => v.key === dv.key)) {
+                this.settings.versions.push({
+                    key: dv.key,
+                    name: dv.name,
+                    file: dv.file,
+                    enabled: false,
+                    isPrimary: false,
+                    installed: false
+                });
+            }
+        }
 
         // 如果没有任何版本，初始化默认版本列表（优先选中恢复本）
         if (this.settings.versions.length === 0) {
@@ -6267,19 +6293,177 @@ class BibleSearchPlugin extends Plugin {
         await this.refreshNotesViews();
     }
 
+    // 注解标注位置按中文恢复本（CRV）设置，只兼容 CRV。维持「注解模式」与主版本一致的不变式：
+    // 主版本为 CRV 时自动开启注解；主版本为其它版本时自动关闭注解。
+    // 返回 true 表示本次发生了开关变化。
+    async reconcileNotesWithPrimary() {
+        const pk = this.getPrimaryVersionKey();
+        const shouldShow = pk === 'CRV';
+        if (this.settings.showNotes !== shouldShow) {
+            await this.setShowNotes(shouldShow);
+            return true;
+        }
+        return false;
+    }
+
     // 开启注解但本机没有数据文件时提示下载。延迟到当前流程之后再弹，避免打断初始化；
-    // 同一轮会话只提示一次，用户选择“暂不下载”后不再打扰。
+    // 同一轮会话只提示一次。统一交给左上角非阻塞横幅（不弹阻塞 Modal）。
     promptInstallNotes() {
         if (this._notesPromptShown) return;
         this._notesPromptShown = true;
         setTimeout(() => {
             try {
+                // 注解数据已就绪（已安装）则不提示
                 if (this.notesData && Object.keys(this.notesData).length > 0) return;
-                new NotesMissingModal(this.app, this).open();
+                this.showDownloadBanner();
             } catch (e) {
                 console.error('[Bible] 提示下载注解数据失败:', e);
             }
         }, 400);
+    }
+
+    // 本地缺少默认可下载的圣经版本时，开机提示下载（与注解缺失提示同理）。
+    // 同一轮会话只提示一次；统一交给左上角非阻塞横幅（不弹阻塞 Modal）。
+    // 用户点「不再提醒」只抑制当时缺失的版本——新增版本或版本有更新仍会提醒。
+    promptInstallVersions() {
+        if (this._versionPromptShown) return;
+        this._versionPromptShown = true;
+        setTimeout(() => {
+            try {
+                this.showDownloadBanner();
+            } catch (e) {
+                console.error('[Bible] 提示下载圣经版本失败:', e);
+            }
+        }, 800);
+    }
+
+    // 统一的非阻塞下载提示横幅（固定右上角）：同时承载「缺失的圣经版本」与「缺失的注解数据」，
+    // 一次只出现一个横幅，后台下载，不拦截操作，下载期间也不影响其它操作。
+    // 提供逐条「下载」、底部「稍后」与「不再提醒」（仅抑制当前已列出的项）。
+    showDownloadBanner() {
+        try {
+            const id = 'bible-download-banner';
+            const old = document.getElementById(id);
+            if (old) old.remove();
+
+            // 收集待下载项：缺失且未被「不再提醒」的默认可下载版本 + 缺失的注解数据
+            const items = [];
+            const dismissed = this.settings.dismissedVersionPrompts || [];
+            // 清理集合：只保留当前仍缺失的版本 key，已安装 / 不再存在的条目移除，
+            // 这样新出现的版本（key 不在集合里）以及版本更新仍会重新提醒。
+            this.settings.dismissedVersionPrompts = dismissed.filter(k =>
+                this.settings.versions.some(v => v.key === k && !v.installed));
+            const missingVersions = this.settings.versions.filter(v =>
+                DEFAULT_VERSIONS.some(d => d.key === v.key) && !v.installed &&
+                !(this.settings.dismissedVersionPrompts || []).includes(v.key));
+            for (const v of missingVersions) items.push({ kind: 'version', key: v.key, name: v.name + ' (' + v.key + ')' });
+
+            const notesMissing = this.settings.showNotes &&
+                !(this.notesData && Object.keys(this.notesData).length > 0);
+            if (notesMissing && !this.settings.dismissedNotesPrompt) {
+                items.push({ kind: 'notes', key: 'NOTES', name: '恢复本注解 / 串珠数据（约 6MB）' });
+            }
+
+            if (items.length === 0) return;
+
+            const el = document.createElement('div');
+            el.id = id;
+            el.style.cssText = [
+                'position:fixed', 'top:14px', 'right:14px', 'z-index:9999',
+                'max-width:340px', 'background:var(--background-primary)',
+                'border:1px solid var(--background-modifier-border)',
+                'border-radius:10px', 'box-shadow:0 8px 30px rgba(0,0,0,0.25)',
+                'padding:14px 16px 12px', 'font-size:14px', 'color:var(--text-normal)'
+            ].join(';') + ';';
+            const title = document.createElement('div');
+            title.textContent = '📥 可下载的圣经资源';
+            title.style.cssText = 'font-weight:600;margin-bottom:8px;';
+            el.appendChild(title);
+
+            const list = document.createElement('div');
+            list.style.cssText = 'display:flex;flex-direction:column;gap:8px;';
+            el.appendChild(list);
+
+            for (const it of items) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;border:1px solid var(--background-modifier-border);border-radius:8px;';
+                const span = document.createElement('span');
+                span.textContent = it.name;
+                span.style.fontSize = '13px';
+                row.appendChild(span);
+                const dl = document.createElement('button');
+                dl.className = 'mod-cta';
+                dl.textContent = '⬇️ 下载';
+                dl.style.cssText = 'font-size:12px;padding:4px 12px;flex:none;';
+                dl.addEventListener('click', async () => {
+                    dl.disabled = true;
+                    dl.textContent = '下载中...';
+                    try {
+                        if (it.kind === 'version') {
+                            const dv = DEFAULT_VERSIONS.find(d => d.key === it.key);
+                            if (dv) {
+                                await this.downloadVersionData(dv);
+                                const v = this.settings.versions.find(x => x.key === it.key);
+                                if (v) { v.installed = true; v.file = dv.file; }
+                                await this.saveSettings();
+                                await this.loadBibleData();
+                                // 安装后从「不再提醒」集合移除该版本，便于日后更新仍会提醒
+                                this.settings.dismissedVersionPrompts = (this.settings.dismissedVersionPrompts || []).filter(k => k !== it.key);
+                                await this.saveSettings();
+                            }
+                        } else {
+                            const ok = await this.installNotesData(false);
+                            if (!ok) throw new Error('网络异常，请稍后重试');
+                            // 安装成功复位，便于日后更新仍会提醒
+                            this.settings.dismissedNotesPrompt = false;
+                            await this.saveSettings();
+                        }
+                        dl.textContent = '✅ 已安装';
+                        new Notice(it.name + ' 下载完成');
+                        row.remove();
+                        if (!list.children.length) el.remove();
+                    } catch (e) {
+                        dl.disabled = false;
+                        dl.textContent = '⬇️ 下载';
+                        new Notice(it.name + ' 下载失败：' + e.message);
+                    }
+                });
+                row.appendChild(dl);
+                list.appendChild(row);
+            }
+
+            const btnWrap = document.createElement('div');
+            btnWrap.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:12px;';
+            const laterBtn = document.createElement('button');
+            laterBtn.textContent = '稍后';
+            laterBtn.style.cssText = 'font-size:12px;padding:4px 12px;';
+            const skipBtn = document.createElement('button');
+            skipBtn.textContent = '不再提醒';
+            skipBtn.style.cssText = 'font-size:12px;padding:4px 12px;';
+            btnWrap.appendChild(laterBtn);
+            btnWrap.appendChild(skipBtn);
+            el.appendChild(btnWrap);
+
+            laterBtn.addEventListener('click', () => el.remove());
+            skipBtn.addEventListener('click', async () => {
+                const dismissed = this.settings.dismissedVersionPrompts || [];
+                for (const it of items) if (it.kind === 'version' && !dismissed.includes(it.key)) dismissed.push(it.key);
+                this.settings.dismissedVersionPrompts = dismissed;
+                if (items.some(it => it.kind === 'notes')) this.settings.dismissedNotesPrompt = true;
+                await this.saveSettings();
+                el.remove();
+            });
+
+            const closeX = document.createElement('div');
+            closeX.textContent = '✕';
+            closeX.style.cssText = 'position:absolute;top:8px;right:10px;cursor:pointer;color:var(--text-muted);font-size:14px;';
+            closeX.addEventListener('click', () => el.remove());
+            el.appendChild(closeX);
+
+            document.body.appendChild(el);
+        } catch (e) {
+            console.error('[Bible] 渲染下载提示横幅失败:', e);
+        }
     }
 
     // 注解数据安装 / 开关变化后刷新：重新挂接注解并重绘已打开的视图，让上标与面板立即生效

@@ -44,6 +44,19 @@
         "按恢复本分节边界修正 6 处：代上21/22、约7/8、启12/13、诗8、赛4",
         "全书按 (bookId, chapter, verse) 重新排序"
       ]
+    },
+    {
+      "file": "bible-erv-data.json",
+      "key": "ERV",
+      "name": "英文恢复本（Recovery Version）",
+      "dataVersion": "2026.10.23.1",
+      "size": 13407330,
+      "sha256": "73f520185fd3673151b475cc3015edc3a7e9c237fd954bdb11fae9fe36d22baa",
+      "url": "https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/data/bible-erv-data.json",
+      "changes": [
+        "英文恢复本（Recovery Version）全文 66 卷 1189 章 31,102 节，按 (bookId, chapter, verse) 对齐其它版本",
+        "与恢复本（CRV）共用同一套书卷编号，可在阅读 / 检索中对照显示"
+      ]
     }
   ]
 }
