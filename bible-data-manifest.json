@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "generated": "2026-10-21T09:40:00+08:00",
+  "generated": "2026-10-26T01:40:00+08:00",
   "files": [
     {
       "file": "bible-crv-notes.json",
@@ -20,14 +20,14 @@
       "file": "bible-crv-data.json",
       "key": "CRV",
       "name": "恢复本（推荐）",
-      "dataVersion": "2026.10.21.2",
+      "dataVersion": "2026.10.26.1",
       "size": 12770564,
-      "sha256": "1aa2763558ebfe4d0609b91196edd2f965c20fa76615c7b9be4cc3a82fcd15d2",
+      "sha256": "005616e5891590b52da3bf5f42d51f296192c727038584bbba6b2e086e175751",
       "url": "https://raw.githubusercontent.com/ViaCai/obsidian-bible-search-reader/main/data/bible-crv-data.json",
       "changes": [
-        "经文与纲目按恢复本原始排版重新排定前后顺序（此前一章的纲目都堆在经文之前）",
-        "分上/下的节各自归位：如「创1:2上」紧随纲目「2审判与败坏」，「创1:2下」在「a第一日」之后",
-        "全部 31,176 节经文沿用 3.2.0 的重制内容：标点完整、保留 72 处上/下半节"
+        "修正 73 章共 400 条纲目的位置：此前纲目没有落在它所对应的经节前面（如提后一章「叁　败落的基点」本应在 15 节前）",
+        "修正 2 章经文乱序：哈巴谷书一章、约翰福音十二章的节次被还原为 1、2、3… 的自然顺序",
+        "经文正文内容不变，仍为 34,332 条（31,176 节经文 + 3,090 条纲目 + 66 条书卷主题）"
       ]
     },
     {
@@ -48,7 +48,7 @@
     {
       "file": "bible-erv-data.json",
       "key": "ERV",
-      "name": "英文恢复本（Recovery Version）",
+      "name": "英文恢复本",
       "dataVersion": "2026.10.23.1",
       "size": 13407330,
       "sha256": "73f520185fd3673151b475cc3015edc3a7e9c237fd954bdb11fae9fe36d22baa",

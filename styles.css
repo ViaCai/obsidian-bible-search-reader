@@ -1,11 +1,19 @@
 /* ==================== 圣经检索插件样式 ==================== */
 
+/* 主色变量：容器内的控件与挂在 body 上的浮层（书卷/章数下拉、字体选择）共用。
+   浮层不在 .bible-search-container 里，必须单独给一份，否则取不到变量。 */
+.bible-search-container,
+.bible-reader-nav-menu {
+    --bible-accent: #4ecdc4;
+    --bible-accent-hover: #3dbdb4;
+    /* 主色偏浅，选中态的文字要用深色才看得清（亮色/暗色主题通用） */
+    --bible-on-accent: #0b2b29;
+}
+
 .bible-search-container {
     padding: 10px;
     font-size: 13px;
     line-height: 1.5;
-    --bible-accent: #4ecdc4;
-    --bible-accent-hover: #3dbdb4;
     --bible-card-bg: var(--background-secondary);
     --bible-card-border: var(--background-modifier-border);
     --bible-keyword-color: #ff6b6b;
@@ -151,6 +159,38 @@
 .bible-section-font-btn svg {
     width: 14px;
     height: 14px;
+}
+/* 「本页操作」标题右侧的上一章 / 下一章：置右，尽量小，不喧宾夺主 */
+.bible-section-chapter-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+}
+.bible-section-chapter-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.bible-section-chapter-btn svg {
+    width: 13px;
+    height: 13px;
+}
+.bible-section-chapter-btn:hover:not(:disabled) {
+    background: var(--background-modifier-hover);
+    color: var(--bible-accent);
+}
+.bible-section-chapter-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
 }
 .bible-section-body {
     padding: 0 12px 12px 12px;
@@ -653,7 +693,12 @@
 }
 .bible-reader-nav-menu-item.active {
     background: var(--bible-accent);
-    color: #fff;
+    color: var(--bible-on-accent);
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px var(--bible-accent-hover);
+}
+.bible-reader-nav-menu-item.active:hover {
+    background: var(--bible-accent);
 }
 .bible-reader-nav-menu-chapters {
     min-width: 160px;
@@ -678,10 +723,12 @@
 .bible-reader-nav-menu-chip:hover {
     background: var(--background-modifier-hover);
 }
-.bible-reader-nav-menu-chip.active {
+.bible-reader-nav-menu-chip.active,
+.bible-reader-nav-menu-chip.active:hover {
     background: var(--bible-accent);
-    color: #fff;
-    border-color: var(--bible-accent);
+    color: var(--bible-on-accent);
+    border-color: var(--bible-accent-hover);
+    font-weight: 600;
 }
 .bible-reader-font-picker {
     min-width: 120px;
@@ -2535,6 +2582,7 @@
     font-size: 0.95em;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    cursor: pointer;
 }
 .bible-note-ref-text {
     flex: 1 1 auto;

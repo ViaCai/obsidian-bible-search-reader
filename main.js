@@ -224,6 +224,18 @@ function parseConnectedChapterVerse(text, pos, book) {
         }
     }
     
+    // 模式4-pre: 纯数位串（不含「十」「百」）整体作为一个章号，不当作「章+节」连写。
+    // 「诗一〇二」「诗一一九」是逐位读法（每位对应一个数字，〇=0），整体即 102 篇 / 119 篇；
+    // 这类写法表达的是一个完整数值，而非章与节的拼接。
+    // 含「十」「百」的串仍走下面的连写拆分（如「约五十二」→ 5:12）。
+    const m40 = remaining.match(/^([一二三四五六七八九零〇]+)(?![一二三四五六七八九十百零〇\d])/);
+    if (m40) {
+        const chapter = parseNumber(m40[1]);
+        if (!isNaN(chapter) && chapter >= 1 && chapter <= book.maxChapters) {
+            return { chapter, verse: null, consumed: m40[0].length };
+        }
+    }
+
     // 模式4: 纯中文数字连写 (如 "约五十二" → 第五章第十二节)
     const m4 = remaining.match(/^([一二三四五六七八九十百零〇]+)([一二三四五六七八九十百零〇]+)/);
     if (m4) {
@@ -345,6 +357,91 @@ function parseNumber(s) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.4': `## [4.0.4] - 2026-10-26
+
+### 新增
+- **注解 / 串珠开关快捷键**：新增命令「切换恢复本注解 / 串珠（开 / 关）」，默认快捷键 **A**（无修饰键）。首次启动会自动写入，重启 Obsidian 后生效；可在 设置 → 快捷键 中自行修改，改过或删掉之后插件不再干预
+- **阅读页「本页操作」右侧的上一章 / 下一章**：标题右边新增两个极小的符号按钮，点击直接切章并回到章首；首章 / 末章自动置灰，悬停提示会写明目标章号
+- **书卷下拉的选中标记**：经文阅读的书卷下拉里，当前书卷现在有明确的高亮标记，并与章数下拉的选中态一致
+
+### 改进
+- **经文数据重排（需更新数据）**：按恢复本原始排版把纲目重新插回它所对应的经节之前（此前一章的纲目都堆在经文之前），共修正 73 章、400 条纲目；顺带修掉哈巴谷书 1 章、约翰福音 12 章两处经文乱序。经文正文一字未动，共 34,332 条完全不变。启动时会提示更新经文数据
+- **切换注解立即生效**：此前用快捷键切换后，阅读页要翻章、投影与经文弹窗要重开才能看到变化。现在切换注解会同时重渲染阅读页 / 检索结果、投影当前页（保留页码）与已打开的经文弹窗
+- **下拉面板自动定位**：打开书卷 / 章数下拉时自动把当前选中项滚到面板中部，66 卷书与长卷上百章不用再手动找
+- **英文恢复本显示名统一**：下载清单中的版本名统一为「英文恢复本（ERV）」
+
+### 修复
+- **亮色模式下选中项看不清**：阅读页的书卷 / 章数下拉里，当前书卷与当前章的文字几乎不可见。原因是这两个面板挂在页面根节点上，取不到插件容器内定义的主色变量，导致主色背景整条失效、只剩白色文字，亮色主题下就成了白底白字。现修正变量作用域，并把选中态改为「主色填充 + 深色文字」，亮色 / 暗色都清晰
+- **「诗一〇二」被读成诗10:2**：纯数位连写的中文数字（如「一〇二」）现在整体当作一个章号，正确识别为诗篇 102 篇；「诗一〇二27」等带节号的写法不受影响
+- **「九节」「五章二十至二十一节」等承上省略写法**：段落内「九节」这类只写节号的写法现在继承上文的书卷与章；「X章Y至Z节」这类范围写法一并支持（如林后三章七至八节 → 林后 3:7-8）
+- **纲目里「—4节」「—4～6节」未被识别**：如「壹 …弗一3：／贰 父神的分赐—4～6节：／一 探远信徒—4节：」，现在正确继承为弗 1:4-6 与弗 1:4。同时修掉一个上下文缺陷：同一趟扫描里先解析出的章号会被后面的候选丢掉，导致「四4～6」之后的「—4节」退回上一章
+- **经文弹窗中的串珠无法点击**：弹窗里串珠的出处原本点了没反应（渲染时取错了方法所属的对象），现可点击直接跳转到该节；阅读页里同类跳转一并修好
+- **查看历史更新里 4.0.x 显示为空**：更新说明里的三级小标题（如「### 修复」）被误当成版本分隔符，导致该版本正文整段被丢弃，只剩标题行。现只按二级标题切分版本；同时把 4.0.0～4.0.3、3.1.8 补进内置更新说明，离线时也能看到
+
+---`,
+    '4.0.3': `## [4.0.3] - 2026-10-23
+
+### 修复
+- **本地已有注解仍提示下载**：本机 \`bible-crv-notes.json\` 已存在时，每次重启仍会在右上角横幅列出「恢复本注解 / 串珠数据」待下载。原因是横幅判定注解缺失时只看内存中的注解数据（刚启动时尚未异步加载完成），磁盘上已有文件却被误判为缺失。现改为判定前先按磁盘真实状态加载注解数据，只有本机确实没有该文件时才提示
+- **英文恢复本显示名统一**：版本列表与下载横幅中原显示为「ERV（ERV）」（旧数据里版本名称被存成 key 本身）。现统一显示为「英文恢复本（ERV）」，并在启动时自动把旧的名称纠正过来，无需手动改动设置
+
+---`,
+    '4.0.2': `## [4.0.2] - 2026-10-23
+
+### 新增
+- **英文恢复本（Recovery Version）数据**：新增 \`data/bible-erv-data.json\`（66 卷 1189 章 31,102 节），与恢复本（CRV）共用同一套书卷编号，可在设置里下载，阅读 / 检索中对照显示；开机若缺版本数据会提示下载
+
+### 改进
+- **下载提示合并为单条非阻塞横幅**：版本数据缺失提示与注解数据缺失提示合并为同一条固定右上角的非阻塞横幅，后台下载不中断其它操作；「不再提醒」按版本分别抑制（只压当前版本，新增 / 更新版本仍会提醒），注解另有独立开关、安装成功后自动复位
+- **注解模式跟随主版本**：主版本切到恢复本（CRV）时自动开启注解 / 串珠，切到其它版本时自动关闭，无需手动开关
+- **对照弹窗实时刷新注解开关**：在对照弹窗里切换主版本后，弹窗内的「恢复本注解 / 串珠」勾选状态即时同步，不再需要重开弹窗才更新
+
+---`,
+    '4.0.1': `## [4.0.1] - 2026-10-23
+
+### 修复
+- **恢复本圆圈零识别**：恢复本引用里的零写作白色圆圈 \`○\`（U+25CB，如「诗一○二27」）原被误识别；现将其归一为汉字〇（U+3007），正确识别为诗102:27（含同类中文数字连写章 + 阿拉伯节）
+- **串珠显示不全**：可6:1a 等串珠只列出部分被引经文（如缺「太十三54～58」）。改为以串珠文字为权威补全缺失引用，数据 \`targets\` 不全时从文字解析，全库约 273 条同类缺失一并修复（阅读页 / 检索页 / 经文弹窗 / 投影四处串珠渲染统一）
+- **选中注解 / 串珠后「复制」失效**：搜索 / 阅读页的复制按钮只认勾选框选中，不捕获手动高亮的注解或串珠文字。现所有复制按钮在 \`mousedown\` 时捕获选区，优先复制高亮文字；无高亮时回退原勾选逻辑
+
+### 改进
+- **阅读页「本页操作」语义变更**：「经文」「纲目」按钮改为只选中本页全部经文 / 纲目（互斥取消本页其它类型），便于按类型批量投影或复制，不再做复制
+- **投影中注解 / 串珠面板可选字**：去掉「面板内点任意位置即收起」，改为选区感知（正在拖选文字时不收起，普通轻点才收起），「✕ 收起」按钮独立关闭；面板正文显式允许选中，选中后 Ctrl+C 复制
+- **投影正文可选中**：投影里的经文 / 注解 / 串珠文字可在投影模式下用鼠标选中（上标 ¹ ᵃ 仍保持不可选）
+
+---`,
+    '4.0.0': `## [4.0.0] - 2026-10-22
+
+### 新增
+- **按注 / 串出处直接检索**：可直接输入「1:26注2」「创1:26串1」之类的注 / 串出处进行检索，命中即返回对应注解或串珠条目（显示出处与正文）
+- **投影模式即时切换**：投影已打开时按 Q / W / E 可在逐节 / 并列 / 混合三种模式间即时切换并重绘，无需翻页
+
+### 改进
+- **检索页布局重排**：检索范围默认收起；检索种类移到检索范围下方、本页操作移到结果简要上方，窄窗口不再遮挡
+- **检索范围按钮尺寸统一**：旧约 / 新约 / 全选 / 取消按钮改为与书卷按钮同尺寸对齐
+- **阅读页书卷 / 章候选框**：点击同一胶囊可开可关，箭头指示器联动
+- **投影中注 / 串分段渲染**：选中的注解 / 串珠在投影里按段落渲染，段间留空行，注（蓝）/ 串（琥珀）视觉区分
+- **弹窗注解 / 串珠面板单例化**：经文弹窗中始终只保留一个注解 / 串珠面板，新点开的会顶替旧的，不再堆叠
+
+### 修复
+- **投影 QWE 切换后内容不更新**：根因为 \`buildSlides\` 未先清空旧 slides，现切换模式立即按新模式重渲
+- **经文弹窗「取消 / 清空」对注 / 串无效或残留序号**：取消现在一并清掉弹窗内选中的注 / 串；清空后同步刷新注 / 串候选框，序号不再残留
+- **点注解 / 串珠内容即可选中**：检索页、阅读页、经文弹窗中，点击注解或串珠的正文即可选中 / 取消（此前只能点候选框）
+- **弹窗注 / 串序号实时更新**：取消靠前的经文或注 / 串后，后续注 / 串序号立即重排
+- **收起注解面板同步取消选中**：在弹窗中点标记(¹)收起注解面板时，同步取消该条注 / 串的选中，不再残留「保留候选」
+- **全选后取消计数残留**：选注 / 串 → 全选 → 取消后，弹窗「保留候选」计数正确归零
+
+---`,
+    '3.1.8': `## [3.1.8] - 2026-10-20
+
+### 新增
+- **经文引用识别新增破折号引导**：普通连字符 \`-\`（如 \`-五11～12\`）与连续破折号 \`——\`（如 \`——五11～12\`）现在能正确触发弱引用，沿用前文的书卷上下文，不再漏识别或丢失节范围
+- **检索范围新增「旧约 / 新约」整组选择按钮**：位于「全选 / 取消」左侧，点击即只选中该约全部书卷（排他式，替换当前选择）并高亮提示；「全选」按钮在全部书卷选中时同样高亮
+
+### 改进
+- **简化检索范围设置**：移除与「全选」重复的「全部圣经 / 选择范围」单选，直接常显书卷选择区，打开检索页时默认即为全选状态
+
+---`,
     '3.2.1': `## [3.2.1] - 2026-10-21
 
 ### 改进
@@ -1210,7 +1307,7 @@ class BibleSettingTab extends PluginSettingTab {
         containerEl.createEl('h3', { text: '恢复本注解 / 串珠', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
         new Setting(containerEl)
             .setName('启用注解与串珠')
-            .setDesc('阅读页经文内嵌 ¹ ᵃ 上标，点击展开注解 / 串珠；检索结果与经文弹窗也会显示。数据文件 bible-crv-notes.json 约 6MB，首次用到时加载。')
+            .setDesc('阅读页经文内嵌 ¹ ᵃ 上标，点击展开注解 / 串珠；检索结果与经文弹窗也会显示。数据文件 bible-crv-notes.json 约 6MB，首次用到时加载。默认快捷键 A（命令：切换恢复本注解 / 串珠），可在 设置 → 快捷键 中修改。')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.showNotes)
                 .onChange(async (value) => {
@@ -4758,6 +4855,16 @@ class BibleSearchView extends ItemView {
         }
     }
 
+    // 上一章 / 下一章：直接切章并回到章首（选中状态按「保留候选」的规则在 renderChapterContent 里处理）
+    goReaderChapter(n) {
+        const book = this.readerBook;
+        if (!book || n < 1 || n > book.maxChapters) return;
+        this.readerChapter = n;
+        this.readerState = 'content';
+        this.renderReader();
+        if (this.readerContent) this.readerContent.scrollTop = 0;
+    }
+
     async renderChapterContent() {
         this.readerContent.empty();
         this.readerFixedTop.empty();
@@ -4852,6 +4959,19 @@ class BibleSearchView extends ItemView {
         const pageActionHeader = pageActionSection.createDiv({ cls: 'bible-section-header' });
         const pageActionIcon = pageActionHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
         pageActionHeader.createEl('span', { text: '本页操作' });
+        // 标题右侧：上一章 / 下一章（符号按钮，置右，尽量小）
+        const chapterNav = pageActionHeader.createDiv({ cls: 'bible-section-chapter-nav' });
+        const prevChBtn = chapterNav.createEl('button', { cls: 'bible-section-chapter-btn' });
+        const nextChBtn = chapterNav.createEl('button', { cls: 'bible-section-chapter-btn' });
+        setIcon(prevChBtn, 'chevron-left');
+        setIcon(nextChBtn, 'chevron-right');
+        prevChBtn.disabled = chapter <= 1;
+        nextChBtn.disabled = chapter >= book.maxChapters;
+        prevChBtn.title = chapter > 1 ? `上一章（${chapter - 1}章）` : '已经是第一章';
+        nextChBtn.title = chapter < book.maxChapters ? `下一章（${chapter + 1}章）` : `已经是最后一章（${book.maxChapters}章）`;
+        // 这两个按钮不能触发标题的折叠，否则点一下就把本页操作收起来了
+        prevChBtn.addEventListener('click', (e) => { e.stopPropagation(); this.goReaderChapter(chapter - 1); });
+        nextChBtn.addEventListener('click', (e) => { e.stopPropagation(); this.goReaderChapter(chapter + 1); });
         const pageActionBody = pageActionSection.createDiv({ cls: 'bible-action-grid' });
         pageActionHeader.addEventListener('click', () => {
             const isCollapsed = pageActionBody.style.display === 'none';
@@ -5051,6 +5171,12 @@ class BibleSearchView extends ItemView {
             this.setNavCaret(anchorEl, '▼');
         };
         build(menu, close);
+        // 打开时把当前选中项滚到面板中间，避免选中标记落在可视区外（书卷 66 条、长卷章数上百）
+        const activeEl = menu.querySelector('.active');
+        if (activeEl) {
+            const center = activeEl.offsetTop - menu.clientHeight / 2 + activeEl.offsetHeight / 2;
+            menu.scrollTop = Math.max(0, center);
+        }
         this.positionPopupMenu(menu, anchorEl);
         const closeHandler = (e) => {
             if (!menu.contains(e.target)) {
@@ -5468,7 +5594,10 @@ class BibleSearchView extends ItemView {
                 addr.title = '点击跳转到该节';
                 addr.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    this.jumpToBibleReader({
+                    // jumpToBibleReader 定义在 plugin 上（本方法所属的是 View），必须经由 plugin 调用，
+                    // 否则 this.jumpToBibleReader 取不到方法、点击无效果
+                    const pluginRef = this.plugin || this;
+                    pluginRef.jumpToBibleReader({
                         bookId: v.bookId,
                         bookShortName: v.bookShortName,
                         allRefs: [{ chapter: v.chapter, verse: v.verse, verseEnd: null, suffix: null, endChapter: null, endVerse: null }]
@@ -5984,6 +6113,11 @@ class BibleSearchPlugin extends Plugin {
                 else new Notice('圣经数据已是最新版本');
             }
         });
+        this.addCommand({
+            id: 'toggle-bible-notes',
+            name: '切换恢复本注解 / 串珠（开 / 关）',
+            callback: async () => { await this.toggleShowNotes(); }
+        });
         this.addSettingTab(new BibleSettingTab(this.app, this));
 
         await this.migrateOldData();
@@ -5992,6 +6126,7 @@ class BibleSearchPlugin extends Plugin {
         this.registerEvent(this.app.workspace.onLayoutReady(async () => {
             // 启动即维持「注解模式」与主版本一致的不变式：CRV 主版本→开注解，其它主版本→关注解
             try { await this.reconcileNotesWithPrimary(); } catch (e) { console.error('[Bible] 同步注解模式失败:', e); }
+            try { await this.ensureNotesHotkey(); } catch (e) { console.error('[Bible] 分配注解快捷键失败:', e); }
             const hasInstalledVersion = this.settings.versions.some(v => v.installed);
             if (!this.settings.hasSetup || !hasInstalledVersion) {
                 new FirstRunModal(this.app, this).open();
@@ -6032,6 +6167,8 @@ class BibleSearchPlugin extends Plugin {
             showNotes: true,
             searchIncludeNotes: true,
             notesInstalled: false,
+            // 是否已为「切换注解」命令分配过默认快捷键（只写一次，之后由用户自己做主）
+            notesHotkeyAssigned: false,
             // 已安装圣经数据的版本记录：{ 'bible-crv-data.json': '2026.10.12', ... }
             dataVersions: {},
             // 上次检测数据更新的时间戳（节流用）
@@ -6286,7 +6423,7 @@ class BibleSearchPlugin extends Plugin {
             this.notesSearchIndex = null;
             this._notesAttached = false;
             await this.saveSettings();
-            this.refreshNotesViews();
+            await this.refreshNotesViews();
             return;
         }
         this.notesData = null;
@@ -6295,6 +6432,50 @@ class BibleSearchPlugin extends Plugin {
         await this.saveSettings();
         // 开启：立即加载（本机没有数据时会提示下载），并刷新已打开的视图，不必重启插件
         await this.refreshNotesViews();
+    }
+
+    // 命令 / 快捷键入口：切换「恢复本注解 / 串珠」的显示。返回切换后的状态。
+    async toggleShowNotes() {
+        const willShow = !this.settings.showNotes;
+        // 6MB 数据首次载入有可感延迟，先给个提示；真正的加载在 setShowNotes → refreshNotesViews 里
+        if (willShow) new Notice('正在载入恢复本注解…');
+        await this.setShowNotes(willShow);
+        // 经文弹窗工具栏上的「注解」按钮要跟着翻转，否则快捷键切了、按钮还停在旧状态
+        if (typeof this._syncNotesToolbar === 'function') {
+            try { this._syncNotesToolbar(); } catch (e) { /* 弹窗已关闭则忽略 */ }
+        }
+        new Notice(willShow ? '已开启：恢复本注解 / 串珠' : '已关闭：恢复本注解 / 串珠');
+        return willShow;
+    }
+
+    // 给「切换注解」命令分配默认快捷键 A。只在从未分配过时写一次，
+    // 用户自己改过或删掉之后不再干预；A 已被别的无修饰键命令占用时也不抢。
+    async ensureNotesHotkey() {
+        const CMD_ID = 'bible-search-reader:toggle-bible-notes';
+        if (this.settings.notesHotkeyAssigned) return;
+        try {
+            const p = '.obsidian/hotkeys.json';
+            let data = {};
+            if (await this.app.vault.adapter.exists(p)) {
+                try { data = JSON.parse(await this.app.vault.adapter.read(p)) || {}; } catch (e) { data = {}; }
+            }
+            const mine = data[CMD_ID];
+            if (Array.isArray(mine) && mine.length) {
+                this.settings.notesHotkeyAssigned = true;
+                await this.saveSettings();
+                return;
+            }
+            const takenByOther = Object.keys(data).some(k => k !== CMD_ID && Array.isArray(data[k]) &&
+                data[k].some(c => c && typeof c.key === 'string' && c.key.toLowerCase() === 'a' && (!c.modifiers || !c.modifiers.length)));
+            this.settings.notesHotkeyAssigned = true;   // 无论是否写成，都不再反复尝试
+            await this.saveSettings();
+            if (takenByOther) return;
+            data[CMD_ID] = [{ modifiers: [], key: 'A' }];
+            await this.app.vault.adapter.write(p, JSON.stringify(data, null, 2));
+            new Notice('已为「切换恢复本注解 / 串珠」分配快捷键 A，重启 Obsidian 后生效（可在 设置 → 快捷键 中修改）');
+        } catch (e) {
+            console.error('[Bible] 分配注解快捷键失败:', e);
+        }
     }
 
     // 注解标注位置按中文恢复本（CRV）设置，只兼容 CRV。维持「注解模式」与主版本一致的不变式：
@@ -6480,13 +6661,41 @@ class BibleSearchPlugin extends Plugin {
     }
 
     // 注解数据安装 / 开关变化后刷新：重新挂接注解并重绘已打开的视图，让上标与面板立即生效
+    // 投影是独立渲染的一整屏内容，不在检索视图里，切换注解后要自己重渲染当前页
+    refreshProjectionNotes() {
+        const proj = this.currentProjection;
+        if (!proj) return;
+        try {
+            if (typeof proj.renderSlide === 'function') proj.renderSlide();
+            else if (typeof proj.refresh === 'function') proj.refresh();
+        } catch (e) { console.error('[Bible] 刷新投影注解失败:', e); }
+    }
+
+    // 经文弹窗同理：用原锚点重开一次，正文才会重新带上 / 去掉注串上标。
+    // 弹窗已经被关掉时不要「复活」它，所以先确认当前确实有一个在页面上。
+    async refreshTooltipNotes() {
+        const reopen = this._tooltipRefresh;
+        if (typeof reopen !== 'function') return;
+        if (!document.querySelector('.bible-inline-tooltip')) return;
+        try { await reopen(); } catch (e) { console.error('[Bible] 刷新弹窗注解失败:', e); }
+    }
+
     async refreshNotesViews() {
         await this.loadNotesData();
         this._notesAttached = false;
         this.attachNotesToItems();
+        // 投影与经文弹窗不依赖检索视图是否存在，必须在这里一并刷新（快捷键 A 也要生效）
+        this.refreshProjectionNotes();
+        await this.refreshTooltipNotes();
         const view = this.getSearchView ? this.getSearchView() : null;
         if (!view) return;
-        if (typeof view.refreshCurrentView === 'function') view.refreshCurrentView();
+        // 注解 / 串珠上标是「渲染正文时」写进去的，只刷新卡片状态不会改变正文，
+        // 必须走 refreshNotesUI 重渲染当前章 / 当前结果，否则要用快捷键切换后得翻章才看到变化
+        if (typeof view.refreshNotesUI === 'function') {
+            await view.refreshNotesUI();
+        } else if (typeof view.refreshCurrentView === 'function') {
+            view.refreshCurrentView();
+        }
         if (typeof view.refreshNotePanels === 'function') view.refreshNotePanels();
     }
 
@@ -6838,7 +7047,10 @@ class BibleSearchPlugin extends Plugin {
         }
         for (const r of refs) {
             const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
-            const verses = this.plugin.getChainReferencedVerses(r, pk);
+            // 本方法的 this 就是 plugin（调用处均为 plugin.fillTooltipNotePanel），
+            // 原先误写成 this.plugin.getChainReferencedVerses，导致 this.plugin 取不到而抛错、
+            // 整个串珠列表渲染不出来也更无法点击
+            const verses = this.getChainReferencedVerses(r, pk);
             const quoted = [];
             for (const tv of verses) {
                 quoted.push(tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') + ' ' + tv.content);
@@ -6857,7 +7069,20 @@ class BibleSearchPlugin extends Plugin {
             head.createEl('span', { cls: 'bible-note-refs', text: r[1] });
             for (const tv of verses) {
                 const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
-                vr.createEl('span', { cls: 'bible-note-ref-addr', text: tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') });
+                // 出处可点击：跳转到圣经阅读页对应经文（与阅读页串珠一致）。
+                // 原来这里只渲染了文字没绑事件，外层的 click 又把它 return 掉，点了毫无反应。
+                const addr = vr.createEl('span', { cls: 'bible-note-ref-addr', text: tv.bookShortName + tv.chapter + ':' + tv.verse + (tv.part || '') });
+                addr.title = '点击跳转到该节';
+                addr.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // 跳转前收起弹窗，避免浮层继续盖在阅读页上
+                    if (typeof this.removeCurrentTooltip === 'function') this.removeCurrentTooltip();
+                    this.jumpToBibleReader({
+                        bookId: tv.bookId,
+                        bookShortName: tv.bookShortName,
+                        allRefs: [{ chapter: tv.chapter, verse: tv.verse, verseEnd: null, suffix: null, endChapter: null, endVerse: null }]
+                    });
+                });
                 vr.createEl('span', { cls: 'bible-note-ref-text', text: tv.content });
             }
         }
@@ -7350,7 +7575,10 @@ class BibleSearchPlugin extends Plugin {
             const flush = () => { if (current) out[current] = buf.join('\n').trim(); };
             for (const line of resp.text.split('\n')) {
                 const t = line.trim();
-                if (t.startsWith('##')) {
+                // 只有二级标题（## [4.0.3] - …）才是版本分隔。三级标题「### 修复」是正文小标题，
+                // 若一并当成版本分隔，会在它出现时先 flush 掉当前版本（只剩标题行），再把 current
+                // 置空吞掉后面的全部正文——历史弹窗里 4.0.x 显示为空就是这个原因。
+                if (t.startsWith('##') && !t.startsWith('###')) {
                     flush();
                     const m = t.match(/([0-9]+(?:\.[0-9]+)*)/);
                     current = m ? m[1] : null;
@@ -7388,13 +7616,14 @@ class BibleSearchPlugin extends Plugin {
             let start = -1;
             for (let i = 0; i < lines.length; i++) {
                 const t = lines[i].trim();
-                if (t.startsWith('##') && t.indexOf(version) !== -1) { start = i; break; }
+                // 同上：三级小标题「### 修复」不算版本标题
+                if (t.startsWith('##') && !t.startsWith('###') && t.indexOf(version) !== -1) { start = i; break; }
             }
             if (start === -1) return null;
             const out = [];
             for (let i = start + 1; i < lines.length; i++) {
                 const t = lines[i].trim();
-                if (t.startsWith('## ')) break;
+                if (t.startsWith('##') && !t.startsWith('###')) break;
                 out.push(lines[i]);
             }
             return out.join('\n').trim() || null;
@@ -8132,7 +8361,9 @@ class BibleSearchPlugin extends Plugin {
         const verse = parseNumber(m[1]);
         if (isNaN(verse) || verse < 1 || verse > 200) return null;
         const after = remaining.slice(m[0].length);
-        if (/^[章篇:：\d一二三四五六七八九十百零〇]/.test(after)) return null;
+        // 「节」字已经出现时（如纲目结尾的「一 探远信徒—4节：」），后面的冒号只是句读标点，
+        // 不应把这次引用挡掉。这条拒绝规则本是为「4:5」这类章:节写法准备的，那时「节」并未出现。
+        if (!/节$/.test(m[0]) && /^[章篇:：\d一二三四五六七八九十百零〇]/.test(after)) return null;
         let p = pos + m[0].length;
         let suffix = null, verseEnd = null;
         // ① 先后缀后范围：「16下～20节上」「20节下～22节中」
@@ -8309,7 +8540,8 @@ class BibleSearchPlugin extends Plugin {
     // 阶段4：句中“X章Y节”及其顿号延续，如“三章三节、七节”“四章一节”
     findChapterVersePatternRefs(text, coveredRanges, resolveCtx) {
         const matches = [];
-        const pattern = /([一二三四五六七八九十百零〇\d]+)章(?:第)?([一二三四五六七八九十百零〇\d]+)节/g;
+        // 中间的 (?:…)? 支持同章节范围写法「X章Y至Z节」（如「五章二十至二十一节」= 5:20-21）
+        const pattern = /([一二三四五六七八九十百零〇\d]+)章(?:第)?([一二三四五六七八九十百零〇\d]+)(?:[～~\-－至–—‐]\s*(?:第)?([一二三四五六七八九十百零〇\d]+))?节/g;
         let m;
         while ((m = pattern.exec(text)) !== null) {
             const start = m.index;
@@ -8321,8 +8553,14 @@ class BibleSearchPlugin extends Plugin {
             const chapter = parseNumber(m[1]);
             const verse = parseNumber(m[2]);
             if (!(chapter >= 1 && chapter <= book.maxChapters && verse >= 1)) { pattern.lastIndex = start + m[0].length; continue; }
+            // 同章内的节范围（m[3] 存在即「Y至Z」写法）
+            let verseEnd = null;
+            if (m[3] != null) {
+                const v2 = parseNumber(m[3]);
+                if (!isNaN(v2) && v2 > verse) verseEnd = v2;
+            }
             let p = start + m[0].length;
-            const refs = [{ chapter, verse, verseEnd: null, suffix: null }];
+            const refs = [{ chapter, verse, verseEnd, suffix: null }];
             // 向后扩展 “、X章Y节” 或 “、X节”（同章延续）
             while (true) {
                 const sep = text.slice(p).match(/^[，、,;；]\s*/);
@@ -8397,6 +8635,19 @@ class BibleSearchPlugin extends Plugin {
         // 都能触发弱引用识别（如「─五11」「，五11」「。五11」「/五11」「<五11」「【五11】」「⌈五11⌋」）
         const re = /(^|[\s　\p{P}\p{S}])(?![\s　])/gu;
         let runningChapter = null;
+        // 本阶段内已解析出的引用（位置升序）。它们也要参与后续候选的上下文：
+        // 共享时间线要等本阶段结束才统一并入，若不单独记录，同一趟扫描里先解析出的
+        // 章/卷会被后面候选用旧时间线覆盖掉（如纲目「四4～6」之后的「4节」退回上一章）。
+        const trail = [];
+        const trailCtx = (pos) => {
+            let bookId = null, chapter = null;
+            for (const e of trail) {
+                if (e.start >= pos) break;
+                if (e.bookId != null) bookId = e.bookId;
+                if (e.chapter != null) chapter = e.chapter;
+            }
+            return { bookId: bookId, chapter: chapter };
+        };
         let m;
         while ((m = re.exec(text)) !== null) {
             let start = m.index + m[1].length;
@@ -8404,11 +8655,15 @@ class BibleSearchPlugin extends Plugin {
             // 否则第二个破折号会被当成内容开头，导致弱引用解析失败、范围被丢弃
             while (start < text.length && /[–—‐\-－]/.test(text[start])) start++;
             if (this.isCovered(start, coveredRanges)) { re.lastIndex = start + 1; continue; }
-            // 按本处所在位置取上下文：书卷沿用左侧最近引用（可跨行、跨段落），章号沿用其结束章
+            // 按本处所在位置取上下文：书卷沿用左侧最近引用（可跨行、跨段落），章号沿用其结束章。
+            // 本阶段左侧已解析出的结果更新，优先于共享时间线。
             const c = resolveCtx(start);
-            const book = c.bookId != null ? BOOK_ID_MAP[c.bookId] : null;
+            const tc = trailCtx(start);
+            const ctxBookId = tc.bookId != null ? tc.bookId : c.bookId;
+            const ctxChapter = tc.chapter != null ? tc.chapter : c.chapter;
+            const book = ctxBookId != null ? BOOK_ID_MAP[ctxBookId] : null;
             if (!book) { re.lastIndex = start + 1; continue; }
-            if (c.chapter != null) runningChapter = c.chapter;
+            if (ctxChapter != null) runningChapter = ctxChapter;
             // 章上下文被句号清掉时，只有「明确的经节标记」才允许复用前文最后提到的章：
             // ① 自身带 节 / 上中下 / 范围（如“—17节”“—16下～20节上”）
             // ② 被括号 / 引号 / 破折号包裹（如“——16”“【16】”“「16」”）
@@ -8457,6 +8712,7 @@ class BibleSearchPlugin extends Plugin {
             });
             const refEndCh = this.refEndChapter(refs[refs.length - 1]);
             if (refEndCh != null) runningChapter = refEndCh;
+            trail.push({ start: start, bookId: effBook.id, chapter: refEndCh });
             re.lastIndex = end;
         }
         return matches;
@@ -8477,7 +8733,11 @@ class BibleSearchPlugin extends Plugin {
     // 说明它只是正文里的一部分（“第五日”“31 岁”“1.标题”），不作经文出处。
     looksLikeProseNumber(text, start, end, hasRange, hasSuffix) {
         if (hasRange || hasSuffix) return false;
-        const slice = text.slice(start, end).replace(/^第/, '').replace(/节$/, '');
+        const rawSlice = text.slice(start, end);
+        // 明确写了「节」的是经文标记（如「九节接着说」「五20节」），节号后面紧跟汉字也属于正常行文，
+        // 不作正文处理。真正需要拦的是没有「节」字的「第五日神说」「31 岁」这类。
+        if (/节/.test(rawSlice)) return false;
+        const slice = rawSlice.replace(/^第/, '').replace(/节$/, '');
         const pureNum = /^[一二三四五六七八九十百零〇]+$/.test(slice) || /^\d+$/.test(slice);
         if (!pureNum) return false;
         const afterSlice = text.slice(end);
@@ -8650,6 +8910,8 @@ class BibleSearchPlugin extends Plugin {
     showVerseTooltip(targetEl, match) {
         // 同一时间只显示一个弹窗
         document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
+        // 记住「用同一锚点重开弹窗」的入口：切换注解时正文要重新渲染（快捷键 A 也要生效）
+        this._tooltipRefresh = async () => { await this.showVerseTooltip(targetEl, match); };
         const tooltip = document.createElement('div');
         tooltip.className = 'bible-inline-tooltip';
         const refs = match.allRefs || [{ chapter: match.chapter, verse: match.verse, verseEnd: match.verseEnd, suffix: match.suffix, endChapter: match.endChapter, endVerse: match.endVerse }];
@@ -8764,18 +9026,17 @@ class BibleSearchPlugin extends Plugin {
             notesBtn.setText(on ? '✓ 注解' : '注解');
             return on;
         };
+        // 登记给快捷键入口用：用快捷键切换时也能把该按钮翻过来
+        this._syncNotesToolbar = syncNotesBtn;
         syncNotesBtn();
         notesBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            await this.setShowNotes(!this.settings.showNotes);
-            const on = syncNotesBtn();
-            if (on && !this.notesData) {
-                notesBtn.setText('注解…');
-                await this.loadNotesData();
-                syncNotesBtn();
-            }
-            this.showVerseTooltip(targetEl, match);
+            const willShow = !this.settings.showNotes;
+            if (willShow && !this.notesData) notesBtn.setText('注解…');
+            // 切换后 refreshNotesViews 会重建弹窗（正文重新带上 / 去掉上标），不必在这里重复渲染
+            await this.setShowNotes(willShow);
+            if (notesBtn.isConnected) syncNotesBtn();
         });
 
         const contentEl = tooltip.createDiv({ cls: 'bible-inline-tooltip-content' });
@@ -9183,6 +9444,8 @@ class BibleSearchPlugin extends Plugin {
     removeCurrentTooltip() {
         document.querySelectorAll('.bible-inline-tooltip').forEach(el => el.remove());
         this.currentTooltipProjector = null;
+        this._syncNotesToolbar = null;
+        this._tooltipRefresh = null;
     }
 
     async jumpToBibleReader(match) {
