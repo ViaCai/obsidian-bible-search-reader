@@ -357,6 +357,15 @@ function parseNumber(s) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.6': `## [4.0.6] - 2026-10-27
+
+### 修复
+- **注解快捷键不再吞字母、不再干扰打字**：此前「切换恢复本注解 / 串珠」被注册为 Obsidian 的裸字母 A 命令快捷键，Obsidian 命中后会 preventDefault，导致字母 a 在笔记里打不出来、还不断触发开关。现改为插件自有监听 + 上下文门禁处理：在输入框 / 笔记正文 / 输入法合成态时一律放行（a 正常输入），仅在阅读笔记、检索 / 阅读页、经文弹窗等非输入场景下按 A 才开关；并清理旧版写入 \`hotkeys.json\` 的裸 A，根因彻底清除（重启 Obsidian 后生效）
+
+### 改进
+- **阅读模式下非经文不再误识别为经文**：修复笔记中括号 / 引号包裹的裸中文数字（如「（一）」「“三一”」）及纲目序号（如「一、」）被误判为圣经引用的情形
+
+---`,
     '4.0.5': `## [4.0.5] - 2026-10-26
 
 ### 新增
@@ -2036,6 +2045,22 @@ class BibleProjectionOverlay {
             // contentEditable 会一直持有焦点，按键会被笔记本编辑器吃掉变成打字（还会唤起输入法）；
             // 标签页模式（投影只占一个标签）则不抢，用户可能正在旁边的笔记里正常打字。
             const ownsScreen = this.ownsScreen();
+            const insideProjection = !!(ae && ae.closest && ae.closest('.bible-projection-fullscreen'));
+            // 焦点落在任意弹窗 / 浮层（命令面板、快速切换、设置、右键菜单等）里时一律让位：
+            // 否则在投影独占屏幕的状态下打开这些界面打字，按键会被投影当成快捷键截走——
+            // 与「打字时按 a 触发注解」属于同一类问题。本插件投影内部的输入框不受影响。
+            const inFloatingUi = !!(ae && ae.closest &&
+                ae.closest('.modal-container, .suggestion-container, .prompt, .menu, .popover'));
+            if (inFloatingUi && !insideProjection) {
+                // 只保留逃生通道：在本插件自己的浮层里按 Esc 退出输入态、焦点回到投影
+                if (typingTarget && e.key === 'Escape' &&
+                    ae.closest('.bible-search-input, .bible-proj-search-box, .bible-inline-tooltip, .bible-tooltip-menu')) {
+                    try { ae.blur(); } catch (err) { /* 忽略 */ }
+                    this.focusProjection(true);
+                    return true;
+                }
+                return false;
+            }
             // 逃生通道：焦点卡在本插件的搜索框里时，按 Esc 只「退出输入态」而不是关闭投影，
             // 焦点回到投影后 S / O / Q / W / E / C / R / 方向键立即恢复可用（否则只能先用鼠标点一下投影）
             if (typingTarget && e.key === 'Escape') {
@@ -2046,7 +2071,6 @@ class BibleProjectionOverlay {
                 }
                 // 焦点在笔记正文 / 其它输入框：Esc 照常作用于投影（先退桌面全屏，其次关闭投影）
             } else if (typingTarget) {
-                const insideProjection = !!(ae.closest && ae.closest('.bible-projection-fullscreen'));
                 // 标签页模式、或输入目标就在投影内部：让位给打字，避免误触；
                 // 输入法合成态（isComposing / keyCode 229）也必须放行，否则中文 candidate 会被吃掉
                 if (!ownsScreen || insideProjection || e.isComposing || e.keyCode === 229) return false;
@@ -5981,6 +6005,10 @@ class BibleSearchPlugin extends Plugin {
         this.notesData = null;          // 恢复本注解/串珠（null = 尚未加载）
         this.notesSearchIndex = null;   // 注解正文检索索引
 
+        // 「打字守卫」：记录按键现场，供命令回调判断用户是不是正在打字（详见 installTypingGuard）
+        this.installTypingGuard();
+        this.register(() => document.removeEventListener('keydown', this._keydownRecorder, true));
+
         this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => {
             const view = new BibleSearchView(leaf, this);
             this.searchViewRef = view;
@@ -6093,8 +6121,18 @@ class BibleSearchPlugin extends Plugin {
             // 编辑模式会让 Q/W/E 写进正文而不是切换投影模式
             const projOwnsScreen = !!(this.currentProjection && this.currentProjection.ownsScreen && this.currentProjection.ownsScreen());
             const editingNote = ae && ae.isContentEditable && !this.currentTooltipProjector && !projOwnsScreen;
-            if (typingText || editingNote) return;
+            // 输入法合成态（候选框开着，keyCode 229 / isComposing）同样放行，否则中文候选会被吃掉
+            const composing = !!e.isComposing || e.keyCode === 229;
+            if (typingText || editingNote || composing) return;
             if (e.ctrlKey || e.metaKey || e.altKey) return;
+            // ⑤ 恢复本注解 / 串珠开关：裸字母 A（不按任何修饰键）即切换。
+            //    与 Q/W/E 同理走插件自有监听 + 上下文门禁：焦点在输入框 / 笔记正文 / 输入法合成态时
+            //    上面的 gating 已直接放行，字母照常输入，绝不会像 Obsidian 命令快捷键那样被 preventDefault 吞掉。
+            //    只在「非输入场景」（阅读笔记、圣经检索 / 阅读页、经文弹窗等）触发，避免干扰打字。
+            if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+                void this.toggleShowNotes();
+                return;
+            }
             let mode = null;
             if (e.key === 'q' || e.key === 'Q') mode = 'focus';
             else if (e.key === 'w' || e.key === 'W') mode = 'parallel';
@@ -6127,30 +6165,36 @@ class BibleSearchPlugin extends Plugin {
         });
 
         this.addRibbonIcon('book-plus', '圣经检索', () => { this.activateSearchView(); });
-        this.addCommand({ id: 'open-bible-search', name: '打开圣经检索', callback: () => this.activateSearchView() });
+        // 所有命令都套一层「打字守卫」：无修饰键的单字母快捷键（如注解的 A）
+        // 在笔记正文 / 输入框里打字时不应被触发，避免「按 a 顺带切换了注解」。
+        const guarded = (fn) => (...args) => {
+            if (this.shouldIgnoreCommandHotkey()) return;
+            return fn.apply(this, args);
+        };
+        this.addCommand({ id: 'open-bible-search', name: '打开圣经检索', callback: guarded(() => this.activateSearchView()) });
         this.addCommand({
             id: 'show-bible-changelog',
             name: '查看当前版本的更新说明',
-            callback: () => this.showCurrentChangelog()
+            callback: guarded(() => this.showCurrentChangelog())
         });
         this.addCommand({
             id: 'show-bible-changelog-history',
             name: '查看历史更新记录',
-            callback: () => this.showChangelogHistory()
+            callback: guarded(() => this.showChangelogHistory())
         });
         this.addCommand({
             id: 'check-bible-data-update',
             name: '检查圣经数据更新',
-            callback: async () => {
+            callback: guarded(async () => {
                 const pending = await this.checkBibleDataUpdate();
                 if (pending && pending.length) new DataUpdateModal(this.app, this, pending).open();
                 else new Notice('圣经数据已是最新版本');
-            }
+            })
         });
         this.addCommand({
             id: 'toggle-bible-notes',
             name: '切换恢复本注解 / 串珠（开 / 关）',
-            callback: async () => { await this.toggleShowNotes(); }
+            callback: guarded(async () => { await this.toggleShowNotes(); })
         });
         this.addSettingTab(new BibleSettingTab(this.app, this));
 
@@ -6472,6 +6516,65 @@ class BibleSearchPlugin extends Plugin {
         await this.refreshNotesViews();
     }
 
+    /**
+     * 安装「打字守卫」的按键记录器（捕获阶段注册，赶在笔记编辑器之前拿到按键现场）。
+     * 背景：Obsidian 在 document **冒泡**阶段派发命令快捷键，而笔记编辑器（CodeMirror 6）
+     * 在**目标**阶段处理完按键后既不 preventDefault 也不 stopPropagation（否则就打不了字），
+     * 于是事件继续冒泡到 document，无修饰键的单字母快捷键（如注解的 A）被一起触发——
+     * 表现为「打字时 a 既插入字符又切换注解」。这里记录现场，命令回调据此决定忽略。
+     */
+    installTypingGuard() {
+        this._lastKeydown = null;
+        this._keydownRecorder = (e) => {
+            const el = (e && e.target instanceof Element) ? e.target : document.activeElement;
+            this._lastKeydown = {
+                ts: Date.now(),
+                key: (e && typeof e.key === 'string') ? e.key : '',
+                ctrl: !!(e && e.ctrlKey),
+                meta: !!(e && e.metaKey),
+                alt: !!(e && e.altKey),
+                editable: this.isEditableTarget(el),
+                composing: !!(e && e.isComposing) || (e && e.keyCode === 229)
+            };
+        };
+        document.addEventListener('keydown', this._keydownRecorder, true);
+    }
+
+    // 判断元素是否为「可输入目标」：input / textarea / contenteditable（笔记正文、各类输入框等）。
+    // 单选框、复选框、按钮等不算，否则在插件界面里用空格 / 回车操作控件会被误判成打字。
+    isEditableTarget(el) {
+        try {
+            if (!el || typeof el !== 'object') return false;
+            if (el.isContentEditable) return true;
+            const tag = String(el.tagName || '').toUpperCase();
+            if (tag === 'TEXTAREA') return true;
+            if (tag === 'INPUT') {
+                const t = String(el.type || 'text').toLowerCase();
+                return ['text', 'search', 'number', 'password', 'email', 'url', 'tel'].includes(t);
+            }
+            if (typeof el.closest === 'function') {
+                return !!el.closest('[contenteditable="true"], [contenteditable=""]');
+            }
+        } catch (e) { /* 忽略，按非可输入处理 */ }
+        return false;
+    }
+
+    /**
+     * 命令回调的「打字守卫」：若本次命令是由**无修饰键的单字符按键**触发，
+     * 且按键落在可编辑区（笔记正文 / 搜索框 / 弹窗输入框），说明用户是在打字而非按快捷键，
+     * 此时应忽略该命令。命令面板（Enter）、鼠标点击、带修饰键的组合键都不受影响。
+     */
+    shouldIgnoreCommandHotkey() {
+        const k = this._lastKeydown;
+        if (!k) return false;
+        // 只认「刚刚」发生的按键；命令面板 / 鼠标触发时时间戳会明显偏旧（或没有按键记录）
+        if (Date.now() - k.ts > 800) return false;
+        if (k.ctrl || k.meta || k.alt) return false;   // 带修饰键 ⇒ 正常触发
+        if (!k.editable) return false;                  // 焦点不在输入区 ⇒ 正常触发
+        // 输入法合成态（候选框开着）或单字符按键（字母 / 数字 / 标点 / 空格）⇒ 视为打字
+        return k.composing || k.key.length === 1;
+    }
+
     // 命令 / 快捷键入口：切换「恢复本注解 / 串珠」的显示。返回切换后的状态。
     async toggleShowNotes() {
         const willShow = !this.settings.showNotes;
@@ -6486,33 +6589,40 @@ class BibleSearchPlugin extends Plugin {
         return willShow;
     }
 
-    // 给「切换注解」命令分配默认快捷键 A。只在从未分配过时写一次，
-    // 用户自己改过或删掉之后不再干预；A 已被别的无修饰键命令占用时也不抢。
+    // 某组快捷键是否已被其它命令占用（修饰键集合相同才算冲突）
+    isHotkeyTaken(data, selfCmdId, letter, mods) {
+        const want = mods.map(m => String(m).toLowerCase()).sort().join('+');
+        return Object.keys(data).some(k => k !== selfCmdId && Array.isArray(data[k]) &&
+            data[k].some(c => c && String(c.key || '').toLowerCase() === String(letter).toLowerCase() &&
+                (c.modifiers || []).map(m => String(m).toLowerCase()).sort().join('+') === want));
+    }
+
+    // 注解 / 串珠开关改用插件自有监听 + 上下文门禁处理「裸字母 A」（见上方 keydown 监听），
+    // 不再依赖 Obsidian 命令快捷键——后者会 preventDefault 把该字母吞掉，导致打不出 a、还不断触发。
+    // 本函数只负责清理：移除旧版自动写入 hotkeys.json 的「无修饰键裸 A」（它正是吞键 + 不断触发的根因）。
+    // 任何带修饰键的组合（含 4.0.6 迁移的 Ctrl/Cmd+Shift+A，或用户手动设的其它组合）都不动，留着也无害。
+    // 注意：裸 A 的行为由插件自有监听提供，不会出现在「设置 → 快捷键」里，但命令面板仍可搜到该命令。
     async ensureNotesHotkey() {
         const CMD_ID = 'bible-search-reader:toggle-bible-notes';
-        if (this.settings.notesHotkeyAssigned) return;
         try {
             const p = '.obsidian/hotkeys.json';
+            if (!(await this.app.vault.adapter.exists(p))) return;
             let data = {};
-            if (await this.app.vault.adapter.exists(p)) {
-                try { data = JSON.parse(await this.app.vault.adapter.read(p)) || {}; } catch (e) { data = {}; }
-            }
-            const mine = data[CMD_ID];
-            if (Array.isArray(mine) && mine.length) {
-                this.settings.notesHotkeyAssigned = true;
-                await this.saveSettings();
-                return;
-            }
-            const takenByOther = Object.keys(data).some(k => k !== CMD_ID && Array.isArray(data[k]) &&
-                data[k].some(c => c && typeof c.key === 'string' && c.key.toLowerCase() === 'a' && (!c.modifiers || !c.modifiers.length)));
-            this.settings.notesHotkeyAssigned = true;   // 无论是否写成，都不再反复尝试
-            await this.saveSettings();
-            if (takenByOther) return;
-            data[CMD_ID] = [{ modifiers: [], key: 'A' }];
+            try { data = JSON.parse(await this.app.vault.adapter.read(p)) || {}; } catch (e) { return; }
+            if (!Array.isArray(data[CMD_ID]) || data[CMD_ID].length === 0) return;
+            const kept = data[CMD_ID].filter(h => {
+                const key = String(h.key || '').toUpperCase();
+                const mods = (h.modifiers || []).map(m => String(m).toLowerCase());
+                // 仅移除「无修饰键的裸 A」：它会被 Obsidian 全局拦截并 preventDefault，吞掉字母、还不断触发
+                return !(key === 'A' && mods.length === 0);
+            });
+            if (kept.length === data[CMD_ID].length) return;  // 没有需要清理的
+            if (kept.length === 0) delete data[CMD_ID];
+            else data[CMD_ID] = kept;
             await this.app.vault.adapter.write(p, JSON.stringify(data, null, 2));
-            new Notice('已为「切换恢复本注解 / 串珠」分配快捷键 A，重启 Obsidian 后生效（可在 设置 → 快捷键 中修改）');
+            new Notice('已移除「切换恢复本注解 / 串珠」的旧版裸 A 快捷键（它会吞掉字母 a、又不断触发）。现在在阅读 / 检索时按 A 即可开关注解，且不影响打字。重启 Obsidian 后生效');
         } catch (e) {
-            console.error('[Bible] 分配注解快捷键失败:', e);
+            console.error('[Bible] 清理注解快捷键失败:', e);
         }
     }
 
@@ -8806,10 +8916,22 @@ class BibleSearchPlugin extends Plugin {
             // 若本弱引用的区间内部已包含某个更强引用（如“参弗四17、21”中“弗四17、21”已由阶段1解析）
             // 的起点，说明这只是对已有书卷名的重复解析，跳过以免产生部分冗余高亮
             if (coveredRanges.some(([s]) => s >= start && s < end)) { re.lastIndex = start + 1; continue; }
-            // 括号包裹的裸中文数字（纲目标记“（一）”“（四）”）不作经文出处
+            // 括号 / 引号包裹的裸中文数字不作经文出处：
+            // 纲目标记“（一）”“（四）”、行文中被引号引起来的“一”“三一”等，都是普通文字。
             const isBareCn = /^[一二三四五六七八九十百零〇]+$/.test(matchedSlice);
             const prevCh = start > 0 ? text[start - 1] : '';
-            if (isBareCn && /[（〔(]/.test(prevCh) && /^[\s　]*[）〕)]/.test(text.slice(end))) { re.lastIndex = start + 1; continue; }
+            const closeM = text.slice(end).match(/^[\s　]*(.)/);
+            const closeCh = closeM ? closeM[1] : '';
+            const OPEN_CH = '（〔(【「『“‘"\'';
+            const CLOSE_CH = '）〕)】」』”’"\'';
+            if (isBareCn && OPEN_CH.indexOf(prevCh) !== -1 && CLOSE_CH.indexOf(closeCh) !== -1) { re.lastIndex = start + 1; continue; }
+            // 纲目行首序号（如“一、基督在复活里…”“二、三一神…”“十一、倪的行事为人”）：
+            // 若本次解析出的只是一个**裸中文数字**（没有节号 / 范围 / 上中下后缀），
+            // 且紧跟着顿号，那它是纲目编号而不是经文出处，跳过以免误高亮。
+            // 只认顿号、不认逗号：逗号是合法的并列延续分隔符（如“一2，一3，二4”）。
+            const initSlice = text.slice(start, start + ref.consumed);
+            if (/^[一二三四五六七八九十百零〇]+$/.test(initSlice) &&
+                (text[start + ref.consumed] || '') === '、') { re.lastIndex = start + 1; continue; }
             // 裸数字最容易误伤（纲目标记“一”、正文“第五日”“31 岁”）：后面紧跟文字就不算经节。
             // 反过来，被 【】「」『』（）—— 之类符号包裹的节号后面是标点，能正常被认出来。
             if (this.looksLikeProseNumber(text, start, end, !!ref.verseEnd, !!ref.suffix)) { re.lastIndex = start + 1; continue; }

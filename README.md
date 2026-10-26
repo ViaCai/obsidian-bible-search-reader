@@ -71,7 +71,7 @@
 - **圣经搜索**：支持主题、纲目、经文、注解四种检索类型；可按全部圣经或自定义书卷范围搜索
 - **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、按注/串出处（`1:26注2`、`创1:26串1`）、关键词（多词组合匹配）、以及混合检索
 - **阅读模式**：书卷/章节网格浏览，点击顶部书卷名 / 章数快速跳转，字体调节，主题与纲目同屏显示
-- **恢复本注解与串珠**：恢复本（CRV）配套的注解与串珠数据，经文中以 ¹ ᵃ 上标内嵌，点击即在该节下方展开注文或串珠经文；注解/串珠可点击选中、复制、投影；支持「恢复本注解/串珠」开关与默认快捷键 **A** 一键切换，数据首次用到时按需下载
+- **恢复本注解与串珠**：恢复本（CRV）配套的注解与串珠数据，经文中以 ¹ ᵃ 上标内嵌，点击即在该节下方展开注文或串珠经文；注解/串珠可点击选中、复制、投影；支持「恢复本注解 / 串珠」开关，在阅读笔记、圣经检索 / 阅读页、经文弹窗等场景下按 **A** 一键开关（在输入框或笔记正文中打字时不会误触），数据首次用到时按需下载
 - **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影；投影正文的注解（蓝）/串珠（琥珀）按段落分段渲染，可点选复制
 - **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文（经文弹窗中勾选的经文也可入池），按顺序累计投影；取消勾选后，经文弹窗 / 圣经搜索 / 圣经阅读各自保留自己的候选，各窗口分别投影
 - **文章内圣经引用自动识别**：阅读笔记时，自动识别文中所出现的圣经引用，点击可查看经文内容，双击可查看经文上下文
@@ -172,7 +172,7 @@
 2. 点击书卷简称 → 章节编号 → 阅读内容；当前书卷在下拉里有高亮标记，点开书卷 / 章数下拉会自动把选中项滚到面板中部
 3. 「本页操作」标题右侧有两个极小的上一章 / 下一章符号按钮，点击直接切章并回到章首；首章 / 末章自动置灰
 4. 开启多版本对照后，每节经文下方会显示其他版本对照
-5. 恢复本（CRV）经文中带 ¹ ᵃ 上标，点击即在该节下方展开注解或串珠（注解/串珠可点击选中、复制、投影）；把主版本切到恢复本会**自动开启**注解，按快捷键 **A** 可一键开 / 关（设置 → 快捷键 中可改，改过或删掉后插件不再干预）
+5. 恢复本（CRV）经文中带 ¹ ᵃ 上标，点击即在该节下方展开注解或串珠（注解/串珠可点击选中、复制、投影）；把主版本切到恢复本会**自动开启**注解，在阅读 / 检索等场景下按 **A** 即可一键开 / 关（在输入框或笔记正文中打字时不会误触；该快捷键由插件直接处理，故不出现在「设置 → 快捷键」里，但命令面板仍可搜索并触发）
 6. 「全局操作」标题右侧的字体按钮可调节阅读字号；点击卡片或对照版本的候选框选中内容，可进行复制或投影
 
 ### 对照设置说明
@@ -376,7 +376,7 @@ The plugin works on desktop and mobile. Data files are stored inside the vault a
 - **Search**: click the 📖 ribbon icon (or run the "Open Bible Search" command). Pick the search type (theme / outline / verse / note) and range, type a query, and search.
 - **Search syntax**: verse references like `太1:1`, `路一1～3`, `加1:1-2:5`, note/chain references like `1:26注2` / `创1:26串1`, plus keyword matching. Space/`、` = AND, `，`/`,` = ordered AND, `；`/`;` = ordered OR, `。`/`.` = unordered OR.
 - **Comparison reading**: click the "对照" button to enable side-by-side versions. The top version is the primary one; drag to reorder. Each version's verses have independent checkboxes for copying and projection.
-- **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. The current book is highlighted in the book dropdown, and two tiny prev/next-chapter buttons sit at the right of the "本页操作" header for quick chapter jumps (first/last chapter greyed out). Recovery Version verses carry ¹ ᵃ superscripts — click to expand the note or chain (selectable, copyable, projectable); switching the primary version to CRV auto-enables notes, and the **A** shortcut toggles them. A font button next to "全局操作" resizes the reader. Selected verses can be copied or projected.
+- **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. The current book is highlighted in the book dropdown, and two tiny prev/next-chapter buttons sit at the right of the "本页操作" header for quick chapter jumps (first/last chapter greyed out). Recovery Version verses carry ¹ ᵃ superscripts — click to expand the note or chain (selectable, copyable, projectable); switching the primary version to CRV auto-enables notes, and the **Ctrl/Cmd + Shift + A** shortcut toggles them. A font button next to "全局操作" resizes the reader. Selected verses can be copied or projected.
 - **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `Q`/`W`/`E` to switch between verse-by-verse / side-by-side / mixed modes live (no page turn needed), `T` to toggle theme, `ESC` to exit. The bottom bar uses icon buttons (`−`/`+` font size, reset, center, moon/sun theme, search); the prev/next buttons stay pinned to both ends while the middle buttons wrap onto a second line in narrow windows. The search icon shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and the maximize icon restores full screen. Notes (blue) and chains (amber) render as segmented paragraphs and are selectable for copy.
 - **Projection search**: the search icon in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
 - **Keep candidates**: the 「保留候选」 checkbox beside "全局操作" is shared by both tabs. Once ticked, every verse you select is added to the candidate pool **in real time** — the counter and verse numbers update immediately, and nothing is lost on re-search, book/chapter switch or tab switch. Unticking a verse removes it from the pool at once. A 「清空」 button clears the pool. Unticking the checkbox releases kept candidates back to the search/reader view and restarts numbering from 1.
