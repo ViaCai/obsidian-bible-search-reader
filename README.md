@@ -8,21 +8,29 @@
 
 > 📖 使用教程（含演示视频）：[公众号教程](https://mp.weixin.qq.com/s/Ylzdu8Lr9hNePXNilQs4NQ)
 
-## 功能特性
+## ✨ 核心亮点
 
-- **多版本圣经支持**：同时加载多个圣经版本，支持恢复本、新标点和合本及自定义版本
-- **多版本对照阅读**：检索和阅读时可选开启对照模式，在主版本经文下方显示其他版本
-- **版本选择引导**：首次安装或数据缺失时自动弹出引导窗口，帮助用户选择并下载所需的圣经版本
-- **版本管理设置**：全新的版本管理界面，支持启用/禁用版本、设置主版本、删除版本、下载新版本
-- **圣经搜索**：支持主题、纲目、经文三种检索类型；可按全部圣经或自定义书卷范围搜索
-- **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、关键词（多词组合匹配）、以及混合检索
-- **阅读模式**：书卷/章节网格浏览，点击顶部书卷名 / 章数快速跳转，字体调节，主题与纲目同屏显示
-- **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影
-- **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文（经文弹窗中勾选的经文也可入池），按顺序累计投影；取消勾选后，经文弹窗 / 圣经搜索 / 圣经阅读各自保留自己的候选，各窗口分别投影
-- **文章内圣经引用自动识别**：阅读笔记时，自动识别文中所出现的圣经引用，点击可查看经文内容，双击可查看经文上下文
-- **自动更新**：支持启动时自动检测新版本，一键下载并安装更新
+> 📖 在 Obsidian 里一站式**检索、阅读、投影**中文圣经——内置恢复本注解 / 串珠、懂中文的检索语法、多版本对照，适合个人读经，也适合小组查经与主日学。
 
----
+### 1. 恢复本注解与串珠，内嵌在经文里
+阅读恢复本时，注脚与串珠以 ¹ ᵃ 上标直接标在字里行间，点一下就在该节下方展开注文或串珠经文，可选中、复制、投影。不用跳出 Obsidian，也不用手动翻书。
+
+![恢复本注解与串珠](images/feature-notes.png)
+
+### 2. 懂中文的检索语法
+支持经文出处（`太1:1`、`路一1～3`）、按注 / 串出处（`1:26注2`）、关键词组合与混合检索；读笔记时还能自动识别文中的圣经引用并一键跳转。
+
+![智能检索与引用识别](images/feature-search.png)
+
+### 3. 多版本对照，并排读经
+阅读或检索时可开启对照，一节经文下方并排显示多个中文版本，方便比对用词与语气，所选内容可一键复制或投影。
+
+![多版本对照](images/feature-compare.png)
+
+### 4. 投影模式，小组查经利器
+选中经文后能逐节、并列或混合全屏投影，投影内可直接检索新内容并即时更新；支持键盘 / 滚轮 / 触屏操作，适合主日学、小组查经现场使用。
+
+![投影模式](images/feature-projection.png)
 
 ## 快速开始
 
@@ -52,6 +60,25 @@
 - **删除版本**：移除不再需要的版本数据
 - **下载新版本**：从列表中选择并下载新的圣经版本
 
+## 功能详解
+
+> 下方按模块列出完整功能；新手上手建议先看上方「核心亮点」与「快速开始」。
+
+- **多版本圣经支持**：同时加载多个圣经版本，支持恢复本、新标点和合本及自定义版本
+- **多版本对照阅读**：检索和阅读时可选开启对照模式，在主版本经文下方显示其他版本
+- **版本选择引导**：首次安装或数据缺失时自动弹出引导窗口，帮助用户选择并下载所需的圣经版本
+- **版本管理设置**：全新的版本管理界面，支持启用/禁用版本、设置主版本、删除版本、下载新版本
+- **圣经搜索**：支持主题、纲目、经文、注解四种检索类型；可按全部圣经或自定义书卷范围搜索
+- **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、按注/串出处（`1:26注2`、`创1:26串1`）、关键词（多词组合匹配）、以及混合检索
+- **阅读模式**：书卷/章节网格浏览，点击顶部书卷名 / 章数快速跳转，字体调节，主题与纲目同屏显示
+- **恢复本注解与串珠**：恢复本（CRV）配套的注解与串珠数据，经文中以 ¹ ᵃ 上标内嵌，点击即在该节下方展开注文或串珠经文；注解/串珠可点击选中、复制、投影；支持「恢复本注解/串珠」开关与默认快捷键 **A** 一键切换，数据首次用到时按需下载
+- **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影；投影正文的注解（蓝）/串珠（琥珀）按段落分段渲染，可点选复制
+- **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文（经文弹窗中勾选的经文也可入池），按顺序累计投影；取消勾选后，经文弹窗 / 圣经搜索 / 圣经阅读各自保留自己的候选，各窗口分别投影
+- **文章内圣经引用自动识别**：阅读笔记时，自动识别文中所出现的圣经引用，点击可查看经文内容，双击可查看经文上下文
+- **自动更新**：支持启动时自动检测新版本，一键下载并安装更新
+
+---
+
 ---
 
 ## 圣经版本
@@ -61,8 +88,11 @@
 | `main.js` | 插件主程序（必要） |
 | `manifest.json` | 插件清单（必要） |
 | `styles.css` | 插件样式（必要） |
-| `bible-crv-data.json` | 内置原注版圣经数据（中文原注版，约 14MB） |
-| `bible-cuvs-data.json` | 内置新标点和合本圣经数据（中文原注版，约 13MB） |
+| `bible-crv-data.json` | 内置恢复本（CRV）经文数据（约 12MB） |
+| `bible-crv-notes.json` | 恢复本注解 / 串珠数据，首次用到时按需下载 |
+| `bible-cuvs-data.json` | 内置新标点和合本（CUVS）经文数据（约 13MB） |
+
+> 💡 英文恢复本（ERV，`bible-erv-data.json`）为可下载数据，不随 Release 默认提供，可在设置 → 圣经版本管理中下载，与恢复本（CRV）对照显示。
 
 > 💡 如需使用其他圣经版本，直接叫AI照着bible-crv-data.json的内容格式为模板，生成你所要的圣经版本，并照着下方的推荐命名表命名文件，比如思高本，就命名为bible-sgb-data.json
 
@@ -139,9 +169,11 @@
 ### 阅读
 
 1. 切换到「圣经阅读」选项卡
-2. 点击书卷简称 → 章节编号 → 阅读内容
-3. 开启多版本对照后，每节经文下方会显示其他版本对照
-4. 点击卡片或对照版本的候选框选中内容，可进行复制或投影
+2. 点击书卷简称 → 章节编号 → 阅读内容；当前书卷在下拉里有高亮标记，点开书卷 / 章数下拉会自动把选中项滚到面板中部
+3. 「本页操作」标题右侧有两个极小的上一章 / 下一章符号按钮，点击直接切章并回到章首；首章 / 末章自动置灰
+4. 开启多版本对照后，每节经文下方会显示其他版本对照
+5. 恢复本（CRV）经文中带 ¹ ᵃ 上标，点击即在该节下方展开注解或串珠（注解/串珠可点击选中、复制、投影）；把主版本切到恢复本会**自动开启**注解，按快捷键 **A** 可一键开 / 关（设置 → 快捷键 中可改，改过或删掉后插件不再干预）
+6. 「全局操作」标题右侧的字体按钮可调节阅读字号；点击卡片或对照版本的候选框选中内容，可进行复制或投影
 
 ### 对照设置说明
 
@@ -170,6 +202,7 @@
 
 - `←/→` 或 `空格`：翻页
 - `+/-`：调整字体大小
+- `Q` / `W` / `E`：投影已打开时在逐节 / 并列 / 混合三种模式间即时切换并重绘（无需翻页）
 - `T`：切换深色/浅色主题
 - 底部工具栏（符号 / 图标按钮，窄窗口下中间按钮自动换行，左右翻页始终固定在两端）：
   - `−` / `+`：缩小 / 放大字体，中间显示当前字号
@@ -186,7 +219,7 @@
 - **单击经文出处**：单击打开经文弹窗，显示具体经文内容
 - **双击经文出处**：双击跳转到圣经阅读区域中查看该经文的上下文
 
-**省略书卷名的写法（上下文继承）**：
+**📚（进阶）省略书卷名的写法（上下文继承）**：
 
 - 只写章节、没写书卷时，会自动沿用**本文档前文中最后出现的书卷**；跨行、跨段落都有效（换一篇笔记会重新开始）。例如：
 
@@ -206,6 +239,7 @@
 **经文弹窗操作**：
 
 - `A-` / `A+`：缩小 / 放大弹窗字体（调整后的字体大小会被记住，下次弹窗自动沿用）
+- `注解 / 串珠` 开关（工具条）：打开 / 关闭恢复本注解与串珠的显示，与阅读页、检索页、投影同步
 - `全选` / `取消`：合并为同一个按钮——未全选时显示「全选」，已全选时自动变成「取消」
 - `复制`：复制弹窗中已勾选的经文（带出处）。勾选「保留候选」且候选池或圣经搜索 / 圣经阅读中也有选中经文时，会先弹出「本页复制 / 全局复制」供选择；否则只复制本弹窗的经文
 - `投影`：点击后给出「逐节 / 并列 / 混合」三种投影模式。未勾选「保留候选」时只投影本弹窗的经文；勾选后按全局顺序投影候选池与各页面的选中经文
@@ -219,7 +253,7 @@
 
 ---
 
-## 检索语法速查
+## 检索语法速查（进阶参考）
 
 ### 经文出处
 
@@ -241,6 +275,16 @@
 | 逗号 `，` `,` | 同时包含（AND） | **是**（按输入顺序） | 经文顺序 |
 | 分号 `；` `;` | 包含任意（OR） | 是 | 关键词顺序 |
 | 句号 `。` `.` | 包含任意（OR） | 否 | 经文顺序 |
+
+### 按注 / 串出处
+
+在经文出处后加 `注N` / `串N` 可直接检索对应的注解或串珠条目（命中即返回该条注解或串珠的出处与正文）：
+
+| 输入 | 含义 |
+|------|------|
+| `1:26注2` | 当前书卷第 1 章 26 节的第 2 条注解 |
+| `创1:26串1` | 创世记 1:26 的第 1 条串珠 |
+| `太5:3注1` | 马太福音 5:3 的第 1 条注解 |
 
 ---
 
@@ -290,9 +334,16 @@
 
 ---
 
+## Highlights
+
+- **Recovery Version notes & chains inline**: ¹ ᵃ superscripts in the text expand notes / chains in place — selectable, copyable, projectable, no need to leave Obsidian.
+- **Chinese-aware search**: verse refs (`太1:1`), note/chain refs (`1:26注2`), keyword combos, and Bible references auto-detected inside your notes with one-click jump.
+- **Side-by-side comparison**: open comparison in reading or search to show multiple Chinese versions under each verse; selected content can be copied or projected in one click.
+- **Projection mode**: verse-by-verse / side-by-side / mixed fullscreen projection for group study; search new content right inside the projection and update the slide in place.
+
 ## Overview
 
-Bible Search and Reader is an Obsidian plugin for searching, reading, and projecting multiple Chinese Bible versions in parallel. It features built-in multi-version data, smart search syntax, side-by-side comparison reading, fullscreen projection modes, inline Bible reference highlighting inside your notes, and a first-run setup wizard.
+Bible Search and Reader is an Obsidian plugin for searching, reading, and projecting multiple Chinese Bible versions in parallel. It features built-in multi-version data, smart search syntax, side-by-side comparison reading, fullscreen projection modes, inline Bible reference highlighting inside your notes, Recovery Version notes & chain superscripts, and a first-run setup wizard.
 
 ## Installation
 
@@ -322,11 +373,11 @@ The plugin works on desktop and mobile. Data files are stored inside the vault a
 
 ## Usage
 
-- **Search**: click the 📖 ribbon icon (or run the "Open Bible Search" command). Pick the search type (theme / outline / verse) and range, type a query, and search.
-- **Search syntax**: verse references like `太1:1`, `路一1～3`, `加1:1-2:5`, plus keyword matching. Space/`、` = AND, `，`/`,` = ordered AND, `；`/`;` = ordered OR, `。`/`.` = unordered OR.
+- **Search**: click the 📖 ribbon icon (or run the "Open Bible Search" command). Pick the search type (theme / outline / verse / note) and range, type a query, and search.
+- **Search syntax**: verse references like `太1:1`, `路一1～3`, `加1:1-2:5`, note/chain references like `1:26注2` / `创1:26串1`, plus keyword matching. Space/`、` = AND, `，`/`,` = ordered AND, `；`/`;` = ordered OR, `。`/`.` = unordered OR.
 - **Comparison reading**: click the "对照" button to enable side-by-side versions. The top version is the primary one; drag to reorder. Each version's verses have independent checkboxes for copying and projection.
-- **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. Selected verses can be copied or projected.
-- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `T` to toggle theme, `ESC` to exit. The bottom bar uses icon buttons (`−`/`+` font size, reset, center, moon/sun theme, search); the prev/next buttons stay pinned to both ends while the middle buttons wrap onto a second line in narrow windows. The search icon shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and the maximize icon restores full screen.
+- **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. The current book is highlighted in the book dropdown, and two tiny prev/next-chapter buttons sit at the right of the "本页操作" header for quick chapter jumps (first/last chapter greyed out). Recovery Version verses carry ¹ ᵃ superscripts — click to expand the note or chain (selectable, copyable, projectable); switching the primary version to CRV auto-enables notes, and the **A** shortcut toggles them. A font button next to "全局操作" resizes the reader. Selected verses can be copied or projected.
+- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `Q`/`W`/`E` to switch between verse-by-verse / side-by-side / mixed modes live (no page turn needed), `T` to toggle theme, `ESC` to exit. The bottom bar uses icon buttons (`−`/`+` font size, reset, center, moon/sun theme, search); the prev/next buttons stay pinned to both ends while the middle buttons wrap onto a second line in narrow windows. The search icon shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and the maximize icon restores full screen. Notes (blue) and chains (amber) render as segmented paragraphs and are selectable for copy.
 - **Projection search**: the search icon in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
 - **Keep candidates**: the 「保留候选」 checkbox beside "全局操作" is shared by both tabs. Once ticked, every verse you select is added to the candidate pool **in real time** — the counter and verse numbers update immediately, and nothing is lost on re-search, book/chapter switch or tab switch. Unticking a verse removes it from the pool at once. A 「清空」 button clears the pool. Unticking the checkbox releases kept candidates back to the search/reader view and restarts numbering from 1.
 - **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted. References that omit the book name inherit the last book mentioned earlier in the same note (works across lines and paragraphs), and a bare verse number continues from the end chapter of the previous range. Single-click a reference to open the verse popup (font +/-, a combined 全选/取消 toggle, 复制 and 投影, per-verse checkboxes that show the selection-order number once selected (same box style as the search / reader tabs), a 「并」 tag behind each selected verse for side-by-side projection, and remembered font size). The popup keeps its own candidates: with 「保留候选」 unticked, the popup, the search tab and the reader tab each keep their own selections, and projecting from one of them only projects that window's content (each reference's popup numbers its own verses from 1, and the selections survive closing the popup). Its header shows 保留候选 + count + a 清空 button; the count follows the same rule as the search / reader tabs (shared pool total when ticked, the popup's own count when unticked), and 清空 clears every window's candidates at once (popup + search + reader). With 「保留候选」 ticked, popup verses join the shared pool so everything is projected together; 复制 then offers 本页复制 / 全局复制, and 投影 offers 逐节 / 并列 / 混合. Double-click a reference (or a `章:节` inside the popup) to jump to the reader view.
