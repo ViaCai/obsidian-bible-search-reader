@@ -357,6 +357,21 @@ function parseNumber(s) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.5': `## [4.0.5] - 2026-10-26
+
+### 新增
+- **对照页也能检查数据更新**：对照设置弹窗标题栏（关闭按钮左侧）新增符号按钮「⟳」，点击检查并更新圣经数据与恢复本注解 / 串珠，与设置页「检查数据 / 注解更新」行为一致，会先提示再下载
+
+### 改进
+- **「检查数据 / 注解更新」一处搞定**：设置页「圣经版本管理」里的检查按钮现同时检查已装圣经数据与恢复本注解 / 串珠（注解本就在更新清单内；旧安装因缺版本记录未被提示，现已修正）
+- **更新失败不再「消失」**：下载因网络失败时会明确提示哪些文件成功、哪些失败，并把未完成的文件记录到本地；重启后若上次没更新完会自动再次提醒（绕过 12 小时节流）可重试；点「稍后」进入 24 小时冷却，避免反复打扰
+- **更新结果清晰可见**：更新完成弹「已更新 N 个文件」、有失败时弹「X 成功 / Y 失败，可重试」，不再静默结束，一眼知道是否成功
+
+### 修复
+- **对照页更新静默下载**：此前对照页更新按钮点了直接下载、不弹提示，与设置页不一致。现统一走「先检查 → 弹通知 / 弹窗」流程
+- **注解每次启动误报待更新**：安装注解后未记录其数据版本，导致每次启动按「无版本记录 + 大小兜底」把注解误判为待更新、反复弹提示。现安装时一并记录版本
+
+---`,
     '4.0.4': `## [4.0.4] - 2026-10-26
 
 ### 新增
@@ -1176,7 +1191,12 @@ class DataUpdateModal extends Modal {
             this.close();
             await this.plugin.updateBibleData(this.pending);
         });
-        cancelBtn.addEventListener('click', () => this.close());
+        cancelBtn.addEventListener('click', () => {
+            // 弹窗里点「稍后」同样进入 24h 冷却，避免反复打扰
+            this.plugin.settings.dataUpdateCooldownUntil = Date.now() + 24 * 3600 * 1000;
+            this.plugin.saveSettings();
+            this.close();
+        });
     }
     fmtSize(n) {
         if (!n) return '未知';
@@ -1219,16 +1239,16 @@ class BibleSettingTab extends PluginSettingTab {
             new Notice('版本识别已刷新');
         });
 
-        const checkDataBtn = containerEl.createEl('button', { cls: 'bible-small-btn', text: '🔍 检查数据更新' });
+        const checkDataBtn = containerEl.createEl('button', { cls: 'bible-small-btn', text: '🔍 检查数据/注解更新' });
         checkDataBtn.style.marginBottom = '12px';
         checkDataBtn.style.marginLeft = '8px';
-        checkDataBtn.title = '联网比对云端清单，检查已安装的圣经数据是否有修正版';
+        checkDataBtn.title = '联网比对云端清单，同时检查已安装的圣经数据与恢复本注解 / 串珠是否有修正版';
         checkDataBtn.addEventListener('click', async () => {
             checkDataBtn.setAttribute('disabled', 'true');
             checkDataBtn.setText('检查中...');
             await this.plugin.checkBibleDataUpdateAndNotify(true);
             checkDataBtn.removeAttribute('disabled');
-            checkDataBtn.setText('🔍 检查数据更新');
+            checkDataBtn.setText('🔍 检查数据/注解更新');
         });
 
         const versionList = containerEl.createDiv({ cls: 'bible-version-list' });
@@ -3141,8 +3161,22 @@ class BibleSearchView extends ItemView {
 
         // 标题栏
         const header = modal.createDiv({ cls: 'bible-compare-modal-header' });
-        header.createEl('h3', { text: '对照设置' });
+        const headerTitle = header.createEl('h3', { text: '对照设置' });
+        headerTitle.style.marginRight = 'auto';
+        // 数据 / 注解更新入口（与设置页「检查数据/注解更新」同一逻辑）：符号按钮，置于关闭按钮左侧
+        const dataUpdIcon = header.createEl('button', { cls: 'bible-small-btn', text: '⟳' });
+        dataUpdIcon.title = '检查并更新圣经数据 / 注解（与设置页「检查数据/注解更新」同一逻辑）';
+        dataUpdIcon.addEventListener('click', async () => {
+            dataUpdIcon.setAttribute('disabled', 'true');
+            dataUpdIcon.setText('⟳…');
+            await this.plugin.checkBibleDataUpdateAndNotify(true);
+            dataUpdIcon.removeAttribute('disabled');
+            dataUpdIcon.setText('⟳');
+            if (typeof syncNotesStatus === 'function') syncNotesStatus();
+            if (typeof syncNotesDl === 'function') syncNotesDl();
+        });
         const closeBtn = header.createEl('button', { cls: 'bible-small-btn', text: '✕' });
+        closeBtn.style.marginLeft = '6px';
         closeBtn.addEventListener('click', () => this.toggleComparePanel());
 
         // 刷新按钮
@@ -6173,6 +6207,10 @@ class BibleSearchPlugin extends Plugin {
             dataVersions: {},
             // 上次检测数据更新的时间戳（节流用）
             lastDataCheckAt: 0,
+            // 待更新的数据文件（更新失败 / 用户延后后持久化，重启仍会再次提醒）
+            pendingDataUpdates: [],
+            // 用户点「稍后」后，多久内不再弹数据更新提示（毫秒时间戳）
+            dataUpdateCooldownUntil: 0,
             // 开机时「不再提醒」针对的各圣经版本 key：只抑制这些版本，新版本 / 版本更新仍会提醒
             dismissedVersionPrompts: [],
             // 注解数据缺失提示是否被「不再提醒」关闭（安装成功后会复位为 false，便于日后更新仍提醒）
@@ -6913,6 +6951,18 @@ class BibleSearchPlugin extends Plugin {
                 this._notesAttached = false;
                 this.settings.notesInstalled = true;
                 await this.saveSettings();
+                // 记录注解数据版本，避免下次启动因「无版本记录 + 大小兜底」被误判为有待更新
+                try {
+                    const manifest = await this.fetchDataManifest();
+                    const entry = (manifest.files || []).find(f => f.file === NOTES_FILE);
+                    if (entry) {
+                        this.settings.dataVersions = this.settings.dataVersions || {};
+                        this.settings.dataVersions[NOTES_FILE] = entry.dataVersion;
+                        await this.saveSettings();
+                    }
+                } catch (e) {
+                    console.warn('[Bible] 记录注解数据版本失败:', e);
+                }
                 await this.loadNotesData();
                 this._notesAttached = false;
                 this.attachNotesToItems();
@@ -7338,13 +7388,19 @@ class BibleSearchPlugin extends Plugin {
         }
     }
 
-    /** 下载并覆盖指定数据文件；覆盖前备份为 <file>.old，全部完成后重载数据。 */
+    /** 下载并覆盖指定数据文件；覆盖前备份为 <file>.old，全部完成后重载数据。
+     *  逐文件记录成功 / 失败：失败的会持久化到 settings.pendingDataUpdates，
+     *  方便重启后再次提醒并在设置 / 对照页重试。返回 { succeeded, failed }。 */
     async updateBibleData(items) {
         const pluginId = this.manifest?.id || 'bible-search-reader';
         const dirPath = `.obsidian/plugins/${pluginId}`;
         if (!(await this.app.vault.adapter.exists(dirPath))) {
             await this.app.vault.adapter.mkdir(dirPath);
         }
+        const succeeded = [];
+        const failed = [];
+        let bibleReload = false;
+        let notesReload = false;
         let done = 0;
         for (const item of items) {
             const target = `${dirPath}/${item.file}`;
@@ -7368,37 +7424,83 @@ class BibleSearchPlugin extends Plugin {
                 this.settings.dataVersions = this.settings.dataVersions || {};
                 this.settings.dataVersions[item.file] = item.dataVersion;
                 await this.saveSettings();
+                succeeded.push(item);
+                if (item.file === NOTES_FILE) {
+                    // 注解数据更新：标记已安装并准备重载
+                    this.settings.notesInstalled = true;
+                    await this.saveSettings();
+                    notesReload = true;
+                } else {
+                    bibleReload = true;
+                }
                 done++;
                 notice.hide();
             } catch (e) {
                 notice.hide();
-                new Notice(`${item.name} 更新失败：${e.message}`, 6000);
+                failed.push({ item, error: (e && e.message) ? e.message : String(e) });
             }
         }
-        if (done > 0) {
-            await this.loadBibleData();
-            new Notice(`✅ 已更新 ${done} 个圣经数据文件`, 6000);
+        // 重载数据
+        if (bibleReload) {
+            try { await this.loadBibleData(); } catch (e) { console.error('[Bible] 重载经文数据失败:', e); }
         }
+        if (notesReload) {
+            try {
+                this.notesData = null;
+                this.notesSearchIndex = null;
+                this._notesAttached = false;
+                await this.loadNotesData();
+                this.attachNotesToItems();
+                await this.refreshNotesViews();
+            } catch (e) { console.error('[Bible] 重载注解数据失败:', e); }
+        }
+        // 持久化「仍未完成」的更新，便于重启后再次提醒 / 重试
+        this.settings.pendingDataUpdates = failed.map(f => f.item.file);
+        await this.saveSettings();
+        // 明确反馈结果，让用户知道成功 / 失败，失败的可重试
+        if (failed.length === 0) {
+            new Notice(`✅ 已更新 ${succeeded.length} 个圣经数据文件`, 6000);
+        } else if (succeeded.length === 0) {
+            new Notice(`❌ 圣经数据更新失败：${failed.map(f => f.item.name).join('、')}（${failed[0].error}）。可在设置或对照页重试。`, 12000);
+        } else {
+            new Notice(`⚠️ 已更新 ${succeeded.length} 个，${failed.length} 个失败（${failed.map(f => f.item.name).join('、')}）。可在设置或对照页重试。`, 12000);
+        }
+        return { succeeded, failed };
     }
 
-    /** 启动时调用；默认 12 小时节流，force=true 可强制（手动检查用）。 */
+    /** 启动时调用；默认 12 小时节流，force=true 可强制（手动检查用）。
+     *  若此前有更新未完成（settings.pendingDataUpdates 非空），则绕过 12h 节流再次提醒，
+     *  避免「更新因网络失败、重启后不再提示、也不知道是否成功」的情况。 */
     async checkBibleDataUpdateAndNotify(force = false) {
         try {
             if (!force && !this.settings.autoCheckUpdate) return;
             const now = Date.now();
-            if (!force && now - (this.settings.lastDataCheckAt || 0) < 12 * 3600 * 1000) return;
-            this.settings.lastDataCheckAt = now;
-            await this.saveSettings();
+            const persisted = (this.settings.pendingDataUpdates || []);
+            const inCooldown = now < (this.settings.dataUpdateCooldownUntil || 0);
+            if (!force && !persisted.length && now - (this.settings.lastDataCheckAt || 0) < 12 * 3600 * 1000) return;
+            if (!force && inCooldown) return;
             const pending = await this.checkBibleDataUpdate();
-            if (pending && pending.length) this.showDataUpdateNotification(pending);
-            else if (force) new Notice('圣经数据已是最新版本');
+            if (pending && pending.length) {
+                this.settings.lastDataCheckAt = now;
+                this.settings.pendingDataUpdates = pending.map(p => p.file);
+                await this.saveSettings();
+                this.showDataUpdateNotification(pending, persisted.length > 0);
+            } else {
+                // 没有待更新：清掉历史「未完成」记录，避免日后无意义重弹
+                if (persisted.length) {
+                    this.settings.pendingDataUpdates = [];
+                    await this.saveSettings();
+                }
+                if (force) new Notice('圣经数据已是最新版本');
+            }
         } catch (e) {
             console.error('[Bible] 数据更新通知失败:', e);
         }
     }
 
-    /** 右下角常驻通知（不自动消失），提供「查看详情 / 立即更新 / 稍后」。 */
-    showDataUpdateNotification(pending) {
+    /** 右下角常驻通知（不自动消失），提供「查看详情 / 立即更新 / 稍后」。
+     *  fromFailure=true 表示此前更新未完成（失败或被延后），标题提示可重试。 */
+    showDataUpdateNotification(pending, fromFailure = false) {
         const notice = new Notice('', 0);
         const frag = document.createDocumentFragment();
         const wrap = document.createElement('div');
@@ -7406,7 +7508,7 @@ class BibleSearchPlugin extends Plugin {
         wrap.style.minWidth = '300px';
         const names = pending.map(p => p.name).join('、');
         const total = pending.reduce((s, p) => s + (p.size || 0), 0);
-        wrap.innerHTML = '<div style="font-weight:600;margin-bottom:6px;">📖 圣经数据有可用更新</div>' +
+        wrap.innerHTML = '<div style="font-weight:600;margin-bottom:6px;">📖 ' + (fromFailure ? '圣经数据更新未完成，可重试' : '圣经数据有可用更新') + '</div>' +
             '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">' +
             names + '　约 ' + (total / 1024 / 1024).toFixed(0) + ' MB</div>';
         const btnWrap = document.createElement('div');
@@ -7432,7 +7534,13 @@ class BibleSearchPlugin extends Plugin {
         frag.appendChild(wrap);
         notice.setMessage(frag);
 
-        laterBtn.addEventListener('click', () => notice.hide());
+        laterBtn.addEventListener('click', () => {
+            // 点「稍后」后 24 小时内不再弹数据更新提示，避免反复打扰；但持久化的 pendingDataUpdates 仍保留，
+            // 待冷却结束或下次手动检查时会再次提醒，确保更新不会因一次延后就彻底消失。
+            this.settings.dataUpdateCooldownUntil = Date.now() + 24 * 3600 * 1000;
+            this.saveSettings();
+            notice.hide();
+        });
         detailBtn.addEventListener('click', () => {
             notice.hide();
             new DataUpdateModal(this.app, this, pending).open();
