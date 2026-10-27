@@ -1740,6 +1740,15 @@
     border-left-color: rgba(0, 0, 0, 0.14);
     color: #6b7280;
 }
+/* 投影里串珠经文的出处标记：与经文正文区分（投影层不继承插件容器变量，直接用主色） */
+.bible-proj-note-ref-addr {
+    color: #4ecdc4;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-note-ref-addr {
+    color: #2f9e96;
+}
 
 /* ===== 2.1.0 新增：对照模式相关样式 ===== */
 
@@ -2231,6 +2240,29 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* 经文弹窗支持多层：外壳负责定位与外观，内部的「层」只负责内容，
+   层与层之间切换时弹窗位置不动（在注解里点出处不再另起一个浮层） */
+.bible-inline-tooltip-host > .bible-inline-tooltip-level {
+    position: static;
+    z-index: auto;
+    max-width: none;
+    min-width: 0;
+    width: 100%;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    animation: none;
+}
+
+/* 更深层级的「返回上一层」按钮 */
+.bible-inline-tooltip-back {
+    padding: 1px 6px;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
 /* 标题行：经文出处 + 保留候选 + 计数 + 清空 */
 .bible-inline-tooltip-header {
     display: flex;
@@ -2572,6 +2604,7 @@
 }
 .bible-note-ref-verse {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     margin: 3px 0 0 0;
     padding-left: 2px;
@@ -2587,6 +2620,14 @@
 .bible-note-ref-text {
     flex: 1 1 auto;
     color: var(--text-muted);
+}
+/* 串珠引用的经文里点注 / 串上标时，在该节经文下方展开的注解 / 串珠面板。
+   flex-basis 100% 让它在 flex 行里另起一行，而不是挤到经文右侧 */
+.bible-note-sub-panel {
+    flex: 0 0 100%;
+    margin: 5px 0 2px 0;
+    padding-left: 8px;
+    border-left: 2px solid var(--bible-accent, #4ecdc4);
 }
 .bible-note-empty {
     color: var(--text-faint);
