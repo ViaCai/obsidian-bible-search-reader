@@ -382,6 +382,12 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.9': `## [4.0.9] - 2026-10-29
+
+### 新增
+- **经文弹窗可以按住顶部拖动**：弹窗浮在经文旁边时常常挡住要看的正文，现在按住标题栏（经文出处那一行）就能把它拖到任意位置，光标会变成抓手。拖到屏幕边缘会停住，不会跑出可视区域；拖动松手不会误触发「点击空白处返回上一层」，标题栏上的按钮、复选框照常可用
+
+---`,
     '4.0.8': `## [4.0.8] - 2026-10-28
 
 ### 修复
@@ -9655,6 +9661,8 @@ class BibleSearchPlugin extends Plugin {
             shell._levels = [];
             shell._anchor = targetEl;
             document.body.appendChild(shell);
+            // 按住标题行可以把这个弹窗拖到别处（层切换 / 重建内容时外壳不变，不会失效）
+            this.enableTooltipDrag(shell);
             // 记住「用同一锚点重开弹窗」的入口：切换注解时正文要重新渲染，且保持当前所在的层级
             this._tooltipRefresh = async () => { await this.rebuildTooltipStack(shell); };
         }
@@ -9809,6 +9817,8 @@ class BibleSearchPlugin extends Plugin {
         // 即退回上一层。有文字选区时不触发，避免「选中注文再复制」被误判成返回
         if (depth > 0) {
             tooltip.addEventListener('click', (e) => {
+                // 刚刚拖过弹窗：这一次 click 是拖动收尾，不当作「点击空白处返回上一层」
+                if (shell._dragJustMoved) { shell._dragJustMoved = false; return; }
                 const t = e.target;
                 if (!t || !t.closest) return;
                 if (t.closest('button') || t.closest('input') || t.closest('label') || t.closest('a')) return;
@@ -10331,6 +10341,61 @@ class BibleSearchPlugin extends Plugin {
         if (left + r.width > window.innerWidth - 20) left = Math.max(10, window.innerWidth - r.width - 20);
         if (left < 10) left = 10;
         shell.style.left = left + 'px';
+    }
+
+    // 按住标题行拖动经文弹窗。绑定在外壳上（层切换 / 注解开关重建内容时外壳不变），
+    // 所以只要绑一次；拖动结束后抑制紧随其后的 click，避免被当成「点击空白处返回上一层」。
+    enableTooltipDrag(shell) {
+        if (!shell || shell._dragEnabled) return;
+        shell._dragEnabled = true;
+        shell.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const t = e.target;
+            if (!t || !t.closest) return;
+            // 只有顶部标题行是拖动手柄；按钮 / 复选框 / 链接保持各自的行为
+            if (!t.closest('.bible-inline-tooltip-header')) return;
+            if (t.closest('button') || t.closest('input') || t.closest('label') || t.closest('a')) return;
+            const start = shell.getBoundingClientRect();
+            const offX = e.clientX - start.left;
+            const offY = e.clientY - start.top;
+            // 出处文字本身支持双击跳转，别在按下时就 preventDefault，否则可能吃掉双击
+            const onRefText = !!t.closest('.bible-inline-tooltip-ref');
+            let moved = false;
+            let dragEvt = null;
+            const onMove = (ev) => {
+                // 鼠标已松开（如在窗口外松开）但没收到 mouseup：按结束处理
+                if (ev.buttons === 0) { onUp(); return; }
+                const dx = ev.clientX - (start.left + offX);
+                const dy = ev.clientY - (start.top + offY);
+                if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+                if (!moved) {
+                    moved = true;
+                    dragEvt = ev;
+                    shell.classList.add('bible-inline-tooltip-dragging');
+                    try { const sl = window.getSelection(); if (sl && sl.removeAllRanges) sl.removeAllRanges(); } catch (_) { /* 无选区 */ }
+                }
+                ev.preventDefault();
+                // 夹在视口内，避免拖到看不见的地方
+                const w = shell.offsetWidth || start.width;
+                const h = shell.offsetHeight || start.height;
+                const left = Math.min(Math.max(6, start.left + dx), Math.max(6, window.innerWidth - w - 6));
+                const top = Math.min(Math.max(6, start.top + dy), Math.max(6, window.innerHeight - h - 6));
+                shell.style.left = left + 'px';
+                shell.style.top = top + 'px';
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove, true);
+                document.removeEventListener('mouseup', onUp, true);
+                shell.classList.remove('bible-inline-tooltip-dragging');
+                if (!moved) return;
+                shell._dragJustMoved = true;
+                // 兜底清除：拖动后没有产生 click 时，别让标记留到下一次点击
+                setTimeout(() => { shell._dragJustMoved = false; }, 0);
+            };
+            document.addEventListener('mousemove', onMove, true);
+            document.addEventListener('mouseup', onUp, true);
+            if (!onRefText) e.preventDefault();
+        });
     }
 
     // 切换注解开关等需要重渲染的场景：按栈里的出处依次重建，保持当前层级

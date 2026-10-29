@@ -2272,6 +2272,27 @@
     margin-bottom: 8px;
     padding-bottom: 4px;
     border-bottom: 1px solid var(--background-modifier-border);
+    /* 按住这一行可以拖动整个弹窗 */
+    cursor: grab;
+    user-select: none;
+}
+
+.bible-inline-tooltip-header button,
+.bible-inline-tooltip-header input,
+.bible-inline-tooltip-header label,
+.bible-inline-tooltip-header a {
+    cursor: pointer;
+}
+
+/* 拖动中：整块跟随鼠标，标题行显示抓紧手势 */
+.bible-inline-tooltip-dragging {
+    cursor: grabbing;
+    user-select: none;
+    opacity: 0.96;
+}
+
+.bible-inline-tooltip-dragging .bible-inline-tooltip-header {
+    cursor: grabbing;
 }
 
 .bible-inline-tooltip-ref {
