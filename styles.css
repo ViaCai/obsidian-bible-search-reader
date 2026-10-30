@@ -2206,7 +2206,7 @@
     z-index: 10000;
     max-width: 420px;
     min-width: 200px;
-    padding: 12px 16px;
+    padding: 0 16px 12px;
     background: var(--background-primary);
     border: 1px solid var(--bible-accent);
     border-radius: 8px;
@@ -2214,6 +2214,8 @@
     font-size: 13px;
     line-height: 1.7;
     pointer-events: auto;
+    /* 顶部边角（外壳两侧内边距区）按下拖动时也不要被当成页面滚动 / 平移 */
+    touch-action: none;
     animation: bible-tooltip-fade-in 0.15s ease;
 }
 
@@ -2269,12 +2271,15 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 6px;
+    padding-top: 12px;   /* 顶到外壳上边框，使整条顶部（含原本的外壳顶部留白）都能拖动 */
     margin-bottom: 8px;
     padding-bottom: 4px;
     border-bottom: 1px solid var(--background-modifier-border);
     /* 按住这一行可以拖动整个弹窗 */
     cursor: grab;
     user-select: none;
+    /* 触屏在这里按下拖动时，不要再把它当成页面滚动 / 平移 */
+    touch-action: none;
 }
 
 .bible-inline-tooltip-header button,
@@ -2291,7 +2296,8 @@
     opacity: 0.96;
 }
 
-.bible-inline-tooltip-dragging .bible-inline-tooltip-header {
+.bible-inline-tooltip-dragging .bible-inline-tooltip-header,
+.bible-inline-tooltip-dragging .bible-inline-tooltip-toolbar {
     cursor: grabbing;
 }
 
@@ -2351,6 +2357,16 @@
     margin-bottom: 8px;
     padding-bottom: 6px;
     border-bottom: 1px solid var(--background-modifier-border);
+    /* 按住这一行（含按钮）也能拖动整个弹窗 */
+    cursor: grab;
+    user-select: none;
+    /* 触屏在这里按下拖动时，不要再把它当成页面滚动 / 平移 */
+    touch-action: none;
+}
+
+.bible-inline-tooltip-toolbar button,
+.bible-inline-tooltip-toolbar input {
+    cursor: pointer;
 }
 
 /* 第二行工具条（保留候选）已合并到标题行 */

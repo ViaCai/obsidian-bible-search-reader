@@ -382,10 +382,16 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
-    '4.0.9': `## [4.0.9] - 2026-10-30
+    '4.0.10': `## [4.0.10] - 2026-10-30
 
 ### 新增
-- **经文弹窗可以按住顶部拖动**：弹窗浮在经文旁边时常常挡住要看的正文，现在按住标题栏（经文出处那一行）就能把它拖到任意位置，光标会变成抓手。拖到屏幕边缘会停住，不会跑出可视区域；拖动松手不会误触发「点击空白处返回上一层」，标题栏上的按钮、复选框照常可用
+- **经文弹窗可以按住顶部拖动**：弹窗浮在经文旁边时常常挡住要看的正文，现在按住标题栏（经文出处那一行，含其上的「‹ 返回」按钮、「保留候选」复选框与「清空」按钮）就能把它拖到任意位置，光标会变成抓手。拖到屏幕边缘会停住，不会跑出可视区域；拖动松手不会误触发「点击空白处返回上一层」，标题栏上的按钮、复选框照常可用（纯点击不移动时仍正常触发各自行为）
+- **触屏也能拖动弹窗**：之前只有鼠标能拖，改用 Pointer Events 后鼠标 / 触摸 / 触控笔统一支持；标题栏加了 \`touch-action: none\`，触屏拖动不再被当成页面滚动
+
+### 修复
+- **标题栏贴边位置也能拖动**：之前按在顶部栏两端的「‹ 返回」按钮或右侧「保留候选 / 清空」按钮上无法拖动（命中了按钮元素被排除），现在整条标题栏都作为拖动手柄，这些边缘区域也能正常拖动窗口
+- **整条顶部区域都能拖动**：顶部栏其实有两行（标题行「约3:16 + 保留候选」与工具条「A- / A+ / 全选 / 复制 / 投影 / 注解」），之前只有标题行能拖、按在工具条那一行拖不动。现在两行都作为拖动手柄，顶部栏有多高、可拖动范围就有多高（鼠标与触屏一致）
+- **外壳顶边那圈留白也能拖动**：之前按住外壳上边框与标题文字之间的内边距区域拖不动（那段属于外壳自身、不在标题栏元素内）。改用以几何区域判定拖动手柄——从外壳顶边一直到工具条底边整条顶部带（含这段留白）都是拖动区；同时把这段留白并入标题栏自身的内边距，触屏从最顶边起就能按住拖动
 
 ---`,
     '4.0.8': `## [4.0.8] - 2026-10-28
@@ -10348,13 +10354,30 @@ class BibleSearchPlugin extends Plugin {
     enableTooltipDrag(shell) {
         if (!shell || shell._dragEnabled) return;
         shell._dragEnabled = true;
-        shell.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
+        // 用 Pointer Events：一套逻辑同时覆盖鼠标 / 触摸 / 触控笔。
+        // 标题栏的 touch-action:none 已阻止浏览器把触屏拖动当成页面滚动。
+        shell.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
             const t = e.target;
             if (!t || !t.closest) return;
-            // 只有顶部标题行是拖动手柄；按钮 / 复选框 / 链接保持各自的行为
-            if (!t.closest('.bible-inline-tooltip-header')) return;
-            if (t.closest('button') || t.closest('input') || t.closest('label') || t.closest('a')) return;
+            // 拖动手柄 = 从外壳顶边一直到工具条底边的整条顶部区域（含外壳自身的顶部内边距）。
+            // 用几何区域判断而不是依赖具体元素，这样标题栏上方那 12px 留白、整条标题行、整条工具条
+            // 全部都能拖动，鼠标和触屏一致。是否真的拖动由「位移是否超过阈值」决定，纯点击（不移动）
+            // 仍会正常触发按钮自身行为，拖动结束后的首次点击也会被 _dragJustMoved 吞掉，不会误触按钮。
+            const rect = shell.getBoundingClientRect();
+            const yFromTop = e.clientY - rect.top;
+            if (yFromTop < 0) return;
+            // 找到当前可见的那一层（其它层可能是 display:none 的隐藏层，坐标无效）
+            const levels = Array.from(shell.querySelectorAll(':scope > .bible-inline-tooltip-level'));
+            const visible = levels.find(l => l.style.display !== 'none') || levels[levels.length - 1] || shell;
+            const toolbar = visible.querySelector('.bible-inline-tooltip-toolbar');
+            const header = visible.querySelector('.bible-inline-tooltip-header');
+            const boundaryEl = toolbar || header;
+            let boundary = rect.height;
+            if (boundaryEl && boundaryEl.getBoundingClientRect) {
+                boundary = boundaryEl.getBoundingClientRect().bottom - rect.top;
+            }
+            if (yFromTop > boundary + 8) return;   // 落在正文区域，不拖动
             const start = shell.getBoundingClientRect();
             const offX = e.clientX - start.left;
             const offY = e.clientY - start.top;
@@ -10363,8 +10386,8 @@ class BibleSearchPlugin extends Plugin {
             let moved = false;
             let dragEvt = null;
             const onMove = (ev) => {
-                // 鼠标已松开（如在窗口外松开）但没收到 mouseup：按结束处理
-                if (ev.buttons === 0) { onUp(); return; }
+                // 指针已松开（如在窗口外松开）但没收到 pointerup：按结束处理
+                if (ev.buttons === 0 && ev.pointerType === 'mouse') { onUp(); return; }
                 const dx = ev.clientX - (start.left + offX);
                 const dy = ev.clientY - (start.top + offY);
                 if (!moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
@@ -10384,17 +10407,20 @@ class BibleSearchPlugin extends Plugin {
                 shell.style.top = top + 'px';
             };
             const onUp = () => {
-                document.removeEventListener('mousemove', onMove, true);
-                document.removeEventListener('mouseup', onUp, true);
+                document.removeEventListener('pointermove', onMove, true);
+                document.removeEventListener('pointerup', onUp, true);
+                document.removeEventListener('pointercancel', onUp, true);
                 shell.classList.remove('bible-inline-tooltip-dragging');
                 if (!moved) return;
                 shell._dragJustMoved = true;
                 // 兜底清除：拖动后没有产生 click 时，别让标记留到下一次点击
                 setTimeout(() => { shell._dragJustMoved = false; }, 0);
             };
-            document.addEventListener('mousemove', onMove, true);
-            document.addEventListener('mouseup', onUp, true);
-            if (!onRefText) e.preventDefault();
+            document.addEventListener('pointermove', onMove, true);
+            document.addEventListener('pointerup', onUp, true);
+            document.addEventListener('pointercancel', onUp, true);
+            // 触屏不要吞掉双击跳转的判定，只在不点出处文字时阻止默认滚动
+            if (!onRefText && e.pointerType !== 'touch') e.preventDefault();
         });
     }
 
