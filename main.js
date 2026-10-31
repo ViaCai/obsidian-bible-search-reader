@@ -360,9 +360,16 @@ function chineseToNumber(s) {
 function isChineseNumber(s) { return /^[一二三四五六七八九十百零〇]+$/.test(s); }
 function parseNumber(s) {
     s = s.trim();
+    s = normalizeFullWidthDigits(s);
     if (/^\d+$/.test(s)) return parseInt(s);
     if (isChineseNumber(s)) return chineseToNumber(s);
     return NaN;
+}
+
+// 全角数字（０-９，U+FF10–U+FF19）归一为半角（0-9）。与 ○→〇 一样仅按码元替换、长度不变，
+// 不影响任何字符偏移计算；归一后下游所有 \d+ 正则与 parseInt 即可直接识别「罗九２１」里的「２１」。
+function normalizeFullWidthDigits(s) {
+    return String(s == null ? '' : s).replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
 }
 
 // 「跨越整章的区间」（如“创三～五十章”“诗一百二十至一百三十四篇”“三～五十章”）的统一解析。
@@ -382,6 +389,17 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.11': `## [4.0.11] - 2026-10-31
+
+### 修复
+- **投影里串珠内容的「串珠出处」可以点击了**：经文投影中展开某节的串珠后，每条被引经文前面的出处（如「罗3:24」）之前只渲染了文字、没有绑定点击事件，点了毫无反应。现已可单击在弹窗中查看该节、双击跳转到圣经阅读页（与阅读页 / 经文弹窗里的串珠出处同一套交互）
+- **投影支持「返回上一层内容」**：投影时不小心从「注角的经文出处」或「经文弹窗」里再次投影，会直接覆盖掉当前的投影内容、无法退回。现已加入投影内容历史栈——每次从浮层再次投影都会先把当前内容存起来，底部新增「↶ 返回」按钮（快捷键 Z）可逐级退回上一层投影，没有历史时按钮自动隐藏
+- **全角数字（０-９）也能识别为经文引用了**：此前「罗九２１」里的「２１」因为是全角数字而识别不到，结果整句引用落空。现已在引用解析的多个入口统一把全角数字归一为半角（与 ○→〇 同样的单码元替换、不改变任何字符偏移），「罗九２１」现在能正确识别为罗马书九章二十一节，其它如「创一～二０章」等全角数字写法同样生效
+- **投影里点串珠被引经文的标注（上标）不再关掉整个串珠**：投影中展开某节串珠后，点其被引经文里的小标注（¹²³⁴ᵃᵇ）本应展开对应的注解 / 串珠，结果却把整层串珠面板关掉、内容也看不到。现已改为子面板只管自己、不再牵连外层主串珠面板，点击正确在下方展开对应内容
+- **串珠里的上标标注现在真正可点击了**：展开串珠列出的被引经文，其内嵌的 ¹ ᵃ 上标此前在阅读页 / 检索结果 / 经文弹窗 / 投影四处都缺少可交互样式（点了没有视觉反馈、也点不中）。现已补全 \`.bible-note-ref-text\` 与 \`.bible-proj-note-ref-text\` 下的标注样式（含 hover、浅色模式变体），四处一致——点击即在该节下方展开对应的注解或串珠
+- **嵌套串珠（串珠里的串珠）也显示标注，可继续向下钻取**：点开一处串珠、再在被引经文里点它的串珠 / 注解标注时，第二层显示的经文此前被渲染成纯文本、丢失了 ¹ ᵃ 上标，导致没法继续往里点。现已在各层级（阅读页 / 检索 / 经文弹窗 / 投影）都保留标注，可一层层向下钻取对应的注解或串珠；每个被引经文行只保留一个子面板，不会无限叠加
+
+---`,
     '4.0.10': `## [4.0.10] - 2026-10-30
 
 ### 新增
@@ -2008,6 +2026,8 @@ class BibleProjectionOverlay {
         this.isSearchMode = false;
         this.touchStartX = 0;
         this.touchStartY = 0;
+        // 投影内容历史：从注解出处 / 经文弹窗再次投影时先存档当前内容，便于返回上一层
+        this._projHistory = [];
         this.buildSlides();
     }
 
@@ -2058,7 +2078,7 @@ class BibleProjectionOverlay {
         topLeft.createEl('span', { cls: 'bible-proj-mode-name', text: this.getModeName() });
         const topCenter = topBar.createDiv();
         topCenter.style.cssText = 'font-size:12px;opacity:0.75;text-align:center;flex:1;';
-        topCenter.setText('← → 翻页 · Q 逐节 · W 并列 · E 混合 · S 检索 · O 桌面全屏 · C 居中 · R 重置 · +/- 字体 · T 主题 · ESC 关闭');
+        topCenter.setText('← → 翻页 · Q 逐节 · W 并列 · E 混合 · S 检索 · O 桌面全屏 · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭');
         const topRight = topBar.createDiv();
         topRight.createEl('span', { cls: 'bible-proj-page-num', text: (this.currentSlide + 1) + '/' + this.slides.length + '页' });
         this.overlay.appendChild(topBar);
@@ -2074,6 +2094,11 @@ class BibleProjectionOverlay {
 
         const bottomRow = bottomBar.createDiv({ cls: 'bible-proj-bottom-row' });
         bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 16px;gap:8px;';
+        // 返回上一个投影内容：从注解出处 / 经文弹窗再次投影后，可退回之前的投影（无历史时隐藏）
+        const backBtn = bottomRow.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-back', text: '↶', attr: { 'data-action': 'proj-back' } });
+        backBtn.title = '返回上一个投影内容（Z）';
+        backBtn.style.display = 'none';
+        backBtn.addEventListener('click', () => this.goBackProjection());
         const prevBtn = bottomRow.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-prev', text: '◀' });
 
         const toolCenter = bottomRow.createDiv({ cls: 'bible-proj-tool-center' });
@@ -2211,6 +2236,7 @@ class BibleProjectionOverlay {
             else if (e.key === 'o' || e.key === 'O') this.toggleDesktopFullscreen();
             else if (e.key === 'c' || e.key === 'C') this.toggleCentered();
             else if (e.key === 'r' || e.key === 'R') { this.fontSize = 48; this.updateFontSize(); }
+            else if (e.key === 'z' || e.key === 'Z') this.goBackProjection();
             else if (e.key === 'q' || e.key === 'Q' || e.key === 'w' || e.key === 'W' || e.key === 'e' || e.key === 'E') {
                 // 已经处在投影里（投影独占屏幕）时，Q/W/E 就是切换排版模式：直接在这里切并阻断传播。
                 // 原先这里刻意不消费事件，交给插件级监听统一分派，但那条路径在「侧边栏插件界面可见 /
@@ -2660,12 +2686,17 @@ class BibleProjectionOverlay {
     // 与经文的关系：上方一条分割线隔开 + 淡背景 + 左侧重点色条 + 类型徽标，
     // 观感上明确是「附注内容」而不是经文正文；正文按段落分块，段落之间留出一个空行
     // ctx：{ bookId, chapter } —— 该注 / 串所属经文的书卷与章，供注文里「承上省略」的出处识别使用
-    // depth：串珠经文里再展开注 / 串的层级（>=1 时不再给串珠经文嵌上标，避免无限嵌套展开）
+    // depth：串珠经文里再展开注 / 串的层级（各级均保留 ¹ ᵃ 上标，可继续向下钻取，无限嵌套由每节只保留一个子面板兜底）
     fillProjNotePanel(panel, nd, kind, label, pk, ctx, depth) {
         panel.empty();
         // 顶部收起按钮：面板内部已改为「选字时不关闭」，这里给一个显式的收起入口
         const dismiss = panel.createDiv({ cls: 'bible-proj-note-dismiss', text: '✕ 收起' });
-        dismiss.addEventListener('click', (e) => { e.stopPropagation(); this.closeProjNotePanels(); });
+        dismiss.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // 子面板（嵌在串珠被引经文里）只收起自身，不要连带关掉外层主 串珠 面板
+            if ((depth || 0) > 0) panel.style.display = 'none';
+            else this.closeProjNotePanels();
+        });
         const paras = (text) => String(text || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
         const addLabel = (row, kindLabel, kindCls, title) => {
             const chip = row.createEl('span', { cls: 'bible-proj-note-label ' + kindCls, text: kindLabel });
@@ -2696,14 +2727,35 @@ class BibleProjectionOverlay {
             const body = row.createDiv({ cls: 'bible-proj-note-body' });
             for (const v of this.plugin.getChainReferencedVerses(r, pk)) {
                 const vr = body.createDiv({ cls: 'bible-proj-note-ref-verse' });
-                vr.createEl('span', {
+                // 串珠引用的经文出处：点击在弹窗里查看该节、双击跳转到圣经阅读页
+                // （与阅读页 / 经文弹窗里的串珠出处同一套交互；之前这里只渲染了文字却没绑事件，点了毫无反应）
+                const addr = vr.createEl('span', {
                     cls: 'bible-proj-note-ref-addr',
                     text: v.bookShortName + v.chapter + ':' + v.verse + (v.part || '')
                 });
+                addr.title = '点击在弹窗中查看该节，双击跳转到圣经阅读页';
+                const tvMatch = {
+                    bookId: v.bookId,
+                    bookShortName: v.bookShortName,
+                    allRefs: [{ chapter: v.chapter, verse: v.verse, verseEnd: null, suffix: null, endChapter: null, endVerse: null }]
+                };
+                addr.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (e.detail > 1) return;   // 双击的第二下交给 dblclick 去跳转
+                    if (this.plugin && this.plugin.toggleTooltipFromElement) this.plugin.toggleTooltipFromElement(addr, tvMatch);
+                });
+                addr.addEventListener('dblclick', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (this.plugin && this.plugin.jumpToBibleReader) this.plugin.jumpToBibleReader(tvMatch);
+                });
                 vr.appendChild(document.createTextNode(' '));
                 const vt = vr.createEl('span', { cls: 'bible-proj-note-ref-text' });
-                if ((depth || 0) < 1 && typeof this.plugin.renderVerseTextWithMarkers === 'function') {
-                    // 串珠引用的经文同样带 ¹ ᵃ 上标，点击在该节下方展开对应注解 / 串珠（只嵌套一层）
+                // 串珠引用的经文同样带 ¹ ᵃ 上标，点击在该节下方展开对应注解 / 串珠。
+                // 各级（含嵌套串珠）都保留标注，可继续向下钻取；每个被引经文行只保留一个子面板，
+                // 不会出现无限叠加 DOM，故不限制层级。
+                if (typeof this.plugin.renderVerseTextWithMarkers === 'function') {
                     this.plugin.renderVerseTextWithMarkers(vt, v, (k2, l2) => this.toggleProjNoteSubPanel(vr, v, k2, l2, pk, depth));
                 } else {
                     vt.setText(v.content);
@@ -2718,7 +2770,7 @@ class BibleProjectionOverlay {
         const key = kind + ':' + label;
         let p = Array.from(vr.children).find(c => c.classList && c.classList.contains('bible-proj-notes'));
         if (p && p.style.display === 'block' && p.getAttribute('data-note-key') === key) {
-            this.closeProjNotePanels();
+            p.style.display = 'none';
             return;
         }
         if (!p) {
@@ -2729,11 +2781,10 @@ class BibleProjectionOverlay {
                 e.stopPropagation();
                 const sel = (typeof window !== 'undefined' && window.getSelection) ? window.getSelection() : null;
                 if (sel && sel.toString().trim().length > 0) return;  // 正在选字，不收起
-                this.closeProjNotePanels();
+                p.style.display = 'none';
             });
             vr.appendChild(p);
         }
-        this.closeProjNotePanels(p);
         this._saveProjNoteScroll();
         const nd = this.plugin ? this.plugin.getVerseNotes(item.bookId, item.chapter, item.verse, item.part) : null;
         this.fillProjNotePanel(p, nd, kind, label, pk, { bookId: item.bookId, chapter: item.chapter }, (depth || 0) + 1);
@@ -3130,8 +3181,46 @@ class BibleProjectionOverlay {
         if (this.isSearchMode) this.applySplitLayout();
     }
 
+    // 把当前投影内容存档到历史栈（仅当确有内容时），便于之后「返回上一个投影内容」
+    pushProjectionHistory() {
+        if (!this.results || !this.results.length) return;
+        this._projHistory.push({
+            results: this.results,
+            mode: this.mode,
+            currentSlide: this.currentSlide,
+            showSource: this.showSource
+        });
+        if (this._projHistory.length > 30) this._projHistory.shift();
+        this.updateBackBtn();
+    }
+    canGoBackProjection() { return this._projHistory.length > 0; }
+    // 返回上一个投影内容：从注解出处 / 经文弹窗再次投影后，可逐级退回到先前的投影
+    goBackProjection() {
+        const prev = this._projHistory.pop();
+        if (!prev) return;
+        this.results = prev.results;
+        this.mode = prev.mode;
+        this.showSource = prev.showSource;
+        this.slides = [];
+        this.buildSlides();
+        this.currentSlide = Math.min(Math.max(0, prev.currentSlide), Math.max(0, this.slides.length - 1));
+        this.renderSlide();
+        const modeEl = this.overlay && this.overlay.querySelector('.bible-proj-mode-name');
+        if (modeEl) modeEl.textContent = this.getModeName();
+        const pageEl = this.overlay && this.overlay.querySelector('.bible-proj-page-num');
+        if (pageEl) pageEl.textContent = (this.currentSlide + 1) + '/' + this.slides.length + '页';
+        this.updateBackBtn();
+    }
+    // 根据历史栈是否为空切换「返回」按钮的显隐
+    updateBackBtn() {
+        const btn = this.overlay && this.overlay.querySelector('[data-action="proj-back"]');
+        if (btn) btn.style.display = this.canGoBackProjection() ? '' : 'none';
+    }
+
     // 用新的选中内容替换当前投影内容（原地更新，保持当前分屏/全屏状态，避免画面缩放跳动）
     reloadResults(results, mode) {
+        // 先存档当前内容：从注解出处 / 经文弹窗再次投影时，仍可返回到这一版投影
+        this.pushProjectionHistory();
         this.results = results.filter(r => r.selected).sort((a, b) => a.order - b.order);
         this.mode = mode;
         this.currentSlide = 0;
@@ -5773,7 +5862,7 @@ class BibleSearchView extends ItemView {
         }
     }
 
-    // depth：串珠经文里再展开注 / 串的层级（>=1 时不再给串珠经文嵌上标，避免无限嵌套展开）
+    // depth：串珠经文里再展开注 / 串的层级（各级均保留 ¹ ᵃ 上标，可继续向下钻取，无限嵌套由每节只保留一个子面板兜底）
     fillVerseNotePanel(panel, item, nd, kind, label, host, depth) {
         panel.empty();
         if (kind === 'n') {
@@ -5841,12 +5930,10 @@ class BibleSearchView extends ItemView {
                     });
                 });
                 const vt = vr.createEl('span', { cls: 'bible-note-ref-text' });
-                if ((depth || 0) < 1) {
-                    // 串珠引用的经文同样带 ¹ ᵃ 上标，点击在该节下方展开对应注解 / 串珠（只嵌套一层）
-                    this.plugin.renderVerseTextWithMarkers(vt, v, (k2, l2) => this.toggleVerseNoteSubPanel(vr, v, k2, l2, host, depth));
-                } else {
-                    vt.setText(v.content);
-                }
+                // 串珠引用的经文同样带 ¹ ᵃ 上标，点击在该节下方展开对应注解 / 串珠。
+                // 各级（含嵌套串珠）都保留标注，可继续向下钻取；每个被引经文行只保留一个子面板，
+                // 不会出现无限叠加 DOM，故不限制层级。
+                this.plugin.renderVerseTextWithMarkers(vt, v, (k2, l2) => this.toggleVerseNoteSubPanel(vr, v, k2, l2, host, depth));
             }
         }
     }
@@ -7181,6 +7268,7 @@ class BibleSearchPlugin extends Plugin {
         if (!text) return [];
         // 同 findBibleReferences：恢复本串珠文字中的零偶尔也用白色圆圈○(U+25CB)，先归一为汉字〇(U+3007)
         text = text.replace(/○/g, '〇');
+        text = normalizeFullWidthDigits(text);
         let s = text.replace(/^\s*\d+[～~\-至]+\d+节\s*[：:]?\s*/, '');
         const refs = [];
         const seen = new Set();
@@ -7389,7 +7477,7 @@ class BibleSearchPlugin extends Plugin {
 
     // 经文弹窗里的注解 / 串珠面板
     // kind / label 指定时只显示对应的那一条注解或串珠
-    // depth：串珠经文里再展开注 / 串的层级（>=1 时不再给串珠经文嵌上标，避免无限嵌套展开）
+    // depth：串珠经文里再展开注 / 串的层级（各级均保留 ¹ ᵃ 上标，可继续向下钻取，无限嵌套由每节只保留一个子面板兜底）
     fillTooltipNotePanel(panel, nd, v, kind, label, ctx, depth) {
         panel.empty();
         panel.addEventListener('click', (e) => e.stopPropagation());
@@ -7460,12 +7548,10 @@ class BibleSearchPlugin extends Plugin {
                     this.jumpToBibleReader(tvMatch);
                 });
                 const vt = vr.createEl('span', { cls: 'bible-note-ref-text' });
-                if ((depth || 0) < 1) {
-                    // 串珠引用的经文同样带 ¹ ᵃ 上标，点击在该节下方展开对应注解 / 串珠（只嵌套一层）
-                    this.renderVerseTextWithMarkers(vt, tv, (k2, l2) => this.toggleTooltipNoteSubPanel(vr, tv, k2, l2, ctx, depth));
-                } else {
-                    vt.setText(tv.content);
-                }
+                // 串珠引用的经文同样带 ¹ ᵃ 上标，点击在该节下方展开对应注解 / 串珠。
+                // 各级（含嵌套串珠）都保留标注，可继续向下钻取；每个被引经文行只保留一个子面板，
+                // 不会出现无限叠加 DOM，故不限制层级。
+                this.renderVerseTextWithMarkers(vt, tv, (k2, l2) => this.toggleTooltipNoteSubPanel(vr, tv, k2, l2, ctx, depth));
             }
         }
     }
@@ -8423,6 +8509,7 @@ class BibleSearchPlugin extends Plugin {
         // 而中文数字解析只认汉字〇(U+3007)与「零」。这里统一归一为〇——两者都是单码元、长度不变，
         // 后续高亮所用字符偏移不受影响。一处归一即可覆盖全部中文数字正则。
         text = text.replace(/○/g, '〇');
+        text = normalizeFullWidthDigits(text);
         const matches = [];
         const coveredRanges = [];
         // 已确定的引用按位置组成“时间线”。弱引用（未写书卷、只写章节或节号）解析时，
@@ -9027,6 +9114,7 @@ class BibleSearchPlugin extends Plugin {
     // 不加这道闸门会把整个括号并成一条、全部挂到第一个书卷名下。
     // 返回 { refs, consumed }：consumed 是实际解析到的内容偏移（相对 content 起点）。
     parseWeakRefList(content, book, initialLastChapter, coveredRanges, absOffset) {
+        content = normalizeFullWidthDigits(content);
         const refs = [];
         let lastChapter = initialLastChapter !== undefined ? initialLastChapter : null;
         let currentBook = book;

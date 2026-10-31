@@ -1549,7 +1549,8 @@
 }
 
 /* ===== 经文投影：正文内嵌注 / 串上标，点击上标展开（字号与经文一致）===== */
-.bible-proj-text sup.bible-note-mark {
+.bible-proj-text sup.bible-note-mark,
+.bible-proj-note-ref-text sup.bible-note-mark {
     display: inline-block;
     min-width: 1em;
     padding: 0 0.2em;
@@ -1564,26 +1565,32 @@
     font-weight: 600;
     transition: background-color 0.12s ease;
 }
-.bible-proj-text sup.bible-note-mark-note {
+.bible-proj-text sup.bible-note-mark-note,
+.bible-proj-note-ref-text sup.bible-note-mark-note {
     color: #a0c4ff;
     background-color: rgba(255, 255, 255, 0.15);
 }
-.bible-proj-text sup.bible-note-mark-ref {
+.bible-proj-text sup.bible-note-mark-ref,
+.bible-proj-note-ref-text sup.bible-note-mark-ref {
     color: #b8b8b8;
     background-color: rgba(255, 255, 255, 0.12);
 }
-.bible-proj-text sup.bible-note-mark:hover {
+.bible-proj-text sup.bible-note-mark:hover,
+.bible-proj-note-ref-text sup.bible-note-mark:hover {
     background-color: rgba(255, 255, 255, 0.3);
 }
-.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark-note {
+.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark-note,
+.bible-projection-fullscreen.light-mode .bible-proj-note-ref-text sup.bible-note-mark-note {
     color: #4a6fa5;
     background-color: rgba(0, 0, 0, 0.1);
 }
-.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark-ref {
+.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark-ref,
+.bible-projection-fullscreen.light-mode .bible-proj-note-ref-text sup.bible-note-mark-ref {
     color: #555;
     background-color: rgba(0, 0, 0, 0.08);
 }
-.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark:hover {
+.bible-projection-fullscreen.light-mode .bible-proj-text sup.bible-note-mark:hover,
+.bible-projection-fullscreen.light-mode .bible-proj-note-ref-text sup.bible-note-mark:hover {
     background-color: rgba(0, 0, 0, 0.18);
 }
 /* ===== 被选中直接投影的注解 / 串珠 =====
@@ -2537,7 +2544,8 @@
 /* 经文内嵌上标：注 ¹ 串 ᵃ */
 .bible-reader-verse-text sup.bible-note-mark,
 .bible-result-text sup.bible-note-mark,
-.bible-inline-tooltip-verse-text sup.bible-note-mark {
+.bible-inline-tooltip-verse-text sup.bible-note-mark,
+.bible-note-ref-text sup.bible-note-mark {
     display: inline-block;
     min-width: 1em;
     padding: 0 0.2em;
@@ -2554,19 +2562,22 @@
 }
 .bible-reader-verse-text sup.bible-note-mark-note,
 .bible-result-text sup.bible-note-mark-note,
-.bible-inline-tooltip-verse-text sup.bible-note-mark-note {
+.bible-inline-tooltip-verse-text sup.bible-note-mark-note,
+.bible-note-ref-text sup.bible-note-mark-note {
     color: var(--text-accent);
     background-color: var(--background-modifier-hover);
 }
 .bible-reader-verse-text sup.bible-note-mark-ref,
 .bible-result-text sup.bible-note-mark-ref,
-.bible-inline-tooltip-verse-text sup.bible-note-mark-ref {
+.bible-inline-tooltip-verse-text sup.bible-note-mark-ref,
+.bible-note-ref-text sup.bible-note-mark-ref {
     color: var(--text-muted);
     background-color: var(--background-modifier-hover);
 }
 .bible-reader-verse-text sup.bible-note-mark:hover,
 .bible-result-text sup.bible-note-mark:hover,
-.bible-inline-tooltip-verse-text sup.bible-note-mark:hover {
+.bible-inline-tooltip-verse-text sup.bible-note-mark:hover,
+.bible-note-ref-text sup.bible-note-mark:hover {
     background-color: var(--background-modifier-active-hover);
 }
 /* 检索命中注解正文时的经文底色 */
