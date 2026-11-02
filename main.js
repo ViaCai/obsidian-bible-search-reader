@@ -70,6 +70,12 @@ const BIBLE_BOOKS = [
     { id: 66, fullName: '启示录', shortName: '启', testament: 'new', maxChapters: 22 }
 ];
 
+// 单字书卷名黑名单：这些单字在日常文本里几乎只作普通汉字/动词出现（如「拿」=拿取），
+// 由强引用路径（parseRefCluster）识别时，单字 + 整章（无节号、非跨章范围）几乎必是正文而非引用
+// （如「拿一」=拿一块），不作为经文出处；带节号（拿一1 = 约拿书 1:1）仍正常识别。
+// 如需为其它单字书卷关掉这种「单字 + 整章」的弱匹配，往此集合加一字即可。
+const BOOK_NAME_DENYLIST = new Set(['拿']);
+
 const BOOK_MAP = {};
 const BOOK_ID_MAP = {};
 for (const book of BIBLE_BOOKS) {
@@ -389,6 +395,12 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.12': `## [4.0.12] - 2026-11-03
+
+### 修复
+- **单字书卷名不再因「正文里的动词/常用字」被误识别为经文出处**：罗马书九章二十一节里的「拿一块作成…」此前会被认成「拿9:1」（约拿书），因为「拿」既是约拿书的单字别名、又会在弱引用里触发「切换书卷 + 继承章号 + 裸节号」。现已在弱引用路径下，当因段首单字书卷名切换到多章书卷时，停用「继承章号 + 裸节号」和「整章」两类识别，正文里的「拿一块」「约一」「诗一」等不再被当成引用；带显式章号的合法写法（腓二5、罗九21、拿一1＝约拿书1:1）完全不受影响。另在强引用路径下，对纯动词「拿」加入单字黑名单，避免「拿一」被当成约拿书整章；「诗二十三」「太一」这类合法中文引用写法不受影响，如需为其它单字书卷关闭此识别，往 \`BOOK_NAME_DENYLIST\` 加一字即可。其余单字书卷（创/但/民/书/罗/诗…）经扫描确认均为合法引用用法，未一并禁用
+
+---`,
     '4.0.11': `## [4.0.11] - 2026-10-31
 
 ### 修复
@@ -8677,6 +8689,10 @@ class BibleSearchPlugin extends Plugin {
         while (pos < text.length && /\s/.test(text[pos])) pos++;
         const first = this.parseSingleRef(text, pos, book);
         if (!first) return null;
+        // 常用汉字/动词黑名单：这些单字书卷名在日常文本里几乎只作普通字/动词出现（如「拿」=拿取），
+        // 单字 + 整章（无节号、非跨章范围）时几乎必是正文而非引用（如「拿一」=拿一块），不作为经文出处；
+        // 带节号（拿一1）仍正常识别。如需为其它字关闭单字弱匹配，往此集合加一字即可。
+        if (BOOK_NAME_DENYLIST.has(book.shortName) && first.verse == null && first.endChapter == null) return null;
         const refs = [{ chapter: first.chapter, verse: first.verse, verseEnd: first.verseEnd, suffix: first.suffix, endChapter: first.endChapter, endVerse: first.endVerse }];
         pos = first.endPos;
         while (true) {
@@ -9212,6 +9228,11 @@ class BibleSearchPlugin extends Plugin {
                 break;
             }
         }
+        // 是否因“段首书卷名”切换了书卷。单字书卷名（拿/创/但/约/罗/书/民/诗…）大多也是常用汉字或动词，
+        // 若其后是“继承章号 + 裸节号”（mode C），极易把正文误判为引用（如“拿一块”被认作拿鸿/约拿书 9:1）。
+        // 多章书卷的合法弱引用都带显式章号（腓二5 / 罗九21 / 拿一1），不依赖继承章号；
+        // 单章书卷（俄/犹）走 mode B3 处理。故切换至多章书卷时停用 mode C，避免误识别，其余路径不受影响。
+        const switchedToMultiChapter = currentBook !== book && currentBook.maxChapters > 1;
         // 「章 X 节 Y」之后若紧跟范围分隔符 + 数字，补出结束节（如「罗马书八28-30」「约3:16-17」）
         const extendRange = (consumed, verse) => {
             let p = consumed;
@@ -9272,8 +9293,9 @@ class BibleSearchPlugin extends Plugin {
         if (chRange) {
             return { chapter: chRange.chapter, verse: null, verseEnd: null, suffix: null, endChapter: chRange.endChapter, endVerse: null, book: currentBook, consumed: chRange.endPos };
         }
-        // 模式C: 只有节号（优先当 lastChapter 已知）
-        if (lastChapter !== null) {
+        // 模式C: 只有节号（优先当 lastChapter 已知）。
+        // 切换至多章书卷时停用：避免“单字书卷名（动词/常用字）+ 继承章号 + 裸节号”误判（如 拿9:1）。
+        if (lastChapter !== null && !switchedToMultiChapter) {
             const bare = this.parseBareVerse(text, pos, lastChapter, currentBook);
             if (bare) return bare;
         }
@@ -9288,7 +9310,11 @@ class BibleSearchPlugin extends Plugin {
                 if (!isNaN(verseEnd) && verseEnd >= m6.verse) p += rangeMatch[0].length;
                 else verseEnd = null;
             }
-            return { chapter: m6.chapter, verse: m6.verse, verseEnd, suffix: null, book: currentBook, consumed: p };
+            const ref = { chapter: m6.chapter, verse: m6.verse, verseEnd, suffix: null, book: currentBook, consumed: p };
+            // 切换至多章书卷后只得到「整章」引用（无节号、也非跨章范围），多半是正文里的单字书卷名
+            // 被当成了书卷（如「约一」「诗一」「拿一」），不再作为经文出处；带节号（腓二5 / 拿一1）仍正常。
+            if (switchedToMultiChapter && ref.verse == null && ref.endChapter == null) return null;
+            return ref;
         }
     }
 
