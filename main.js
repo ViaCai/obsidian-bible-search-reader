@@ -395,6 +395,16 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.13': `## [4.0.13] - 2026-11-04
+
+### 新增
+- **圣经数据文件支持放在 vault 任意位置（不再限于插件目录）**：很多用户因网络原因无法从 GitHub 下载圣经数据 / 注解数据。现在只需把 \`bible-{缩写}-data.json\`（如 \`bible-crv-data.json\`、\`bible-cuvs-data.json\`）与 \`bible-crv-notes.json\` 放到 vault 内任意目录，插件开机即自动识别并记录其相对路径，无需放在插件目录下。读取、下载、删除、更新均按记录的路径定位，旧数据（无路径记录）仍回退到插件目录，完全兼容。
+- **设置 → 圣经版本管理 / 注解板块展示数据文件相对路径**：每个已安装版本与注解数据现在会显示其相对路径（📂 形式），方便确认文件实际位置。
+- **多份同名数据自动集中、全局只留插件目录一份（静默、无弹窗）**：若 vault 多处存在同名数据文件（如旧版在根目录、新版在子文件夹），开机扫描会全部收集，按**修改时间（mtime）取最新的一份自动复制到插件目录**作为唯一生效位置（采用复制而非移动，原文件保留，避免破坏性移动与同步软件回弹）；复制完成后**自动把其它位置的旧副本静默删除**，确保全局只有插件目录下这一份生效数据，不会因多副本并存而用错版本。插件目录里的生效副本绝对不会被删（删除方法内部已加保护）。若个别副本因权限等原因删除失败，其路径会保留在「设置 → 圣经版本管理」的「🧹 清理重复」入口供手动重试。iOS / Android / Windows / macOS 行为一致。
+- **每次启动都检索全库并集中 / 清理（不止于「复制完成」那一刻）**：插件 \`onload\` 即全库扫描，把 vault 任意位置的数据与插件目录里的做对比——新数据复制到插件目录、旧数据 / 重复数据静默删除，全程无弹窗提醒。为避免极少数「启动时 vault 文件索引尚未完全建立」导致漏扫，在 \`onLayoutReady\`（布局就绪）后再补扫一次；若本轮把更新的数据集中进了插件目录，会自动重载经文数据，保证内存里的经文 / 注解同步到最新。已集中后再次扫描为幂等（不再复制 / 删除，仅刷新设置）。
+
+### 修复
+- **修复「数据文件移到子文件夹后反而识别不到」**：上一版用 \`adapter.list('')\` 枚举整个 vault，但该方法在移动端（iOS/Android）及部分桌面端 Obsidian 上不会递归展开子目录，导致文件一旦放进如 \`测试/\` 这类子文件夹就扫不到。现改为跨平台双源扫描：\`vault.getFiles()\`（Obsidian 按各平台正确维护的完整文件索引，能覆盖任意内容子目录，含中文名文件夹）+ 单独扫描插件目录（\`.obsidian\` 不在 getFiles 索引内，需补扫以保留默认下载位置）。iOS / Android / Windows / macOS 均可识别 vault 任意位置的数据文件。`,
     '4.0.12': `## [4.0.12] - 2026-11-03
 
 ### 修复
@@ -930,7 +940,7 @@ class FirstRunModal extends Modal {
         contentEl.style.padding = '24px';
         contentEl.style.maxWidth = '640px';
 
-        await this.plugin.syncScannedVersions();
+        await this.plugin.syncScannedVersions({ silent: true });
 
         const header = contentEl.createDiv({ cls: 'bible-first-run-header' });
         header.style.textAlign = 'center';
@@ -1065,6 +1075,7 @@ class FirstRunModal extends Modal {
                         await this.plugin.downloadVersionData(defaultVer);
                         ver.installed = true;
                         ver.file = defaultVer.file;
+                        ver.path = '.obsidian/plugins/bible-search-reader/' + defaultVer.file;
                         notice.hide();
                     } catch (e) {
                         notice.hide();
@@ -1381,7 +1392,7 @@ class BibleSettingTab extends PluginSettingTab {
 
         // ===== 板块 A：圣经版本管理 =====
         containerEl.createEl('h3', { text: '圣经版本管理', cls: 'setting-item-name' });
-        containerEl.createEl('div', { cls: 'setting-item-description', text: '管理已安装的圣经版本。点击刷新按钮重新识别插件目录下的圣经数据文件。自定义版本请按 bible-{缩写}-data.json 命名并放置到插件目录下。' });
+        containerEl.createEl('div', { cls: 'setting-item-description', text: '管理已安装的圣经数据。数据文件（bible-{缩写}-data.json）与注解文件（bible-crv-notes.json）可放在 vault 任意位置，开机自动识别；若存在多份同名文件，会自动把最新的一份集中到插件目录作为唯一生效位置，其余副本可在下方清理。点击「刷新识别」重新扫描。' });
 
         const refreshBtn = containerEl.createEl('button', { cls: 'bible-small-btn', text: '🔄 刷新识别' });
         refreshBtn.style.marginBottom = '12px';
@@ -1404,6 +1415,23 @@ class BibleSettingTab extends PluginSettingTab {
             checkDataBtn.removeAttribute('disabled');
             checkDataBtn.setText('🔍 检查数据/注解更新');
         });
+
+        // 重复数据清理入口：集中到插件目录后，其它位置的旧副本可在此一键清理
+        if (this.plugin.settings.duplicateDataPaths && this.plugin.settings.duplicateDataPaths.length) {
+            const dupPaths = this.plugin.settings.duplicateDataPaths;
+            new Setting(containerEl)
+                .setName(`发现 ${dupPaths.length} 处重复数据文件`)
+                .setDesc('已自动集中到插件目录（唯一生效位置）。以下旧副本可清理：' + dupPaths.join('、'))
+                .addButton(button => button
+                    .setButtonText('🧹 清理重复')
+                    .onClick(async () => {
+                        const { removed, failed } = await this.plugin.removeDuplicateDataFiles(dupPaths);
+                        new Notice(`已删除 ${removed.length} 处重复数据${failed.length ? ('，' + failed.length + ' 处失败') : ''}`);
+                        this.plugin.settings.duplicateDataPaths = [];
+                        await this.plugin.saveSettings();
+                        this.display();
+                    }));
+        }
 
         const versionList = containerEl.createDiv({ cls: 'bible-version-list' });
         versionList.style.marginBottom = '16px';
@@ -1432,6 +1460,17 @@ class BibleSettingTab extends PluginSettingTab {
                 status.style.color = 'var(--text-accent)';
             }
 
+            // 展示数据文件相对路径（vault 任意位置均可）
+            if (ver.installed) {
+                const relPath = ver.path || ('.obsidian/plugins/bible-search-reader/' + ver.file);
+                const pathEl = info.createEl('div', { cls: 'setting-item-description' });
+                pathEl.setText('📂 ' + relPath);
+                pathEl.style.fontSize = '12px';
+                pathEl.style.color = 'var(--text-muted)';
+                pathEl.style.wordBreak = 'break-all';
+                pathEl.style.marginTop = '2px';
+            }
+
             if (!ver.installed && isDefault) {
                 const dlBtn = row.createEl('button', { text: '⬇️ 下载', cls: 'bible-small-btn' });
                 dlBtn.addEventListener('click', async () => {
@@ -1443,6 +1482,7 @@ class BibleSettingTab extends PluginSettingTab {
                             await this.plugin.downloadVersionData(defaultVer);
                             ver.installed = true;
                             ver.file = defaultVer.file;
+                        ver.path = '.obsidian/plugins/bible-search-reader/' + defaultVer.file;
                             await this.plugin.saveSettings();
                             await this.plugin.loadBibleData();
                             new Notice(`${ver.name} 下载完成`);
@@ -1490,7 +1530,8 @@ class BibleSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName('注解数据文件')
             .setDesc((this.plugin.settings.notesInstalled ? '已安装' : '未安装') +
-                '：bible-crv-notes.json（约 6MB，含恢复本全部注解与串珠）。未安装时点击右侧按钮下载。')
+                '：' + (this.plugin.settings.notesPath || ('.obsidian/plugins/bible-search-reader/' + NOTES_FILE)) +
+                '（约 6MB，含恢复本全部注解与串珠）。未安装时点击右侧按钮下载。')
             .addButton(button => button
                 .setButtonText(this.plugin.settings.notesInstalled ? '🔄 重新安装' : '⬇️ 下载安装')
                 .onClick(async () => {
@@ -1566,25 +1607,29 @@ class BibleParser {
 
     async parseVersion(versionConfig) {
         const items = [];
-        const { file, key } = versionConfig;
+        const { file, key, path: vpath } = versionConfig;
         try {
-            const pluginId = 'bible-search-reader';
-            const adapterPath = `.obsidian/plugins/${pluginId}/${file}`;
-
-            if (await this.app.vault.adapter.exists(adapterPath)) {
-                const raw = await this.app.vault.adapter.read(adapterPath);
+            // 优先读取记录的相对路径（vault 任意位置），找不到再回退到插件目录默认位置
+            const candidates = [vpath, '.obsidian/plugins/bible-search-reader/' + file].filter(Boolean);
+            let raw = null;
+            for (const p of candidates) {
+                if (await this.app.vault.adapter.exists(p)) {
+                    raw = await this.app.vault.adapter.read(p);
+                    break;
+                }
+            }
+            if (raw != null) {
                 const data = JSON.parse(raw);
                 if (Array.isArray(data)) {
                     for (const item of data) {
                         item.versionKey = key;
                         items.push(item);
                     }
-                    
                     return items;
                 }
             }
 
-            // 数据文件位于 vault 内的 .obsidian/plugins/ 目录，桌面端与移动端均通过 vault adapter 读取，无需直接访问文件系统
+            // 数据文件位于 vault 内（插件目录或用户自行放置的任意位置），桌面端与移动端均通过 vault adapter 读取
             console.warn(`[Bible] 未找到版本 ${key} 数据文件: ${file}`);
         } catch (e) {
             console.error(`[Bible] 读取版本 ${key} 数据失败:`, e);
@@ -3476,7 +3521,7 @@ class BibleSearchView extends ItemView {
         });
 
         // 说明文字
-        const desc = modal.createDiv({ cls: 'bible-compare-modal-desc', text: '勾选要使用的版本，可拖动调整顺序。最上方的版本为主版本，其余为对照版本。' });
+        const desc = modal.createDiv({ cls: 'bible-compare-modal-desc', text: '勾选要使用的版本，可拖动调整顺序。最上方的版本为主版本，其余为对照版本。圣经 / 注解数据文件（bible-*-data.json、bible-crv-notes.json）放在 vault 任意位置都会自动识别，并集中到插件目录作为唯一生效位置。' });
 
         // ===== 恢复本注解 / 串珠开关 =====
         const notesBox = modal.createDiv({ cls: 'bible-compare-modal-notes' });
@@ -6297,7 +6342,10 @@ class BibleSearchView extends ItemView {
 class BibleSearchPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
-        await this.syncScannedVersions();
+        // 启动即全库扫描：把 vault 任意位置的数据文件与插件目录里的做对比，
+        // 最新一份集中到插件目录、其余旧/重复副本静默删除（详见 syncScannedVersions）。
+        try { await this.syncScannedVersions(); }
+        catch (e) { console.error('[Bible] 启动扫描数据文件失败:', e); }
         this.parser = new BibleParser(this.app, this.settings, this.manifest.dir);
         // 引擎持有插件引用：支持按注 / 串出处检索时读取某一节的注解 / 串珠数据
         this.searchEngine = new BibleSearchEngine(this);
@@ -6503,6 +6551,13 @@ class BibleSearchPlugin extends Plugin {
         await this.loadBibleData();
 
         this.registerEvent(this.app.workspace.onLayoutReady(async () => {
+            // 布局就绪后补扫一次：极少数情况下 onload 时 vault 文件索引尚未完全建立，
+            // 这里再扫一遍，确保「每次启动都检索全库并集中/清理」不漏。
+            // 若本轮把更新的数据集中进了插件目录，则重载经文数据让内存中的内容同步到最新。
+            try {
+                const r = await this.syncScannedVersions({ silent: true });
+                if (r && r.consolidated) await this.loadBibleData();
+            } catch (e) { console.error('[Bible] 启动补扫数据文件失败:', e); }
             // 启动即维持「注解模式」与主版本一致的不变式：CRV 主版本→开注解，其它主版本→关注解
             try { await this.reconcileNotesWithPrimary(); } catch (e) { console.error('[Bible] 同步注解模式失败:', e); }
             try { await this.ensureNotesHotkey(); } catch (e) { console.error('[Bible] 分配注解快捷键失败:', e); }
@@ -6546,6 +6601,11 @@ class BibleSearchPlugin extends Plugin {
             showNotes: true,
             searchIncludeNotes: true,
             notesInstalled: false,
+            // 注解 / 串珠数据文件的相对路径（相对于 vault 根目录）；为空时回退到插件目录默认位置
+            notesPath: null,
+            // 扫描时发现的「重复数据文件」相对路径（已被集中到插件目录，原位置副本自动清理）；
+            // 仅记录自动清理失败的路径，供设置页兜底重试；为空表示无
+            duplicateDataPaths: [],
             // 是否已为「切换注解」命令分配过默认快捷键（只写一次，之后由用户自己做主）
             notesHotkeyAssigned: false,
             // 已安装圣经数据的版本记录：{ 'bible-crv-data.json': '2026.10.12', ... }
@@ -6604,8 +6664,15 @@ class BibleSearchPlugin extends Plugin {
         }
     }
 
-    async syncScannedVersions() {
-        const scanned = await this.scanBibleVersions();
+    // 扫描并同步圣经 / 注解数据文件位置。
+    // 多份同名文件（放在 vault 不同位置）会被全部收集，再按修改时间 mtime 选最新的一份，
+    // 自动「集中」到插件目录作为唯一生效位置（避免多副本并存导致用错版本）；其余副本记为重复，
+    // 由右上角提示 / 设置页入口清理。opts.silent=true 时不弹提示（如首次运行弹窗内调用，避免叠加）。
+    async syncScannedVersions(opts) {
+        opts = opts || {};
+        const { versions: scannedVersions, notes: scannedNotes } = await this.scanDataFiles();
+        const pluginId = this.manifest?.id || 'bible-search-reader';
+        const pluginDir = '.obsidian/plugins/' + pluginId;
 
         // 先去重：按 key 保留第一个出现的版本
         const deduped = [];
@@ -6618,75 +6685,118 @@ class BibleSearchPlugin extends Plugin {
         }
         this.settings.versions = deduped;
 
-        // 确保所有默认可下载版本都出现在版本列表中（即使本机尚未安装），
-        // 以便设置页显示对应下载按钮；现有用户升级后也能看到新增的默认可下载版本（如英文恢复本）
+        // 确保所有默认可下载版本都出现在版本列表中（即使本机尚未安装）
         for (const dv of DEFAULT_VERSIONS) {
             if (!this.settings.versions.find(v => v.key === dv.key)) {
                 this.settings.versions.push({
-                    key: dv.key,
-                    name: dv.name,
-                    file: dv.file,
-                    enabled: false,
-                    isPrimary: false,
-                    installed: false
+                    key: dv.key, name: dv.name, file: dv.file,
+                    enabled: false, isPrimary: false, installed: false
                 });
             }
         }
 
         // 如果没有任何版本，初始化默认版本列表（优先选中恢复本）
         if (this.settings.versions.length === 0) {
-            // 按 DEFAULT_VERSIONS 顺序：CRV 优先，CUVS 次之
             for (let i = 0; i < DEFAULT_VERSIONS.length; i++) {
                 const dv = DEFAULT_VERSIONS[i];
-                const found = scanned.find(s => s.key === dv.key);
-                // 第一个找到的版本设为已启用并作为主版本
+                const found = scannedVersions.find(s => s.key === dv.key);
                 this.settings.versions.push({
-                    key: dv.key,
-                    name: dv.name,
-                    file: dv.file,
-                    enabled: found ? (i === 0) : false,  // 第一个找到的启用
+                    key: dv.key, name: dv.name, file: dv.file,
+                    enabled: found ? (i === 0) : false,
                     isPrimary: found ? (i === 0) : false,
                     installed: !!found
                 });
             }
         }
 
-        // 建立已有版本 Map
         const existingMap = new Map(this.settings.versions.map(v => [v.key, v]));
+        const statMtime = async (p) => {
+            try { const st = await this.app.vault.adapter.stat(p); return st ? (st.mtime || 0) : -1; }
+            catch (e) { return -1; }
+        };
 
-        // 更新现有版本的 installed 状态（真实反映文件是否存在）
-        for (const ver of this.settings.versions) {
-            // 规范化显示名：VERSION_MAP 有定义就统一采用，修正旧版本遗留的 name=key
-            // （例如早期版本扫描 ERV 时 VERSION_MAP 尚无该条目，name 被存成 "ERV"，界面上显示成 "ERV（ERV）"）
-            const canonicalName = VERSION_MAP[ver.key];
-            if (canonicalName && ver.name !== canonicalName) ver.name = canonicalName;
-            const found = scanned.find(s => s.key === ver.key);
-            if (found) {
-                ver.installed = true;
-                if (!ver.file) ver.file = found.file;
-            } else {
-                // 文件已被删除，标记为未安装
-                ver.installed = false;
-                ver.enabled = false;
-                ver.isPrimary = false;
-            }
+        // 重复副本相对路径（含插件目录外的所有同名旧副本）；集中完成后提示清理
+        const duplicatePaths = [];
+        let didConsolidate = false;
+
+        // ---- 圣经版本：按 key 分组，选 mtime 最新一份集中到插件目录 ----
+        const groups = new Map();
+        for (const s of scannedVersions) {
+            if (!groups.has(s.key)) groups.set(s.key, []);
+            groups.get(s.key).push(s);
         }
-
-        // 添加新扫描到的版本（去重）
-        for (const s of scanned) {
-            if (!existingMap.has(s.key)) {
+        for (const [key, cands] of groups) {
+            let best = null, bestMtime = -1;
+            for (const c of cands) {
+                const m = await statMtime(c.path);
+                c.mtime = m;
+                if (m > bestMtime) { bestMtime = m; best = c; }
+            }
+            if (!best) continue;
+            const destPath = pluginDir + '/' + best.file;
+            if (best.path !== destPath) {
+                // 最新一份不在插件目录：复制到插件目录作为唯一生效位置（不移动、不删原文件）
+                try {
+                    await this.copyDataFileToPlugin(best.path, best.file, pluginDir);
+                    didConsolidate = true;
+                } catch (e) {
+                    console.error('[Bible] 集中数据文件失败:', best.path, e);
+                }
+            }
+            // 其余同名副本（非插件目录生效位置）记为重复
+            for (const c of cands) {
+                if (c.path !== destPath) duplicatePaths.push(c.path);
+            }
+            const ver = existingMap.get(key);
+            if (ver) {
+                ver.installed = true;
+                if (!ver.file) ver.file = best.file;
+                ver.path = destPath;
+            } else {
                 this.settings.versions.push({
-                    key: s.key,
-                    name: VERSION_MAP[s.key] || s.name,
-                    file: s.file,
-                    enabled: false,
-                    isPrimary: false,
-                    installed: true
+                    key, name: VERSION_MAP[key] || best.name, file: best.file,
+                    path: destPath, enabled: false, isPrimary: false, installed: true
                 });
             }
         }
 
-        // 清理无效版本：既未安装、又不是默认可下载版本的条目（避免残留「未安装」的幽灵版本）
+        // ---- 注解 / 串珠：同样集中到插件目录 ----
+        if (scannedNotes.length) {
+            let best = null, bestMtime = -1;
+            for (const c of scannedNotes) {
+                const m = await statMtime(c.path);
+                c.mtime = m;
+                if (m > bestMtime) { bestMtime = m; best = c; }
+            }
+            if (best) {
+                const destPath = pluginDir + '/' + NOTES_FILE;
+                if (best.path !== destPath) {
+                    try { await this.copyDataFileToPlugin(best.path, NOTES_FILE, pluginDir); didConsolidate = true; }
+                    catch (e) { console.error('[Bible] 集中注解数据失败:', best.path, e); }
+                }
+                for (const c of scannedNotes) if (c.path !== destPath) duplicatePaths.push(c.path);
+                this.settings.notesPath = destPath;
+                this.settings.notesInstalled = true;
+            }
+        } else if (this.settings.notesPath && !(await this.app.vault.adapter.exists(this.settings.notesPath))) {
+            this.settings.notesInstalled = false;
+        }
+
+        // 更新现有版本的安装状态（文件已被删 -> 标记未安装）；并规范化显示名
+        for (const ver of this.settings.versions) {
+            const canonicalName = VERSION_MAP[ver.key];
+            if (canonicalName && ver.name !== canonicalName) ver.name = canonicalName;
+            if (ver.installed) {
+                const canonical = ver.path || (pluginDir + '/' + (ver.file || ''));
+                if (!(await this.app.vault.adapter.exists(canonical))) {
+                    ver.installed = false;
+                    ver.enabled = false;
+                    ver.isPrimary = false;
+                }
+            }
+        }
+
+        // 清理无效版本：既未安装、又不是默认可下载版本的条目
         const defaultKeys = DEFAULT_VERSIONS.map(dv => dv.key);
         this.settings.versions = this.settings.versions.filter(v => v.installed || defaultKeys.includes(v.key));
 
@@ -6695,32 +6805,121 @@ class BibleSearchPlugin extends Plugin {
         for (const v of this.settings.versions) v.isPrimary = false;
         if (firstEnabled) firstEnabled.isPrimary = true;
 
+        // 记录重复副本（去重，排除插件目录生效副本）
+        const dupSet = new Set();
+        for (const p of duplicatePaths) {
+            if (p.indexOf(pluginDir + '/') !== 0) dupSet.add(p);
+        }
+        const allDups = [...dupSet];
+
+        // 复制完成即自动清理重复数据：采用「复制」而非「移动」保留了原文件，
+        // 这里把其它位置的旧副本自动删除，确保全局只有插件目录下这一份生效数据。
+        // 绝不删除插件目录下的生效副本（removeDuplicateDataFiles 内部已保护）。
+        // 无任何弹窗提醒——清理是静默完成的；仅把删除失败的路径留在 settings 供设置页兜底重试。
+        if (allDups.length > 0) {
+            const { failed } = await this.removeDuplicateDataFiles(allDups);
+            this.settings.duplicateDataPaths = failed;
+        } else {
+            this.settings.duplicateDataPaths = [];
+        }
+
         await this.saveSettings();
+        // 返回是否发生过「集中复制」，供启动补扫判断是否需要重载经文数据。
+        return { consolidated: didConsolidate };
     }
 
-    async scanBibleVersions() {
+    // 整库扫描圣经数据文件与注解数据文件。
+    // bible-{缩写}-data.json 与 bible-crv-notes.json 可放在 vault 任意位置，只要文件名符合约定即自动识别。
+    // 同名文件在多处出现时全部收集（不再静默丢弃），供 syncScannedVersions 集中处理。
+    // 返回 { versions:[{key,name,file,path}], notes:[{file,path}] }（均为扁平数组，key 可能重复）
+    async scanDataFiles() {
         const versions = [];
-        try {
-            const pluginId = this.manifest?.id || 'bible-search-reader';
-            const pluginDir = `.obsidian/plugins/${pluginId}`;
+        const notes = [];
 
-            // 数据文件位于 vault 内的 .obsidian/plugins/ 目录，桌面端与移动端均通过 vault adapter 扫描
+        // 命中一个文件路径：按命名约定识别圣经数据 / 注解数据，并记录相对 vault 根的路径
+        const consider = (file) => {
+            if (!file) return;
+            const basename = file.split('/').pop();
+            const m = basename.match(/^bible-([a-z0-9]+)-data\.json$/i);
+            if (m) {
+                const key = m[1].toUpperCase();
+                versions.push({ key, name: VERSION_MAP[key] || key, file: basename, path: file });
+            } else if (basename === NOTES_FILE) {
+                notes.push({ file: NOTES_FILE, path: file });
+            }
+        };
+
+        try {
+            // 主扫描：vault.getFiles() 是 Obsidian 按各平台正确维护的完整文件索引，
+            // 能覆盖 vault 任意内容目录（含中文子目录如「测试」），iOS/Android/Win/Mac 行为一致。
+            const files = this.app.vault.getFiles();
+            for (const f of (files || [])) {
+                if (f && f.path) consider(f.path);
+            }
+        } catch (e) {
+            console.error('[Bible] 扫描 vault 文件失败:', e);
+        }
+
+        try {
+            // 补充扫描插件目录：.obsidian 不在 getFiles 索引内，故单独覆盖默认下载位置
+            const pluginDir = '.obsidian/plugins/' + (this.manifest?.id || 'bible-search-reader');
             if (await this.app.vault.adapter.exists(pluginDir)) {
                 const list = await this.app.vault.adapter.list(pluginDir);
-                for (const file of list.files) {
-                    const basename = file.split('/').pop();
-                    const match = basename.match(/^bible-([a-z0-9]+)-data\.json$/i);
-                    if (match) {
-                        const key = match[1].toUpperCase();
-                        const name = VERSION_MAP[key] || key;
-                        versions.push({ key, name, file: basename, installed: true });
-                    }
+                for (const file of (list.files || [])) {
+                    consider(file);   // adapter.list 返回已含 pluginDir 前缀的相对 vault 根路径
                 }
             }
         } catch (e) {
-            console.error('[Bible] 扫描版本失败:', e);
+            console.error('[Bible] 扫描插件目录失败:', e);
         }
-        return versions;
+
+        return { versions, notes };
+    }
+
+    // 兼容别名：旧调用处仍按版本数组使用
+    async scanBibleVersions() {
+        const r = await this.scanDataFiles();
+        return r.versions;
+    }
+
+    // 把一份数据文件复制到插件目录（集中为唯一生效位置）。用 adapter 二进制读写，跨平台一致，
+    // 不依赖文件系统的 move 语义；原文件保留，避免破坏性移动与同步软件回弹。
+    async copyDataFileToPlugin(fromPath, fileName, pluginDir) {
+        if (!(await this.app.vault.adapter.exists(pluginDir))) {
+            try { await this.app.vault.adapter.mkdir(pluginDir); } catch (e) { /* 已存在则忽略 */ }
+        }
+        const dest = pluginDir + '/' + fileName;
+        const bin = await this.app.vault.adapter.readBinary(fromPath);
+        await this.app.vault.adapter.writeBinary(dest, bin);
+    }
+
+    // 删除重复数据文件（集中到插件目录后遗留的旧副本）。
+    // 安全护栏：绝不删除插件目录下的生效副本（路径以插件目录前缀开头的直接跳过）。
+    async removeDuplicateDataFiles(paths) {
+        const removed = [], failed = [];
+        const pluginPrefix = '.obsidian/plugins/' + (this.manifest?.id || 'bible-search-reader') + '/';
+        for (const p of (paths || [])) {
+            if (!p || p.indexOf(pluginPrefix) === 0) continue;   // 保护生效副本
+            try {
+                if (await this.app.vault.adapter.exists(p)) {
+                    await this.app.vault.adapter.remove(p);
+                    removed.push(p);
+                }
+            } catch (e) {
+                failed.push(p);
+                console.error('[Bible] 删除重复数据失败:', p, e);
+            }
+        }
+        return { removed, failed };
+    }
+
+    // 由文件名解析出实际存放路径：优先用记录的 path，否则回退到插件目录默认位置。
+    resolveDataPath(file) {
+        if (file === NOTES_FILE) {
+            return this.settings.notesPath || ('.obsidian/plugins/bible-search-reader/' + NOTES_FILE);
+        }
+        const v = (this.settings.versions || []).find(x => x.file === file);
+        return (v && v.path) || ('.obsidian/plugins/bible-search-reader/' + file);
     }
 
     async downloadVersionData(versionConfig) {
@@ -6771,7 +6970,7 @@ class BibleSearchPlugin extends Plugin {
         try {
             const pluginId = this.manifest?.id || 'bible-search-reader';
             const file = versionConfig.file;
-            const adapterPath = `.obsidian/plugins/${pluginId}/${file}`;
+            const adapterPath = versionConfig.path || `.obsidian/plugins/${pluginId}/${file}`;
 
             // 删除 vault 内 .obsidian/plugins/ 目录下的文件，桌面端与移动端均通过 vault adapter 完成
             if (await this.app.vault.adapter.exists(adapterPath)) {
@@ -7050,7 +7249,7 @@ class BibleSearchPlugin extends Plugin {
                             if (dv) {
                                 await this.downloadVersionData(dv);
                                 const v = this.settings.versions.find(x => x.key === it.key);
-                                if (v) { v.installed = true; v.file = dv.file; }
+                                if (v) { v.installed = true; v.file = dv.file; v.path = '.obsidian/plugins/bible-search-reader/' + dv.file; }
                                 await this.saveSettings();
                                 await this.loadBibleData();
                                 // 安装后从「不再提醒」集合移除该版本，便于日后更新仍会提醒
@@ -7158,8 +7357,13 @@ class BibleSearchPlugin extends Plugin {
         this._notesLoading = (async () => {
             try {
                 if (!this.settings.showNotes) { this.notesData = {}; return this.notesData; }
-                const p = `.obsidian/plugins/bible-search-reader/${NOTES_FILE}`;
-                if (!(await this.app.vault.adapter.exists(p))) {
+                // 优先读取记录的相对路径（vault 任意位置），找不到再回退到插件目录默认位置
+                const candidates = [this.settings.notesPath, '.obsidian/plugins/bible-search-reader/' + NOTES_FILE].filter(Boolean);
+                let p = null;
+                for (const cp of candidates) {
+                    if (await this.app.vault.adapter.exists(cp)) { p = cp; break; }
+                }
+                if (!p) {
                     this.notesData = {};
                     // 功能已开启却没有数据：提示一次，让用户选择是否下载（每轮会话只提示一次）
                     this.promptInstallNotes();
@@ -7361,6 +7565,7 @@ class BibleSearchPlugin extends Plugin {
                     continue;
                 }
                 await this.app.vault.adapter.write(p, resp.text);
+                this.settings.notesPath = p;   // 记录注解数据实际位置（插件目录），便于设置界面展示与后续读取
                 this.notesData = null;
                 this.notesSearchIndex = null;
                 this._notesAttached = false;
@@ -7901,8 +8106,7 @@ class BibleSearchPlugin extends Plugin {
     }
 
     async getLocalDataSize(file) {
-        const pluginId = this.manifest?.id || 'bible-search-reader';
-        const p = `.obsidian/plugins/${pluginId}/${file}`;
+        const p = this.resolveDataPath(file);
         if (!(await this.app.vault.adapter.exists(p))) return null;
         try {
             const stat = await this.app.vault.adapter.stat(p);
@@ -7940,18 +8144,19 @@ class BibleSearchPlugin extends Plugin {
      *  逐文件记录成功 / 失败：失败的会持久化到 settings.pendingDataUpdates，
      *  方便重启后再次提醒并在设置 / 对照页重试。返回 { succeeded, failed }。 */
     async updateBibleData(items) {
-        const pluginId = this.manifest?.id || 'bible-search-reader';
-        const dirPath = `.obsidian/plugins/${pluginId}`;
-        if (!(await this.app.vault.adapter.exists(dirPath))) {
-            await this.app.vault.adapter.mkdir(dirPath);
-        }
         const succeeded = [];
         const failed = [];
         let bibleReload = false;
         let notesReload = false;
         let done = 0;
         for (const item of items) {
-            const target = `${dirPath}/${item.file}`;
+            // 就地更新：目标路径取文件当前所在位置（插件目录或用户自行放置的任意位置），
+            // 而不是一律覆盖到插件目录——手动放置的文件原地升级，避免产生第二份副本。
+            const target = this.resolveDataPath(item.file);
+            const parent = target.split('/').slice(0, -1).join('/');
+            if (parent && !(await this.app.vault.adapter.exists(parent))) {
+                try { await this.app.vault.adapter.mkdir(parent); } catch (e) { /* 已存在则忽略 */ }
+            }
             const notice = new Notice(`正在更新 ${item.name}（${done + 1}/${items.length}）...`, 0);
             try {
                 const resp = await requestUrl({ url: item.url, method: 'GET' });
@@ -7971,12 +8176,17 @@ class BibleSearchPlugin extends Plugin {
 
                 this.settings.dataVersions = this.settings.dataVersions || {};
                 this.settings.dataVersions[item.file] = item.dataVersion;
+                // 记录更新后的实际路径，保证下次读取 / 更新仍能定位
+                if (item.file === NOTES_FILE) {
+                    this.settings.notesPath = target;
+                    this.settings.notesInstalled = true;
+                } else {
+                    const v = (this.settings.versions || []).find(x => x.file === item.file);
+                    if (v) v.path = target;
+                }
                 await this.saveSettings();
                 succeeded.push(item);
                 if (item.file === NOTES_FILE) {
-                    // 注解数据更新：标记已安装并准备重载
-                    this.settings.notesInstalled = true;
-                    await this.saveSettings();
                     notesReload = true;
                 } else {
                     bibleReload = true;
