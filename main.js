@@ -126,6 +126,19 @@ const BOOK_NAME_PROSE_WORDS = (() => {
 // 不应用下面的「词尾 + 空白」兜底规则跳过。
 const BOOK_REF_GUIDE_CHARS = new Set('参见看如读查引载据论及与和或即比从到说详证在'.split(''));
 
+// 除（ ）( )〔 〕外，中文里也常用这些成对括号 / 引号包住明确的经节标记（【16】「16」『16』）。
+// 但「」『』“ ” 大量用于普通引文（「你们今日若听见祂的声音」「三年」「2026年」），
+// 因此新增括号只放行「纯节号形态」的内容：仅数字、范围符、上中下、并列分隔符，
+// 且中文数字与阿拉伯数字不得混排（「三1～6」是章+节，交给原有弱引用阶段处理）。
+const EXTRA_VERSE_BRACKETS = [['【', '】'], ['「', '」'], ['『', '』'], ['“', '”'], ['‘', '’']];
+const VERSE_BRACKET_CONTENT_RE = /^[\d一二三四五六七八九十百零〇～~\-－至–—‐上中下，,、；;\s　]+$/;
+function isPureVerseBracketContent(content) {
+    const s = content.trim().replace(/^(?:参看|参考|参|见)/, '').replace(/[\s　]/g, '');
+    if (!s || !VERSE_BRACKET_CONTENT_RE.test(s)) return false;
+    if (/\d/.test(s) && /[一二三四五六七八九十百零〇]/.test(s)) return false;
+    return true;
+}
+
 const BOOK_MAP = {};
 const BOOK_ID_MAP = {};
 for (const book of BIBLE_BOOKS) {
@@ -445,6 +458,12 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.15': `## [4.0.15] - 2026-11-06
+
+### 修复
+- **补全括号式经节标记**：此前只有 \`（16）\` / \`(16)\` / \`〔16〕\` 会被识别成「本章第 16 节」，而 \`【16】\` / \`「16」\` / \`『16』\` / \`“16”\` / \`‘16’\` 完全不识别、点击无反应。现在这些成对括号 / 引号都支持，且**只高亮其中的节号**（引号本身不跟着变成链接），与原有弱引用行为一致；\`16，17\`、\`16～18\`、\`十六\` 等并列 / 范围写法同样支持。由于中文引号大量用于普通引文，新增括号只放行「纯节号形态」的内容：\`「你们今日若听见祂的声音」\`、\`「三年」\`、\`「16个人」\`、\`【注1】\`、\`【2026年】\`、\`「第16节的事」\` 等都不会被误判；中文数字与阿拉伯数字混排的 \`【三1～6】\`（章+节）仍交给原有弱引用阶段处理，行为不变。
+- **引导词不再被包进高亮、重叠链接不再被切碎**：在连续多段、上文已有书卷 / 章的阅读模式下，\`参看罗三23\` 原本会同时产生「参看罗」和「罗三23」两条重叠候选，主阅读渲染按位置裁剪后链接被切碎；\`参看四1～3\` 则是整段「参看四1～3」都被染成链接。现在 \`参 / 见 / 参看 / 参见 / 参阅\` 等引导词统一留作普通文字，只高亮出处本身（\`罗三23\` / \`四1～3\` / \`三23\`），重叠候选取更完整的一条。该收尾处理**只在确实出现引导词的行生效**，其余行识别结果原样不变；注文 / 弹窗里的同类剥离逻辑保持兼容。
+- **修复「参看来三1」这类引导词后的书卷名被误拦**：4.0.14 新增的常见词守卫把「看来」当作普通双字词，导致 \`参看来三1\` 的「来」被跳过，出处只剩「参看」两字被高亮。现在只在**完整引导词「参看 / 参见 / 参阅」**之后豁免该守卫，单字「参 / 见」不豁免——\`参加三1\`、\`比赛三1\`、\`读书三1\` 等仍照常被词表拦下，不会被误认成书卷名。`,
     '4.0.14': `## [4.0.14] - 2026-11-06
 
 ### 修复
@@ -8889,7 +8908,45 @@ class BibleSearchPlugin extends Plugin {
             for (const m of cv) pushMatch(m);
         }
         matches.sort((a, b) => a.start - b.start);
-        return matches;
+        return this.finalizeRefMatches(matches, text);
+    }
+
+    // 收尾统一处理：①「参 / 见 / 参看」等引导词不是出处本身，不能包进可点击链接；
+    // ② 多个阶段可能对同一处给出重叠候选（如「参看罗」+「罗三23」），取更完整的一条，
+    //    否则主阅读渲染按顺序裁剪起点，会把链接切成「参看罗」+「三23」两段。
+    // 只有这一行确实出现引导词时才处理，其余行原样返回，不影响既有识别结果。
+    finalizeRefMatches(matches, text) {
+        const GUIDE_RE = /^(参看|参见|参阅|参|见)/;
+        let changed = false;
+        const trimmed = [];
+        for (const m of matches) {
+            const seg = text.slice(m.start, m.end);
+            const g = seg.match(GUIDE_RE);
+            if (!g) { trimmed.push(m); continue; }
+            changed = true;
+            if (g[0].length >= seg.length) continue;   // 整条只有引导词，丢弃
+            const ns = m.start + g[0].length;
+            let ne = m.end;
+            // 「参看三23」这类：弱引用只覆盖到「三」，节号紧随其后却没被纳入范围，
+            // 把紧邻的数字补回来，避免裁完只剩一个字（allRefs 本就指向 3:23）。
+            const rest = text.slice(ns, ne);
+            const tail = text.slice(ne).match(/^\d{1,3}/);
+            if (tail && /[\d一二三四五六七八九十百零〇]$/.test(rest)) ne += tail[0].length;
+            trimmed.push(Object.assign({}, m, { start: ns, end: ne, text: text.slice(ns, ne) }));
+        }
+        if (!changed) return matches;
+        const sorted = trimmed.slice().sort((a, b) =>
+            (a.start - b.start) || ((b.end - b.start) - (a.end - a.start)));
+        const picked = [];
+        for (const m of sorted) {
+            const prev = picked[picked.length - 1];
+            if (prev && m.start < prev.end) {
+                if ((m.end - m.start) > (prev.end - prev.start)) picked[picked.length - 1] = m;
+                continue;
+            }
+            picked.push(m);
+        }
+        return picked;
     }
 
     // 注文专用：找出「中文 / 阿拉伯章号 + 阿拉伯节号」的省略写法。
@@ -8945,7 +9002,12 @@ class BibleSearchPlugin extends Plugin {
         const prev = text[idx - 1];
         if (!/[\u4e00-\u9fff]/.test(prev)) return false;
         const head = name[0];
-        if (BOOK_NAME_PROSE_WORDS.has(prev + head)) return true;
+        if (BOOK_NAME_PROSE_WORDS.has(prev + head)) {
+            // 例外：左邻是「参看 / 参见 / 参阅」的末字时，整串是「引导词 + 书卷名」的合法引用
+            // （「参看来三1」），不按「看来」这类词尾跳过；单字「参 / 见」不豁免，
+            // 否则「参加三1」「比赛三1」「读书三1」会被误认成书卷名。
+            if (!/(?:^|[\s　\p{P}\p{S}])参[看见阅]$/u.test(text.slice(0, idx))) return true;
+        }
         if (name.length === 1) {
             const next = text[idx + 1] || '';
             if (next === '　' && !BOOK_REF_GUIDE_CHARS.has(prev)) return true;
@@ -9353,24 +9415,38 @@ class BibleSearchPlugin extends Plugin {
 
     findBracketRefs(text, coveredRanges, strongMatches, resolveCtx, dormantChapter) {
         const matches = [];
+        const candidates = [];
         const pattern = /[（〔(]([^）〕)]+)[）〕)]/g;
         let m;
         while ((m = pattern.exec(text)) !== null) {
-            const start = m.index;
-            const end = m.index + m[0].length;
+            candidates.push({ start: m.index, end: m.index + m[0].length, content: m[1] });
+        }
+        // 新增成对括号 / 引号：严格配对扫描，内容须是纯节号形态，避免普通引文被误判
+        for (const [open, close] of EXTRA_VERSE_BRACKETS) {
+            const re = new RegExp(open + '([^' + close + ']+)' + close, 'g');
+            let em;
+            while ((em = re.exec(text)) !== null) {
+                candidates.push({ start: em.index, end: em.index + em[0].length, content: em[1], extra: true });
+            }
+        }
+        candidates.sort((a, b) => a.start - b.start);
+        for (const cand of candidates) {
+            const start = cand.start;
+            const end = cand.end;
+            if (cand.extra && !isPureVerseBracketContent(cand.content)) continue;
             if (this.isCovered(start, coveredRanges)) continue;
             // 括号内容若本身以书卷名开头（允许前面有“参/参看”），说明其中包含强引用，
             // 交给阶段1按书卷名解析；这里只处理依附上下文的弱引用括号
-            if (this.bracketHasBookName(m[1])) continue;
+            if (this.bracketHasBookName(cand.content)) continue;
             // 跳过纲目序号括号（如“（一）”“（四）”）——裸中文数字视为结构标记，非经文出处
-            const bareCn = m[1].trim().replace(/^(?:参看|参考|参)/, '');
+            const bareCn = cand.content.trim().replace(/^(?:参看|参考|参)/, '');
             if (/^[一二三四五六七八九十百零〇]+$/.test(bareCn)) continue;
             // 按本括号所在位置取上下文：优先沿用其左侧最近引用（含跨段落的书卷上下文）
             const c = resolveCtx(start);
             const book = c.bookId != null ? BOOK_ID_MAP[c.bookId] : null;
             if (!book) continue;
             const initialChapter = c.chapter != null ? c.chapter : dormantChapter;
-            const refContent = m[1];
+            const refContent = cand.content;
             // 括号弱引用不得越过括号中已有的强引用：
             // 「(二9，出十五23～25，歌二3…)」里后半串各自带书卷名，已由阶段1 解析成独立引用，
             // 若这里继续并到本条，会把出埃及记十五章说成创世记十五章。
@@ -9381,8 +9457,10 @@ class BibleSearchPlugin extends Plugin {
                 // 未被别的引用截断时保持原来的整括号高亮；截断后只高亮真正解析到的那一段
                 const tail = refContent.slice(list.consumed);
                 const full = (tail == null || tail.trim() === '');
-                const s0 = full ? start : contentStart;
-                const e0 = full ? end : contentStart + list.consumed;
+                // 原有三种括号保持「整括号」高亮；新增的中文括号 / 引号本身不是出处，
+                // 只高亮其中的内容（与弱引用阶段原有行为一致，引号不跟着变成链接）。
+                const s0 = full ? (cand.extra ? contentStart : start) : contentStart;
+                const e0 = full ? (cand.extra ? contentStart + list.consumed : end) : contentStart + list.consumed;
                 matches.push({
                     text: text.slice(s0, e0), start: s0, end: e0,
                     bookId: book.id,
