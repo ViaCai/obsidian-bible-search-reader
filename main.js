@@ -319,6 +319,20 @@ function parseConnectedChapterVerse(text, pos, book) {
     return null;
 }
 
+// ===== 经文并列分隔符 / 非经文量词 =====
+// 并列经节之间除标点、顿号外，中文也常用并列连词：「启示录十四章一节和四节」＝启 14:1、14:4，
+// 「三章三节、七节」与「三章三节和七节」是同一类写法。连词只在后面确实能解析出经节时才生效：
+// 解析失败时各阶段都会回退到分隔符之前，不会把「和合本」「与神爱世人」这类普通文字吞进高亮。
+// 不含换行：并列延续不应跨行吞并。
+const VERSE_LIST_SEP_RE = /^(?:[，、,;；…· \t\u3000]+|(?:以及|和|与|及|并|或)[ \t\u3000]*)+[ \t\u3000]*/;
+// 数字后紧跟这些量词，说明它是页码 / 册数 / 版次 / 数量而非经节号：
+// 「新约总论第五册，一九九页」的「一九九」是页码，不能认成启 14:199。
+// 「章 / 篇 / 节」是经文自身的量词，「上中下」是半节后缀，均不在此列。
+const NON_VERSE_UNITS = new Set((
+    '页册卷版期集辑部套本号届年月日岁次个位条件项则首幅张片句段行栏格题例种层成倍元角块处所间件份名周天时分秒' +
+    '頁冊輯號屆歲個條項則張欄題種層塊處間週時'
+).split(''));
+
 // ===== 引导词处理 =====
 const REFERENCE_GUIDE_WORDS = [
     '论到', '说到', '提及', '提到', '说', '讲', '道', 
@@ -458,6 +472,12 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.16': `## [4.0.16] - 2026-11-06
+
+### 修复
+- **中文并列连词连接的经节现在能完整识别**：\`在启示录十四章一节和四节\` 此前只识别前半句「启示录十四章一节」＝启 14:1，「和四节」被丢掉。现在 \`和 / 与 / 及 / 以及 / 并 / 或\` 与顿号、逗号一样被视为并列分隔符，整句一次高亮为 **启 14:1、14:4**；\`约翰三章十六节与十七节\`、\`创一1和3\`、承上省略书卷的 \`十四章一节和四节\` 等同理。连词后面若不是经节（\`启示录十四章一节和合本\`、\`…与神爱世人\`），解析失败即回退，不会把普通文字吞进链接。强引用、行首 / 行内 /「X章Y节」各阶段统一生效。
+- **书籍册数 / 页码 / 版次不再被误认成经文出处**：\`末了活着的得胜者（新约总论第五册，一九九页。）\` 里的「一九九」是页码，此前在已有书卷 / 章上下文时会被括号弱引用路径解析成「启 14:199」，并把前面的书名一起包进高亮。现在数字后紧跟 \`页 / 册 / 卷 / 版 / 期 / 集 / 年 / 人 …\` 等非经文量词（含繁体 \`頁 / 冊 / 輯 …\`）时一律不作经节；\`二〇五页\`、\`一九九年版\`、\`第五册\`、并列连词后的 \`…和199页\` 等同类写法一并修好。\`九节接着说\`、\`16节\`、\`三23注1\`、\`（16）\` 等合法引用不受影响（「章 / 篇 / 节」是经文自身量词，「上中下」是半节后缀，均不在拦截面）。
+- **括号里「说明文字 + 经节」不再整括号高亮**：如 \`（见本书说明，16节）\` 此前会把整段说明一起变成可点击链接。现在只高亮真正解析到的经节段 \`16节\`；括号里第一段就是引用的情形（\`（二9，出十五23～25）\`）保持原有整括号高亮，行为不变。`,
     '4.0.15': `## [4.0.15] - 2026-11-06
 
 ### 修复
@@ -9077,7 +9097,7 @@ class BibleSearchPlugin extends Plugin {
             }
             // 检查并列分隔符（含省略号 …；不跨行）；记录分隔前位置，后续解析失败时回退，避免把标点包进高亮
             const sepStart = pos;
-            const listSep = text.slice(pos).match(/^[，、,;；…· \u3000]+/);
+            const listSep = text.slice(pos).match(VERSE_LIST_SEP_RE);
             if (!listSep) { pos = beforeGuide; break; }
             pos += listSep[0].length;
             const next = this.parseContinuationItem(text, pos, book, refs[refs.length - 1].chapter);
@@ -9288,11 +9308,14 @@ class BibleSearchPlugin extends Plugin {
                 return { chapter: lastChapter, verse, verseEnd, suffix, endPos: p };
             };
             const mNum = text.slice(pos).match(/^(?:第\s*)?(\d+)[节]?/);
+            const mCn = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+)[节]?/);
+            // 并列项里的数字若紧跟页码 / 册数等量词（「一节和一九九页」），不是同章经节
+            if ((mNum && this.isNonVerseCount(text, pos, pos + mNum[0].length)) ||
+                (mCn && this.isNonVerseCount(text, pos, pos + mCn[0].length))) return null;
             if (mNum && !afterSeparator.test(text.slice(pos + mNum[0].length))) {
                 const r = applyVerse(mNum[1], mNum[0].length);
                 if (r) return r;
             }
-            const mCn = text.slice(pos).match(/^(?:第\s*)?([一二三四五六七八九十百零〇]+)[节]?/);
             if (mCn && !afterSeparator.test(text.slice(pos + mCn[0].length))) {
                 const r = applyVerse(mCn[1], mCn[0].length);
                 if (r) return r;
@@ -9459,8 +9482,20 @@ class BibleSearchPlugin extends Plugin {
                 const full = (tail == null || tail.trim() === '');
                 // 原有三种括号保持「整括号」高亮；新增的中文括号 / 引号本身不是出处，
                 // 只高亮其中的内容（与弱引用阶段原有行为一致，引号不跟着变成链接）。
-                const s0 = full ? (cand.extra ? contentStart : start) : contentStart;
-                const e0 = full ? (cand.extra ? contentStart + list.consumed : end) : contentStart + list.consumed;
+                const lead = list.firstStart || 0;
+                let s0, e0;
+                if (lead > 0) {
+                    // 括号里前面还有未解析出的说明文字：只高亮真正解析到的经节段，
+                    // 不把「见本书说明，」或整个括号包进链接（否则像误识别了书名）
+                    s0 = contentStart + lead;
+                    e0 = contentStart + list.consumed;
+                } else if (full) {
+                    s0 = cand.extra ? contentStart : start;
+                    e0 = cand.extra ? contentStart + list.consumed : end;
+                } else {
+                    s0 = contentStart;
+                    e0 = contentStart + list.consumed;
+                }
                 matches.push({
                     text: text.slice(s0, e0), start: s0, end: e0,
                     bookId: book.id,
@@ -9503,6 +9538,9 @@ class BibleSearchPlugin extends Plugin {
         let lastChapter = initialLastChapter !== undefined ? initialLastChapter : null;
         let currentBook = book;
         let consumed = 0;
+        // 第一个真正解析出经节的段在 content 中的起点。前面若有未解析的说明文字
+        // （「（见本书说明，16节）」），高亮不能从括号内容开头算起。
+        let firstStart = null;
         const segRe = /[^，、,;]+/g;
         let sm;
         while ((sm = segRe.exec(content)) !== null) {
@@ -9521,6 +9559,7 @@ class BibleSearchPlugin extends Plugin {
                     else break;
                 }
                 refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix, endChapter: ref.endChapter || null, endVerse: ref.endVerse || null });
+                if (firstStart == null) firstStart = segStart + leadLen;
                 lastChapter = ref.chapter;
                 consumed = segStart + leadLen + ref.consumed;
                 if (ref.book) currentBook = ref.book;
@@ -9532,9 +9571,21 @@ class BibleSearchPlugin extends Plugin {
             if (ref) {
                 refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix, endChapter: ref.endChapter || null, endVerse: ref.endVerse || null });
                 consumed = ref.consumed;
+                firstStart = 0;
             }
         }
-        return { refs: refs, consumed: consumed };
+        return { refs: refs, consumed: consumed, firstStart: firstStart == null ? 0 : firstStart };
+    }
+
+    // 数字后紧跟「页 / 册 / 卷 / 版 / 年 / 人 …」等非经文量词时，它是页码、册数、
+    // 版次或数量，不是经节号（「新约总论第五册，一九九页」≠ 启 14:199）。
+    // 只作用于「纯数字（可带节）」形态，带章:节 / 上中下后缀的引用不受影响；
+    // 括号内弱引用没走 looksLikeProseNumber，靠这道守卫兜住书目 / 页码信息。
+    isNonVerseCount(text, start, end) {
+        const raw = text.slice(start, end);
+        if (!/^(?:第)?(?:[一二三四五六七八九十百零〇]+|\d+)节?$/.test(raw)) return false;
+        const after = text.slice(end).replace(/^[ \t　]*/, '');
+        return !!after && NON_VERSE_UNITS.has(after[0]);
     }
 
     // 裸节号（只写节号，章号沿用上下文）。支持中文与阿拉伯数字，也支持
@@ -9552,6 +9603,8 @@ class BibleSearchPlugin extends Plugin {
         // 合法的「第二节 / 第16节」带「节」字；「第三章 / 三章第三节」由模式B处理。
         // 不放行会把「第二」误判成当前章的第 2 节。
         if (/^第/.test(m[0]) && !/节$/.test(m[0])) return null;
+        // 页码 / 册数 / 版次等数量信息不是经节（「一九九页」≠ 第199节）
+        if (this.isNonVerseCount(text, pos, pos + m[0].length)) return null;
         const verse = parseNumber(m[1]);
         if (isNaN(verse) || verse < 1 || verse > 200) return null;
         const after = remaining.slice(m[0].length);
@@ -9674,6 +9727,8 @@ class BibleSearchPlugin extends Plugin {
         // 模式D: 连写（使用智能解析）。remaining 已是切片，offset 传 0
         const m6 = parseConnectedChapterVerse(remaining, 0, currentBook);
         if (m6) {
+            // 连写解析出的数字若紧跟量词（「二〇五页」被拆成 20:5），同样是页码不是经文
+            if (this.isNonVerseCount(text, pos, pos + m6.consumed)) return null;
             let p = pos + m6.consumed;
             const rangeMatch = remaining.substring(m6.consumed).match(/^[至～~\-－–—‐]\s*([一二三四五六七八九十百零〇]+|\d+)/);
             let verseEnd = null;
@@ -9725,7 +9780,7 @@ class BibleSearchPlugin extends Plugin {
                     }
                     // 向后吞并列延续项（如“一2，一3，二4”），让行首弱引用成串高亮
                     while (true) {
-                        const listSep = trimmed.slice(p).match(/^[，、,;；][\s　]*/);
+                        const listSep = trimmed.slice(p).match(VERSE_LIST_SEP_RE);
                         if (!listSep) break;
                         const q = p + listSep[0].length;
                         const next = this.parseContinuationItem(trimmed, q, effBook, refs[refs.length - 1].chapter);
@@ -9777,7 +9832,8 @@ class BibleSearchPlugin extends Plugin {
             const refs = [{ chapter, verse, verseEnd, suffix: null }];
             // 向后扩展 “、X章Y节” 或 “、X节”（同章延续）
             while (true) {
-                const sep = text.slice(p).match(/^[，、,;；]\s*/);
+                // 标点分隔符保留原有的可跨行空白语义；中文并列连词不跨行
+                const sep = text.slice(p).match(VERSE_LIST_SEP_RE) || text.slice(p).match(/^[，、,;；]\s*/);
                 if (!sep) break;
                 const q = p + sep[0].length;
                 const nextCh = text.slice(q).match(/^([一二三四五六七八九十百零〇\d]+)章(?:第)?([一二三四五六七八九十百零〇\d]+)节/);
@@ -9901,7 +9957,7 @@ class BibleSearchPlugin extends Plugin {
             let refs = [{ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix, endChapter: ref.endChapter || null, endVerse: ref.endVerse || null }];
             // 向后吞并列延续项（如“　一2，一3，二4”“　一1，二3～5”），让同行弱引用一次成串高亮
             while (true) {
-                const listSep = text.slice(end).match(/^[，、,;；][\s　]*/);
+                const listSep = text.slice(end).match(VERSE_LIST_SEP_RE);
                 if (!listSep) break;
                 const q = end + listSep[0].length;
                 const next = this.parseContinuationItem(text, q, effBook, refs[refs.length - 1].chapter);
