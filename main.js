@@ -319,6 +319,14 @@ function parseConnectedChapterVerse(text, pos, book) {
     return null;
 }
 
+// ===== 不可见格式字符 =====
+// 从网页 / Word / PDF 粘贴中文时，序号与正文之间常混入零宽空格(U+200B)、不换行空格(U+00A0)、
+// BOM(U+FEFF)、书写方向标记等不可见字符。它们大多不属于 \s，会让「一<ZWSP> 我们…」这类纲目序号
+// 绕过 looksLikeProseNumber 的空白跳过而被高亮成整章 / 节号；也会把「太<ZWSP>二六6~13」拆断造成漏识别。
+// 统一按 1:1 等长替换为普通空格（字符偏移不变，与「○→〇」、全角数字归一同一范式），
+// 让所有识别阶段与既有空白守卫看到一致的分隔。
+const INVISIBLE_SPACES_RE = /[\u00A0\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u206A-\u206F\uFEFF]/g;
+
 // ===== 经文并列分隔符 / 非经文量词 =====
 // 并列经节之间除标点、顿号外，中文也常用并列连词：「启示录十四章一节和四节」＝启 14:1、14:4，
 // 「三章三节、七节」与「三章三节和七节」是同一类写法。连词只在后面确实能解析出经节时才生效：
@@ -472,6 +480,12 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.17': `## [4.0.17] - 2026-11-08
+
+### 修复
+- **纲目序号不再被误认成经文出处（修掉从网页 / Word 粘贴带来的不可见字符）**：中文纲目常用「一、二、三、四」或「1、2」作中点序号，若序号与正文之间混入了**零宽空格 \`U+200B\`、不换行空格 \`U+00A0\`、BOM、书写方向标记**等看不见的格式字符（从网页 / Word / PDF 复制中文时极常见），此前会被识别成整章或节号——例如「**二**<ZWSP> 下一代必须…」被高亮成「太 2 章」，「**1**<NBSP> 今天在主的恢复里…」被高亮成本章第 1 节。根因是这些字符大多不属于 JS 的 \`\\s\`，绕过了既有的「裸数字后紧跟正文即视为段落序号」守卫。现在识别入口统一把这些不可见字符按 **1:1 等长替换成普通空格**（与既有的「○→〇」、全角数字归一同一范式，字符偏移不变），所有识别阶段与空白守卫看到一致的分隔；普通空格 / 全角空格下的既有判定不变。中文大写序号（壹贰叁）、两位数序号（12）、括号序号（（一））、\`1、\` / \`1.\` 等变体一并覆盖。串珠文字解析不产生字符坐标，改为直接删掉这类字符（见下条）。
+- **不可见字符夹在合法经文引用里导致的漏识别一并修好**：此前 \`一<ZWSP>2\` 只被认成「来 1 章」、\`太<ZWSP>二六6~13\` 只抓到「13」、\`　<ZWSP>三1～6\` 完全识别不到。归一后分别正确识别为 **来 1:2**、**太 26:6-13**、**来 3:1-6**；\`参看<ZWSP>罗三23\` 的引导词也照常排除在链接外。串珠文字串里的同类写法（如 \`1～3节：太<ZWSP>二六6~13\`）此前完全解析不到，现在也能正确列出 **太 26:6-13**。文档里真正的经文出处（\`太二六6~13\`、\`西三 16\`、\`诗一一九11\`、\`腓四8、13\`）全部保持正常识别。
+- **「段落序号 + 空格 + 序数词」不再被当成并列经节**：\`民十四29~31：\` 之后写 \`1<NBSP><ZWSP>第二代没有像第一代经历那麽多…\`，此前会被高亮成 **民 14:1、14:2**。根因是空格也属于经节并列分隔符，序号 \`1\` 后面的「第二」被延续项解析当成了「本章第 2 节」，裸中文数字还可能被连写解析成整章；而「整串已是 \`1  第二\`、不再是纯数字」又让既有的正文守卫失效。现在在并列延续的入口加了专用守卫：「第N」不带「节」（第二代 / 第三代 / 第十）在**空白 / 顿号 / 逗号 / 连词**各种分隔符下一律判为正文；「裸数字后紧跟普通汉字」（二人 / 三代）只在分隔符纯为空白时拦，避免误伤 \`16、17说\` 这类合法并列。显式带「节」（第二节 / 16节说）、后接章 / 篇 / 数字 / 标点 / 范围 / 后缀的写法照常解析。同类排查时一并修掉 \`16、第二代…\`、\`16，第二代…\`、\`16和第二代…\` 三种变体。括号内的弱引用路径也补上了既有的正文守卫：\`（1 第二代…）\` 不再识别，\`（1 第二代，16节）\` 只高亮 \`16节\`。顿号、逗号、中文连词连接的合法并列（\`16、17\`、\`一2、一3\`、\`第三章三节、七节\`、\`启十四1和4\`、\`（16、17）\`、\`16、17说\`）全部保持正常。`,
     '4.0.16': `## [4.0.16] - 2026-11-06
 
 ### 修复
@@ -7580,6 +7594,9 @@ class BibleSearchPlugin extends Plugin {
         // 同 findBibleReferences：恢复本串珠文字中的零偶尔也用白色圆圈○(U+25CB)，先归一为汉字〇(U+3007)
         text = text.replace(/○/g, '〇');
         text = normalizeFullWidthDigits(text);
+        // 串珠文字解析不产生字符坐标，不可见格式字符可直接删掉：这里要求「书卷名后紧跟章号」
+        // （numRe 不允许空格），替换成空格反而会阻断匹配；删掉后「太<ZWSP>二六6~13」＝「太二六6~13」。
+        text = text.replace(INVISIBLE_SPACES_RE, '');
         let s = text.replace(/^\s*\d+[～~\-至]+\d+节\s*[：:]?\s*/, '');
         const refs = [];
         const seen = new Set();
@@ -8827,6 +8844,8 @@ class BibleSearchPlugin extends Plugin {
         // 后续高亮所用字符偏移不受影响。一处归一即可覆盖全部中文数字正则。
         text = text.replace(/○/g, '〇');
         text = normalizeFullWidthDigits(text);
+        // 零宽空格 / 不换行空格 / 方向标记等一律当普通空白：等长替换，字符偏移不变
+        text = text.replace(INVISIBLE_SPACES_RE, ' ');
         const matches = [];
         const coveredRanges = [];
         // 已确定的引用按位置组成“时间线”。弱引用（未写书卷、只写章节或节号）解析时，
@@ -9099,7 +9118,10 @@ class BibleSearchPlugin extends Plugin {
             const sepStart = pos;
             const listSep = text.slice(pos).match(VERSE_LIST_SEP_RE);
             if (!listSep) { pos = beforeGuide; break; }
+            const spaceSep = /^[ \t　]+$/.test(listSep[0]);
             pos += listSep[0].length;
+            // 「1 第二代…」：空格后的序数词是正文，不是并列经节
+            if (this.isProseContinuation(text, pos, spaceSep)) { pos = beforeGuide; break; }
             const next = this.parseContinuationItem(text, pos, book, refs[refs.length - 1].chapter);
             if (!next) { pos = beforeGuide; break; }
             refs.push({ chapter: next.chapter, verse: next.verse, verseEnd: next.verseEnd, suffix: next.suffix, endChapter: null, endVerse: null });
@@ -9247,6 +9269,30 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         return { chapter, verse, verseEnd, suffix, endChapter, endVerse, endPos: p };
+    }
+
+    // 空格也是并列分隔符（VERSE_LIST_SEP_RE），但中文正文里更常见的用法是
+    // 「段落序号 + 空格 + 内容」，如「1 第二代没有…」「二 二人同行」。这类位置上的
+    // 「第N」是序数词、裸中文数字会被连写解析成整章，都不该吞进当前引用串。
+    // 只在「分隔符纯为空白」时由各并列循环调用，避免影响顿号/逗号/连词的合法并列：
+    // 带「节」（第二节 / 16节说）、后接经文量词（章/篇）、数字、标点、范围、后缀或
+    // 文末的，一律返回 false 照常解析。
+    isProseContinuation(text, pos, spaceSep) {
+        const m = text.slice(pos).match(/^(第\s*)?([一二三四五六七八九十百零〇]+|\d+)(节)?/);
+        if (!m || m[3]) return false;
+        const rest = text.slice(pos + m[0].length).replace(/^[ \t　]*/, '');
+        const next = rest[0] || '';
+        // 后接「章 / 篇」是「第三章三节」这类合法章节写法，让位给其它解析模式
+        if (/[章篇]/.test(next)) return false;
+        // 「第N」不带「节」＝序数词（第二代 / 第三代 / 第十），与 parseBareVerse 一致，
+        // 无论前面是空白、顿号、逗号还是连词，都不能当并列经节。
+        if (m[1]) return true;
+        // 「裸数字 + 紧跟汉字」（二人 / 三代）只在分隔符纯为空白时拦，
+        // 否则会误伤「16、17说」这类合法的并列经节后接行文。
+        if (!spaceSep) return false;
+        if (!next || !/[\p{L}]/u.test(next)) return false;
+        if (/[章节篇上中下:：\d一二三四五六七八九十百零〇～~\-－至–—‐，、,;；]/u.test(next)) return false;
+        return true;
     }
 
     parseContinuationItem(text, pos, book, lastChapter) {
@@ -9541,6 +9587,8 @@ class BibleSearchPlugin extends Plugin {
         // 第一个真正解析出经节的段在 content 中的起点。前面若有未解析的说明文字
         // （「（见本书说明，16节）」），高亮不能从括号内容开头算起。
         let firstStart = null;
+        // 某段是正文序号时记下，避免末尾「整体解析」兜底又把它捡回来
+        let sawProseSegment = false;
         const segRe = /[^，、,;]+/g;
         let sm;
         while ((sm = segRe.exec(content)) !== null) {
@@ -9553,6 +9601,12 @@ class BibleSearchPlugin extends Plugin {
             if (coveredRanges && absOffset != null && this.isCovered(absOffset + segStart + leadLen, coveredRanges)) break;
             const ref = this.parseWeakRef(trimmed, currentBook, lastChapter);
             if (ref) {
+                // 括号内没走阶段3/6 的正文守卫：「（1 第二代…）」里的 1 是段落序号，
+                // 裸数字后紧跟正文文字，不当经节。带「节」/ 范围 / 后缀的照常放行。
+                if (this.looksLikeProseNumber(trimmed, 0, ref.consumed, !!ref.verseEnd, !!ref.suffix)) {
+                    sawProseSegment = true;
+                    continue;
+                }
                 // 段首写出了另一个书卷名（如“歌二3”）——本条挂的是当前书卷，不能吞进来
                 if (ref.book && ref.book.id !== currentBook.id) {
                     if (refs.length === 0) currentBook = ref.book;
@@ -9566,7 +9620,7 @@ class BibleSearchPlugin extends Plugin {
             }
         }
         // 如果分割后没有结果，尝试整体解析（处理 "四34，十七4" 这种整体格式）
-        if (refs.length === 0) {
+        if (refs.length === 0 && !sawProseSegment) {
             const ref = this.parseWeakRef(content, currentBook, lastChapter);
             if (ref) {
                 refs.push({ chapter: ref.chapter, verse: ref.verse, verseEnd: ref.verseEnd, suffix: ref.suffix, endChapter: ref.endChapter || null, endVerse: ref.endVerse || null });
@@ -9783,6 +9837,8 @@ class BibleSearchPlugin extends Plugin {
                         const listSep = trimmed.slice(p).match(VERSE_LIST_SEP_RE);
                         if (!listSep) break;
                         const q = p + listSep[0].length;
+                        // 「1 第二代…」：空格后的序数词是正文，不是并列经节
+                        if (this.isProseContinuation(trimmed, q, /^[ \t　]+$/.test(listSep[0]))) break;
                         const next = this.parseContinuationItem(trimmed, q, effBook, refs[refs.length - 1].chapter);
                         if (!next || next.endPos <= q) break;
                         // 分隔符后面是另一处已解析的引用（多半带自己的书卷名）时不再吞进来，
@@ -9960,6 +10016,8 @@ class BibleSearchPlugin extends Plugin {
                 const listSep = text.slice(end).match(VERSE_LIST_SEP_RE);
                 if (!listSep) break;
                 const q = end + listSep[0].length;
+                // 「1 第二代…」：空格后的序数词是正文，不是并列经节
+                if (this.isProseContinuation(text, q, /^[ \t　]+$/.test(listSep[0]))) break;
                 const next = this.parseContinuationItem(text, q, effBook, refs[refs.length - 1].chapter);
                 if (!next || next.endPos <= q) break;
                 if (coveredRanges.some(([s]) => s >= q && s < next.endPos)) break;
