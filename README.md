@@ -175,6 +175,46 @@
 5. 恢复本（CRV）经文中带 ¹ ᵃ 上标，点击即在该节下方展开注解或串珠（注解/串珠可点击选中、复制、投影）；把主版本切到恢复本会**自动开启**注解，在阅读 / 检索等场景下按 **A** 即可一键开 / 关（在输入框或笔记正文中打字时不会误触；该快捷键由插件直接处理，故不出现在「设置 → 快捷键」里，但命令面板仍可搜索并触发）
 6. 「全局操作」标题右侧的字体按钮可调节阅读字号；点击卡片或对照版本的候选框选中内容，可进行复制或投影
 
+### 翻页与键盘导航
+
+**触屏**：检索结果区**左滑 = 下一页、右滑 = 上一页**；经文阅读页**左滑 = 下一章、右滑 = 上一章**，与页码按钮、「本页操作」里的上一章 / 下一章按钮完全一致，翻页后自动回到页首 / 章首。
+
+- **跨书卷连续翻章**：阅读页到本卷末章继续往后会自动进入下一卷第一章（创 50 → 出 1），往前同理（出 1 → 创 50）；手势、按钮、键盘、鼠标与触控板共用这套逻辑，按钮提示会显示目标书卷名。创 1 往前、启 22 往后不越界。
+- **移动端侧边栏避让**：从屏幕边缘起手仍交给系统返回 / 侧边抽屉；从内容区起手的横向手势只翻页，不会把侧边栏划走或划出。设置 →「移动端右滑翻上一页」默认开启，关闭后右滑完整交还给侧边栏（左滑仍可翻下一页）。
+
+**桌面端**：
+
+- **鼠标四向拖拽**：在内容区**任意位置（包括经文正文文字、对照经文、注文）**按住左键，像触屏一样四向滑动——**左 / 右拖**超过 60px 翻到下一页 / 上一页（阅读页为下一章 / 上一章，可跨书卷），**上 / 下拖**内容跟着手势实时滚动，不必再去找卡片空白处起手。拖拽期间会临时禁掉文字框选并显示抓取光标，松手即恢复，拖拽产生的那次点击也不会误选中卡片；链接、按钮、输入框、可编辑区仍照常点击。**需要选字复制时按住 `Shift` / `Alt`（或 `Ctrl` / `Cmd`）再拖即可**，原生选字完整保留；纯点击、短距离轻扫、上下拖都不会误翻页。
+- **触控板横滑**：双指横向滑动累计到阈值即翻页；纵向滚轮照常上下滚动，横向滚轮不会触发浏览器前进 / 后退。
+
+**键盘**（先点一下插件面板）：
+
+| 按键 | 作用 |
+| --- | --- |
+| `←` / `→` | 上一页 / 下一页；阅读页为上一章 / 下一章（可跨书卷） |
+| `↑` / `↓` | 唤出选框，逐条上下移动；目标超出屏幕时自动滚动到可见位置 |
+| `空格` | 选中 / 取消当前条（未显示选框时选中当前显示的内容，未滚动过则第一条） |
+| `B` | 切换当前条的「并」（并列显示）；未选中时先选中 |
+| `C` | 清空所有选中（含候选池） |
+| `X` | **本页全选 / 取消本页选中**：本页未全选时补齐为全选，已全选时取消本页全部选中（不影响其它页、其它标签页与候选池里的已冻结内容） |
+| `I` | 打开 / 取消当前标签页的专注模式（与「专注 / 取消」按钮一致） |
+| `Y` | 在「圣经搜索」与「经文阅读」之间来回切换 |
+| `U` | 打开 / 关闭对照设置面板 |
+
+**对照设置面板也能用键盘**：按 `U` 打开后，`↑ / ↓ / ← / →` 在弹窗内各选项之间移动选框——标题栏的「检查更新」「关闭」、刷新版本按钮、「恢复本注解 / 串珠」开关、注解数据按钮，以及每一个版本行；`空格` / `回车` 等于点下当前高亮项（勾选或取消版本、切换开关、按下按钮），首次按空格只唤出选框、不会误触第一项；`Esc` 或再按 `U` 关闭。勾选版本会让列表重绘，选框仍按版本身份停在同一项。弹窗打开期间，翻页手势、`X / I / Y` 与内容区的选框滚动跟随全部让行，关闭后恢复：**用 `U` / `Esc` / 关闭按钮 / 点遮罩任意一种方式关闭，焦点都会自动交还插件面板**，所以紧接着按 `I` 切专注、`Y` 切标签、`X` 全选或方向键都立刻生效，不用再点一下面板；笔记正文或输入框正在编辑时则不会抢焦点。
+
+**书卷列表与章目录也能用方向键**：这两个页面与内容页共用同一套选框——`← / →` 在书卷 / 章号之间逐个移动，`↑ / ↓` 按网格的视觉行上下移动并保持所在列，`空格` / `回车` 等于点下当前高亮的按钮（选书卷 → 进章目录 → 打开该章），`Esc` / `Backspace` 从章目录退回书卷列表。这两个页面里 `← / →` 不翻页，`B` / `C` 也不生效，避免误改已选内容；鼠标 / 触屏点选与滚动跟随规则与内容页一致。
+
+**选框也会跟着鼠标 / 手指走**：用鼠标或触屏点选任意内容条（含候选框、「并」标签、对照行），`↑ / ↓` 的选框立即移到那一条，接着按方向键或空格就从新位置继续；选中后整页重绘，选框仍按内容身份停在同一条，不会因列表顺序变化而漂走。触屏滑动、鼠标拖拽、触控板横滑或键盘 `← / →` 翻到新页 / 新章后，选框会移到新内容里的新目标（优先该页已选中的条目，否则第一条），目标超出屏幕时自动滚动到可见。输入框、工具栏按钮、经文弹窗 / 投影打开时不移动选框；关闭「键盘导航」后一并停用。
+
+**选框也会跟着滚动走**：上下滚动搜索结果或经文阅读后，选框会落到当前显示在屏幕上的内容——滚出视野时移到视口里最靠上的内容条（顶部那条被裁掉大半就取下面第一条完整露出的），往回滚同样跟回来；选框本身还在视野内时不跳，轻微滚动不会让框乱跑。如果选框还没唤出，滚动会先记住当前位置，之后按 `↑ / ↓` 或 `空格` 就从这里开始，不会跳回第一条。翻页复位滚动、`↑ / ↓` 把目标滚进视野这类程序自动滚动不会把框反向拽走；切换标签页、翻页 / 换章、关闭视图时都会清理跟随状态。
+
+焦点在输入框、笔记正文或经文弹窗 / 投影打开时全部让行（焦点停在工具栏按钮上时 `X / I / Y / U` 仍可用）；输入法合成态、带修饰键的按键不拦截，插件原有的全局 A / Q / W / E 快捷键不受影响——它们与面板内的裸字母键互不冲突。`X` 全选逐条沿用手动点选的序号与「保留候选」规则，整页只重绘一次；书卷列表与章目录没有「选中」概念，`X` 在那里不生效。
+
+以上四组能力可在 **设置 → 检索与阅读** 分别开关（默认全部开启）：「左右滑动翻页」「移动端右滑翻上一页」「鼠标拖拽与触控板横滑翻页」「键盘导航」。上下滚动、点击、长按选字、多指缩放、可横向滚动的容器、书卷列表与章目录列表都不会误触翻页手势。
+
+**移动端按钮**：顶部「对照」「专注」始终显示为实心高对比色块——在搜索框打字、展开检索范围、阅读经文或内容重绘时也不会变透明或被遮挡；「对照」激活时只换底色与内描边，文字固定为「对照」不变，进入专注模式后按钮显示「取消」。「全局操作」标题右侧的字体按钮、以及「本页操作」里的上一章 / 下一章按钮统一为 28px 触控目标，带边框与底色，两种主题下都能看清、点得中；搜索页「全局操作」标题左侧统一为折叠箭头，不再出现闪电符号。
+
 ### 对照设置说明
 
 - **全局对照面板**：点击「对照」按钮打开，同时影响圣经检索和圣经阅读视图
@@ -381,6 +421,8 @@ The plugin works on desktop and mobile. Data files are stored inside the vault a
 - **Projection search**: the search icon in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
 - **Keep candidates**: the 「保留候选」 checkbox beside "全局操作" is shared by both tabs. Once ticked, every verse you select is added to the candidate pool **in real time** — the counter and verse numbers update immediately, and nothing is lost on re-search, book/chapter switch or tab switch. Unticking a verse removes it from the pool at once. A 「清空」 button clears the pool. Unticking the checkbox releases kept candidates back to the search/reader view and restarts numbering from 1.
 - **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted. References that omit the book name inherit the last book mentioned earlier in the same note (works across lines and paragraphs), and a bare verse number continues from the end chapter of the previous range. Single-click a reference to open the verse popup (font +/-, a combined 全选/取消 toggle, 复制 and 投影, per-verse checkboxes that show the selection-order number once selected (same box style as the search / reader tabs), a 「并」 tag behind each selected verse for side-by-side projection, and remembered font size). The popup keeps its own candidates: with 「保留候选」 unticked, the popup, the search tab and the reader tab each keep their own selections, and projecting from one of them only projects that window's content (each reference's popup numbers its own verses from 1, and the selections survive closing the popup). Its header shows 保留候选 + count + a 清空 button; the count follows the same rule as the search / reader tabs (shared pool total when ticked, the popup's own count when unticked), and 清空 clears every window's candidates at once (popup + search + reader). With 「保留候选」 ticked, popup verses join the shared pool so everything is projected together; 复制 then offers 本页复制 / 全局复制, and 投影 offers 逐节 / 并列 / 混合. Double-click a reference (or a `章:节` inside the popup) to jump to the reader view.
+- **Page turning & keyboard navigation**: swipe left/right on touch screens for the next/previous page (search) or chapter (reader); chapter turning crosses book boundaries automatically (Genesis 50 → Exodus 1, and back). On mobile, horizontal gestures started inside the content no longer drag the sidebar away or pull out the left drawer, while edge swipes remain reserved for the system — toggle 「移动端右滑翻上一页」 if you prefer right-swipe for the sidebar. On desktop, hold the left mouse button anywhere in the content — including directly on verse text, comparison verses or note text — and drag in any direction like on a touch screen: dragging left/right past 60px turns the page/chapter, dragging up/down scrolls the content with your hand. Text selection is temporarily disabled during a drag (and the synthetic click after a drag is swallowed), while links, buttons, inputs and editable areas keep their normal behaviour; hold `Shift`/`Alt` (or `Ctrl`/`Cmd`) while dragging to keep native text selection and copying. Two-finger horizontal trackpad swipes also turn pages; vertical wheel scrolling is untouched. After clicking the panel, use `←/→` to turn pages/chapters, `↑/↓` to show a selection box and move it item by item (auto-scrolls when the item would leave the screen), `Space` to select/deselect the focused item, `B` to toggle its 「并」 (side-by-side) tag (selecting it first if needed), and `C` to clear every selection. The `↑/↓` selection box also follows mouse and touch: clicking or tapping any item (including its checkbox, 「并」 tag or comparison row) moves the box there, and it stays on the same item after a re-render even if the row order changes. After turning a page/chapter by touch, mouse drag, trackpad, arrow keys or buttons, the box moves to a target in the new content — the first already-selected item, or the first item otherwise — and scrolls into view when needed. The box also follows scrolling: when the search results or reader content is scrolled and the focused item leaves the viewport, it moves to the topmost visible item (or the next fully visible one if that item is mostly cut off) and follows back when scrolling up, while staying put for small scrolls that leave it visible. If the box has not been shown yet, scrolling just anchors it to the current position, so the first `↑/↓` or `Space` starts from what is on screen instead of the first item. Programmatic scrolling (page-turn resets, auto-scrolling a focused item into view) never pulls the box away. Keys are ignored while typing in an input, note editor, button, or while a verse popup / projection is open; existing `A`/`Q`/`W`/`E` shortcuts are unaffected. All four groups can be toggled under Settings → Search & reader (all on by default). The book-list and chapter-grid pages share the same selection box: `←/→` move one item, `↑/↓` move by visual grid row, `Space`/`Enter` activate the highlighted book or chapter and `Esc`/`Backspace` return to the book list; on those pages `←/→` do not turn pages and `B`/`C` are inactive. On mobile, 「对照」/「专注」 stay solid, high-contrast buttons in both light and dark themes even while typing in the search box, changing the search scope, reading a chapter or re-rendering content; activating 「对照」 only changes its background and inset outline (the label stays 「对照」), while focus mode shows 「取消」. The font / previous-chapter / next-chapter icon buttons are 28px tappable targets with explicit borders and colours, and the search page's 「全局操作」 header starts with the normal collapse arrow instead of a lightning bolt. Vertical scrolling, tapping, text selection, multi-touch, horizontally scrollable containers, popups and projections never trigger a page turn.
+- **Action shortcuts & keyboard control of the comparison panel**: after clicking the plugin panel, `X` selects every item on the current page (or deselects them all when the page is already fully selected), `I` toggles focus mode, `Y` switches between the search and reader tabs, and `U` opens/closes the comparison settings. While that panel is open, `↑/↓/←/→` move a highlight across its options (header buttons, refresh button, notes toggle, notes-data button and each version row), `Space`/`Enter` activates the highlighted option (the first `Space` only reveals the highlight, so nothing is triggered accidentally), and `Esc` or `U` closes it. The highlight stays on the same version after the list re-renders. Whichever way you close the panel (`U`, `Esc`, the close button or the backdrop), focus is handed back to the plugin panel automatically, so `I`, `Y`, `X` and the arrow keys work immediately again without an extra click — focus inside the note editor or an input is never stolen. Input fields, IME composition and modifier-key combos are ignored, and turning off "Keyboard navigation" disables all of these together with the other panel shortcuts.
 - **Version management**: in plugin settings, enable/disable versions, set the primary version, delete versions, or download new ones.
 
 ---

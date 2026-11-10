@@ -480,6 +480,19 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.18': `## [4.0.18] - 2026-11-10
+
+### 新增
+- **滑动与手势导航**：手机左滑下一页、右滑上一页，阅读页左滑下一章、右滑上一章；桌面端在内容区按住鼠标左键横向拖动翻页、纵向拖动跟手滚动，触控板双指横滑同样翻页（支持从正文文字起手，需要框选文字请按住 Shift / Alt）。
+- **跨书卷连续翻章**：阅读页翻到本卷末章后继续翻动，自动进入下一卷第一章（如创 50 → 出 1），滑动、按钮、键盘、鼠标拖拽共用同一套逻辑。
+- **键盘导航与选框**：\`←/→\` 翻页 / 翻章，\`↑/↓\` 移动选框，\`空格\` 选中，\`B\` 切「并」，\`C\` 清空；选框会跟随点击、拖拽、滚动与换页；书卷 / 章目录也支持方向键与空格确认。
+- **动作快捷键**：\`X\` 本页全选 / 取消，\`I\` 专注，\`Y\` 搜索 ↔ 阅读切换，\`U\` 开关对照面板；对照面板内方向键选择、\`空格\`/\`回车\` 确认、\`Esc\` 关闭。
+- **移动端右滑不再误触侧边栏**：从内容区起手的横向手势只翻页、不再带动侧边栏，边缘起手的手势完整让给系统。
+
+### 修复
+- **移动端按钮显示问题**：修复「对照 / 专注」按钮点击后消失、打字或阅读时看不见但仍可点的问题；去掉对照按钮多余的 ✓；统一字体调节与上下章按钮的尺寸和配色，浅色 / 深色主题都清晰可点。
+- **搜索页「全局操作」图标**：初始即为展开箭头 \`▼\`，不再先显示闪电。
+- **鼠标交互修复**：修复对照面板关闭后快捷键失灵、正文卡片点击无法选中，以及正文文字上无法像触屏那样四向滑动的问题。`,
     '4.0.17': `## [4.0.17] - 2026-11-08
 
 ### 修复
@@ -1650,6 +1663,45 @@ class BibleSettingTab extends PluginSettingTab {
                     await this.plugin.installNotesData(true);
                     button.setButtonText(old);
                     button.setDisabled(false);
+                }));
+
+        // ===== 板块：检索与阅读交互 =====
+        containerEl.createEl('h3', { text: '检索与阅读', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
+        new Setting(containerEl)
+            .setName('左右滑动翻页')
+            .setDesc('触屏设备上，在检索结果或经文阅读区左滑翻到下一页 / 下一章，右滑翻到上一页 / 上一章，可跨书卷连续翻。上下滚动、点击与文字选择不受影响；不需要时可关闭。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.swipeNavigation !== false)
+                .onChange(async (value) => {
+                    this.plugin.settings.swipeNavigation = value;
+                    await this.plugin.saveSettings();
+                }));
+        new Setting(containerEl)
+            .setName('移动端右滑翻上一页')
+            .setDesc('手机 / 平板上右滑默认翻到上一页 / 上一章，并阻止Obsidian侧边抽屉同时响应（侧边栏不会被划走，也不会被划出）。若你更习惯用右滑呼出侧边栏，可关闭此项：关闭后移动端右滑完全交给侧边栏，左滑仍可翻下一页 / 下一章。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.mobileRightSwipe !== false)
+                .onChange(async (value) => {
+                    this.plugin.settings.mobileRightSwipe = value;
+                    await this.plugin.saveSettings();
+                }));
+        new Setting(containerEl)
+            .setName('鼠标拖拽与触控板横滑翻页')
+            .setDesc('桌面端在内容区（含正文文字）按住鼠标左键，像触屏一样四向滑动：左右滑翻页 / 翻章，上下滑跟着手势滚动内容；触控板双指横滑同样翻页，纵向滚轮照常滚动。按住 Shift / Alt 再拖动可保留原有选字复制；点击、链接、按钮、输入框与经文弹窗不受影响。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.pointerNavigation !== false)
+                .onChange(async (value) => {
+                    this.plugin.settings.pointerNavigation = value;
+                    await this.plugin.saveSettings();
+                }));
+        new Setting(containerEl)
+            .setName('键盘导航')
+            .setDesc('← / → 翻页或翻章（可跨书卷）；↑ / ↓ 显示选框并逐条移动，超出屏幕时自动滚动；空格选中当前条；B 切换当前条的「并」（并列显示）；C 清空所有选中。焦点在输入框 / 笔记正文打字时全部让行。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.keyboardNavigation !== false)
+                .onChange(async (value) => {
+                    this.plugin.settings.keyboardNavigation = value;
+                    await this.plugin.saveSettings();
                 }));
 
         // ===== 板块 B：插件更新 =====
@@ -3503,8 +3555,43 @@ class BibleSearchView extends ItemView {
         this.buildSearchTab();
         this.buildReaderTab();
         this.switchTab('search');
+        this.setupSwipeNavigation();
+        this.setupPointerNavigation();
+        this.setupKeyboardNavigation();
     }
     async onClose() {
+        if (this._swipeHandlers) {
+            const h = this._swipeHandlers;
+            h.host.removeEventListener('touchstart', h.onStart);
+            h.host.removeEventListener('touchmove', h.onMove);
+            h.host.removeEventListener('touchend', h.onEnd);
+            h.host.removeEventListener('touchcancel', h.onCancel);
+            this._swipeHandlers = null;
+        }
+        if (this._pointerHandlers) {
+            const h = this._pointerHandlers;
+            h.host.removeEventListener('pointerdown', h.onPointerDown);
+            h.host.removeEventListener('pointermove', h.onPointerMove);
+            h.host.removeEventListener('pointerup', h.onPointerUp);
+            h.host.removeEventListener('pointercancel', h.onPointerCancel);
+            h.host.removeEventListener('click', h.onClickCapture, true);
+            h.host.removeEventListener('wheel', h.onWheel);
+            if (typeof h.detachWindow === 'function') h.detachWindow();
+            this._pointerHandlers = null;
+        }
+        if (this._keyboardHandlers) {
+            const h = this._keyboardHandlers;
+            h.host.removeEventListener('pointerdown', h.onPointerDown);
+            h.host.removeEventListener('click', h.onClick);
+            h.host.removeEventListener('keydown', h.onKeyDown);
+            this._keyboardHandlers = null;
+        }
+        if (this._scrollCursorHandlers) {
+            const h = this._scrollCursorHandlers;
+            h.cancel();
+            h.areas.forEach(a => a.removeEventListener('scroll', h.onScroll));
+            this._scrollCursorHandlers = null;
+        }
         if (this._tabResizeObserver) {
             this._tabResizeObserver.disconnect();
             this._tabResizeObserver = null;
@@ -3512,6 +3599,22 @@ class BibleSearchView extends ItemView {
         if (this._tabResizeHandler) {
             window.removeEventListener('resize', this._tabResizeHandler);
             this._tabResizeHandler = null;
+        }
+        if (this._tabCompactRaf && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(this._tabCompactRaf);
+            this._tabCompactRaf = null;
+        }
+        if (this._tabBtnRefreshHandler) {
+            if (this.container && typeof this.container.removeEventListener === 'function') {
+                this.container.removeEventListener('focusin', this._tabBtnRefreshHandler);
+                this.container.removeEventListener('input', this._tabBtnRefreshHandler);
+                this.container.removeEventListener('pointerdown', this._tabBtnRefreshHandler);
+            }
+            this._tabBtnRefreshHandler = null;
+        }
+        if (this._tabBtnRefreshRaf && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(this._tabBtnRefreshRaf);
+            this._tabBtnRefreshRaf = null;
         }
     }
 
@@ -3529,33 +3632,160 @@ class BibleSearchView extends ItemView {
         this.tabReader.addEventListener('click', () => this.switchTab('reader'));
 
         this.compareBtn = tabBar.createEl('button', { cls: 'bible-compare-toggle-btn', text: '对照' });
-        this.compareBtn.addEventListener('click', () => this.toggleComparePanel());
+        this.compareBtn.addEventListener('click', (e) => {
+            this.toggleComparePanel();
+            this.releaseTabButtonFocus(e);
+        });
 
         this.focusModeBtn = tabBar.createEl('button', { cls: 'bible-focus-mode-btn', text: '专注' });
-        this.focusModeBtn.addEventListener('click', () => this.toggleFocusMode());
+        this.focusModeBtn.addEventListener('click', (e) => {
+            this.toggleFocusMode();
+            this.releaseTabButtonFocus(e);
+        });
 
         this.setupTabOverflowWatch();
+    }
+
+    // 移动端 WebView 点完 button 后，:hover / :focus 会粘在按钮上直到下一次触摸别处，
+    // 表现就是「按钮点了像消失、再点一下屏幕才出现」。主动失焦让它立刻回常态。
+    releaseTabButtonFocus(e) {
+        const btn = e && e.currentTarget;
+        try { if (btn && typeof btn.blur === 'function') btn.blur(); } catch (err) { /* 忽略 */ }
+        // 再兜一层：清掉任何残留的焦点，避免宿主主题把 focus 态渲染成透明
+        try {
+            if (typeof document !== 'undefined' && document.activeElement &&
+                document.activeElement !== document.body &&
+                typeof document.activeElement.blur === 'function' &&
+                this.container && this.container.contains && this.container.contains(document.activeElement) &&
+                document.activeElement.tagName === 'BUTTON') {
+                document.activeElement.blur();
+            }
+        } catch (err) { /* 忽略 */ }
+    }
+
+    // 对照按钮的文字 / 激活态 / 可见性只由 comparePanelOpen 决定，避免弹窗被
+    // 其它路径关掉后按钮还停在「已激活」或干脆不见了的状态。
+    syncCompareBtnState() {
+        if (!this.compareBtn) return;
+        const on = !!this.comparePanelOpen;
+        try {
+            if (this.compareBtn.classList && typeof this.compareBtn.classList.toggle === 'function')
+                this.compareBtn.classList.toggle('active', on);
+            // 按钮文字始终固定为「对照」：激活态只靠底色 + 内描边表达，不额外加符号
+            if (this.compareBtn.textContent !== '对照') this.compareBtn.textContent = '对照';
+            this.compareBtn.title = on ? '关闭对照设置' : '打开对照设置';
+            // 万一被别的逻辑写过内联隐藏，这里一律清掉，交给 CSS 决定可见性
+            this.compareBtn.style.removeProperty('display');
+            this.compareBtn.style.removeProperty('visibility');
+            this.compareBtn.style.removeProperty('opacity');
+        } catch (err) { /* 忽略 */ }
+    }
+
+    // 搜索框打字、点检索范围、阅读内容重绘时，宿主主题或移动 WebView 可能给
+    // 标签栏按钮重新套上内联隐藏 / :focus / :hover 的透明样式，表现就是
+    // 「按钮看不见，但位置还在、仍然能点」。这里做一次 rAF 合并的兜底：
+    // 清掉外部写入的内联样式并重新同步状态；只有计算样式确实异常时才写内联值，
+    // 正常渲染零干预。
+    refreshTabButtonsVisible() {
+        if (this._tabBtnRefreshRaf) return;
+        if (typeof requestAnimationFrame !== 'function') { this._applyTabButtonsVisible(); return; }
+        this._tabBtnRefreshRaf = requestAnimationFrame(() => {
+            this._tabBtnRefreshRaf = null;
+            this._applyTabButtonsVisible();
+        });
+    }
+
+    _applyTabButtonsVisible() {
+        this.syncCompareBtnState();
+        this.updateFocusModeBtn();
+        const props = ['display', 'visibility', 'opacity', 'color', 'background',
+            'background-color', '-webkit-text-fill-color', 'border', 'box-shadow',
+            'transform', 'filter'];
+        for (const btn of [this.compareBtn, this.focusModeBtn]) {
+            if (!btn || !btn.style) continue;
+            for (const p of props) {
+                try {
+                    if (typeof btn.style.removeProperty === 'function') btn.style.removeProperty(p);
+                } catch (err) { /* 忽略 */ }
+            }
+            try {
+                const cs = typeof getComputedStyle === 'function' ? getComputedStyle(btn) : null;
+                if (cs && typeof btn.style.setProperty === 'function') {
+                    const invisible = cs.display === 'none' || cs.visibility === 'hidden' ||
+                        (cs.opacity !== '' && parseFloat(cs.opacity) < 0.9);
+                    if (invisible) {
+                        btn.style.setProperty('display', 'inline-flex');
+                        btn.style.setProperty('visibility', 'visible');
+                        btn.style.setProperty('opacity', '1');
+                    }
+                    // 主题把背景 / 文字画成透明时，用与样式表兜底一致的硬编码色补回
+                    const clear = (v) => v === 'transparent' || v === 'rgba(0, 0, 0, 0)';
+                    if (clear(cs.backgroundColor) || clear(cs.color)) {
+                        const on = !!(btn.classList && typeof btn.classList.contains === 'function' &&
+                            btn.classList.contains('active'));
+                        btn.style.setProperty('background-color', on ? '#3dbdb4' : '#4ecdc4');
+                        btn.style.setProperty('color', '#0b2b29');
+                        btn.style.setProperty('-webkit-text-fill-color', '#0b2b29');
+                    }
+                }
+            } catch (err) { /* 忽略 */ }
+        }
     }
 
     // 标签栏窄屏自适应：溢出时隐藏「搜索 / 阅读」文字只保留图标并缩小按钮宽度，
     // 保证右侧「对照 / 专注」不被挤出画面；窗口足够时自动恢复完整显示
     setupTabOverflowWatch() {
-        requestAnimationFrame(() => this.updateTabBarCompact());
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => this.updateTabBarCompact());
+        } else {
+            this.updateTabBarCompact();
+        }
         if (typeof ResizeObserver !== 'undefined') {
             this._tabResizeObserver = new ResizeObserver(() => this.updateTabBarCompact());
             this._tabResizeObserver.observe(this.tabBar);
         }
         this._tabResizeHandler = () => this.updateTabBarCompact();
         window.addEventListener('resize', this._tabResizeHandler);
+        // 输入 / 点检索范围 / 内容区交互都会改变焦点或触发重绘，
+        // 挂委托监听统一兜底刷新，不必侵入每个渲染函数。
+        this._tabBtnRefreshHandler = () => this.refreshTabButtonsVisible();
+        if (this.container && typeof this.container.addEventListener === 'function') {
+            this.container.addEventListener('focusin', this._tabBtnRefreshHandler, { passive: true });
+            this.container.addEventListener('input', this._tabBtnRefreshHandler, { passive: true });
+            this.container.addEventListener('pointerdown', this._tabBtnRefreshHandler, { passive: true });
+        }
     }
 
+    // 同帧内的多次回调合并成一次测量。原先「每次都先移除 compact 再测、再按结果加回」
+    // 会反复改标签栏自身的 class，触发 ResizeObserver 自激；窄屏下按钮会随之闪动、
+    // 甚至有一帧被挤出可见区，看起来就是「点一下按钮不见了，再点屏幕才回来」。
     updateTabBarCompact() {
-        if (!this.tabBar) return;
-        // 先还原到完整状态再测量，避免在已精简的状态下误判（窗口变宽时能及时恢复）
-        const wasCompact = this.tabBar.classList.contains('compact');
-        if (wasCompact) this.tabBar.classList.remove('compact');
-        if (this.tabBar.scrollWidth > this.tabBar.clientWidth + 1) {
-            this.tabBar.classList.add('compact');
+        if (!this.tabBar || this._tabCompactRaf) return;
+        if (typeof requestAnimationFrame !== 'function') { this._applyTabBarCompact(); return; }
+        this._tabCompactRaf = requestAnimationFrame(() => {
+            this._tabCompactRaf = null;
+            this._applyTabBarCompact();
+        });
+    }
+
+    _applyTabBarCompact() {
+        const bar = this.tabBar;
+        if (!bar) return;
+        const w = bar.clientWidth;
+        if (!w) return;
+        const lastW = this._lastTabBarWidth || 0;
+        this._lastTabBarWidth = w;
+        const isCompact = bar.classList.contains('compact');
+        if (!isCompact) {
+            // 完整状态溢出 → 切到紧凑（隐藏「搜索 / 阅读」文字），右侧按钮不再被挤出
+            if (bar.scrollWidth > w + 1) bar.classList.add('compact');
+            return;
+        }
+        // 已紧凑：只有容器确实变宽时才尝试恢复完整标签。
+        // 宽度没变就完全不动 DOM，ResizeObserver 不会因我们自己的写入再次回调。
+        if (w > lastW + 2) {
+            bar.classList.remove('compact');
+            if (bar.scrollWidth > w + 1) bar.classList.add('compact');
         }
     }
 
@@ -3580,8 +3810,33 @@ class BibleSearchView extends ItemView {
             this._openCompareModal();
         } else {
             this._closeCompareModal();
+            // 弹窗挂在 document.body 上并抢走了焦点，弹窗移除后焦点会回落到 body；
+            // 快捷键监听挂在插件容器上，不把焦点交还面板，X / I / Y / U 与方向键都收不到按键。
+            this.restoreViewFocus();
         }
-        this.compareBtn.classList.toggle('active', this.comparePanelOpen);
+        this.syncCompareBtnState();
+    }
+
+    // 关闭对照弹窗后把键盘焦点交还插件面板（U / Esc / 关闭按钮 / 点遮罩共用）。
+    // 只恢复「焦点确实丢了」的情形，不抢用户正在使用的笔记编辑器或其它面板控件。
+    restoreViewFocus() {
+        const host = this.container;
+        if (!host || typeof host.focus !== 'function') return;
+        const doFocus = () => {
+            try {
+                const ae = (typeof document !== 'undefined') ? document.activeElement : null;
+                if (ae && typeof host.contains === 'function' && host.contains(ae)) return;
+                if (ae && ae.closest && ae.closest(
+                    'input, textarea, select, [contenteditable="true"], .cm-editor, .markdown-source-view')) return;
+                if (typeof host.setAttribute === 'function') host.setAttribute('tabindex', '-1');
+                host.focus({ preventScroll: true });
+            } catch (err) { /* 忽略 */ }
+        };
+        doFocus();
+        // 部分 WebView 会在弹窗节点移除后异步把焦点再交回 body，下一帧补一次
+        try {
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(doFocus);
+        } catch (err) { /* 忽略 */ }
     }
 
     _openCompareModal() {
@@ -3683,6 +3938,16 @@ class BibleSearchView extends ItemView {
 
         document.body.appendChild(modal);
         this._compareModal = modal;
+        // 弹窗在 body 层：单独接管方向键 / 空格，并让焦点离开插件面板
+        this._cmpCursorVisible = false;
+        this._cmpCursorIdx = -1;
+        this._cmpCursorKey = null;
+        this._cmpKbIgnoreUntil = Date.now() + 200;
+        this.setupCompareModalKeyboard();
+        try {
+            if (typeof modal.setAttribute === 'function') modal.setAttribute('tabindex', '-1');
+            if (typeof modal.focus === 'function') modal.focus({ preventScroll: true });
+        } catch (err) { /* 忽略 */ }
     }
 
     _closeCompareModal() {
@@ -3695,6 +3960,10 @@ class BibleSearchView extends ItemView {
             this._compareBackdrop = null;
         }
         this._compareNotesCb = null;
+        this.teardownCompareModalKeyboard();
+        this._cmpCursorVisible = false;
+        this._cmpCursorIdx = -1;
+        this._cmpCursorKey = null;
     }
 
     // 把对照 modal 里的「恢复本注解 / 串珠」开关实时同步为当前 settings.showNotes，
@@ -3882,11 +4151,968 @@ class BibleSearchView extends ItemView {
                 this.renderResults();
             }
         });
+        // 版本列表被重建（勾选 / 拖动 / 刷新）后，按稳定 key 恢复键盘选框
+        this.applyCompareModalCursor();
+    }
+
+    // ==================== 对照设置的键盘选框 ====================
+    // 对照弹窗挂在 document.body 上，不在视图容器内，容器级 keydown 收不到；
+    // 因此弹窗打开期间单独挂一个 document 级监听，关闭即移除。
+    // 选项 = 弹窗里的按钮、注解开关行、各版本行；方向键移动选框，空格 / 回车等于点一下。
+    setupCompareModalKeyboard() {
+        if (this._compareKbHandler || typeof document === 'undefined' || !document.addEventListener) return;
+        const self = this;
+        const onKeyDown = (e) => {
+            if (!self._compareModal) return;
+            if (e.isComposing || e.keyCode === 229) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const t = e.target;
+            if (t && t.closest && t.closest('input[type="text"], input[type="search"], textarea, [contenteditable="true"]')) return;
+            const key = e.key;
+            const lower = typeof key === 'string' ? key.toLowerCase() : '';
+            // Esc 关弹窗是基础可用性，不受「键盘导航」开关影响
+            if (key === 'Escape') {
+                self.toggleComparePanel();
+                if (e.preventDefault) e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+                return;
+            }
+            if (!self.keyboardNavEnabled()) return;
+            let handled = true;
+            if (key === 'ArrowDown' || key === 'ArrowRight') self.moveCompareModalCursor(1);
+            else if (key === 'ArrowUp' || key === 'ArrowLeft') self.moveCompareModalCursor(-1);
+            else if (key === ' ' || key === 'Spacebar' || key === 'Enter') self.activateCompareModalCursor();
+            else if (lower === 'u') {
+                // 打开弹窗的那一次 U 还会冒泡到 document，别把刚打开的弹窗立刻关掉
+                if (Date.now() < (self._cmpKbIgnoreUntil || 0)) return;
+                self.toggleComparePanel();
+            }
+            else handled = false;
+            if (handled) {
+                if (e.preventDefault) e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        this._compareKbHandler = onKeyDown;
+        this.applyCompareModalCursor();
+    }
+
+    teardownCompareModalKeyboard() {
+        if (this._compareKbHandler && typeof document !== 'undefined' && document.removeEventListener) {
+            try { document.removeEventListener('keydown', this._compareKbHandler); } catch (err) { /* 忽略 */ }
+        }
+        this._compareKbHandler = null;
+        this._cmpKbIgnoreUntil = 0;
+    }
+
+    getCompareModalKeyboardItems() {
+        const modal = this._compareModal;
+        if (!modal || typeof modal.querySelectorAll !== 'function') return [];
+        let nodes;
+        try {
+            nodes = Array.prototype.slice.call(modal.querySelectorAll(
+                'button, .bible-compare-modal-notes-row, .bible-compare-modal-row'));
+        } catch (err) { return []; }
+        const items = [];
+        for (let i = 0; i < nodes.length; i++) {
+            const el = nodes[i];
+            if (!el) continue;
+            if (el.disabled || (el.hasAttribute && el.hasAttribute('disabled'))) continue;
+            let cb = null;
+            try { cb = el.querySelector ? el.querySelector('input[type="checkbox"]') : null; }
+            catch (err) { cb = null; }
+            if (cb && (cb.disabled || (cb.hasAttribute && cb.hasAttribute('disabled')))) continue;
+            const isButton = el.tagName === 'BUTTON' ||
+                (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('bible-small-btn'));
+            let toggle = null;
+            if (isButton) toggle = () => { if (typeof el.click === 'function') el.click(); };
+            else if (cb) toggle = () => { if (typeof cb.click === 'function') cb.click(); };
+            if (!toggle) continue;
+            const ds = el.dataset || {};
+            // 版本行重绘 / 拖动排序后仍按版本 key 找回同一项，按钮按固定顺序
+            const key = ds.cmpKb || (ds.key ? 'v:' + ds.key : '') ||
+                (String(el.className || '').indexOf('bible-compare-modal-notes-row') >= 0 ? 'n:notes' : '') ||
+                ('i:' + i);
+            el._cmpKey = key;
+            el._cmpToggle = toggle;
+            items.push(el);
+        }
+        return items;
+    }
+
+    setCompareModalCursorClass(el, on) {
+        if (!el) return;
+        const CLS = 'bible-cmp-kb-cursor';
+        if (el.classList && typeof el.classList.toggle === 'function') { el.classList.toggle(CLS, on); return; }
+        const cur = String(el.className || '');
+        const has = cur.split(/\s+/).indexOf(CLS) !== -1;
+        if (on && !has) el.className = (cur + ' ' + CLS).trim();
+        else if (!on && has) el.className = cur.split(/\s+/).filter(x => x && x !== CLS).join(' ');
+    }
+
+    applyCompareModalCursor() {
+        if (!this._compareModal) return;
+        const items = this.getCompareModalKeyboardItems();
+        if (!items.length) return;
+        let idx = -1;
+        if (this._cmpCursorKey) {
+            for (let i = 0; i < items.length; i++) {
+                if (items[i]._cmpKey === this._cmpCursorKey) { idx = i; break; }
+            }
+        }
+        if (idx < 0) idx = this._cmpCursorIdx == null ? 0 : this._cmpCursorIdx;
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        this._cmpCursorIdx = idx;
+        this._cmpCursorKey = items[idx]._cmpKey || null;
+        items.forEach((el, i) => this.setCompareModalCursorClass(el, !!this._cmpCursorVisible && i === idx));
+    }
+
+    moveCompareModalCursor(delta) {
+        const items = this.getCompareModalKeyboardItems();
+        if (!items.length) return false;
+        let idx;
+        if (!this._cmpCursorVisible || this._cmpCursorIdx == null || this._cmpCursorIdx < 0)
+            idx = delta > 0 ? 0 : items.length - 1;
+        else idx = this._cmpCursorIdx + delta;
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        this._cmpCursorVisible = true;
+        this._cmpCursorIdx = idx;
+        this._cmpCursorKey = items[idx]._cmpKey || null;
+        this.applyCompareModalCursor();
+        const el = items[idx];
+        if (el && typeof el.scrollIntoView === 'function') {
+            try { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+            catch (err) { try { el.scrollIntoView(); } catch (e2) { /* 忽略 */ } }
+        }
+        return true;
+    }
+
+    activateCompareModalCursor() {
+        const items = this.getCompareModalKeyboardItems();
+        if (!items.length) return false;
+        if (!this._cmpCursorVisible) {
+            // 第一次按空格只唤出选框，不误触第一项（通常是「检查更新」按钮）
+            this._cmpCursorVisible = true;
+            this._cmpCursorIdx = 0;
+            this._cmpCursorKey = items[0]._cmpKey || null;
+            this.applyCompareModalCursor();
+            return true;
+        }
+        const idx = Math.max(0, Math.min(items.length - 1, this._cmpCursorIdx == null ? 0 : this._cmpCursorIdx));
+        const el = items[idx];
+        this._cmpCursorKey = el._cmpKey || null;
+        if (typeof el._cmpToggle === 'function') el._cmpToggle();
+        // 勾选版本会触发异步重绘；_renderCompareModal 末尾会按 _cmpCursorKey 把选框找回来
+        this.applyCompareModalCursor();
+        return true;
     }
 
     hasCompareMode() {
         const enabled = this.plugin.settings.versions.filter(v => v.enabled && v.installed);
         return enabled.length > 1;
+    }
+
+    // ==================== 翻页手势 / 键盘导航 ====================
+    // 左滑 / 右滑 / ← / → / 触控板横滑 / 鼠标拖拽共用 swipeNext / swipePrev：
+    // 检索页按「页」翻，阅读页按「章」翻（可跨书卷）。
+
+    navEnabled() {
+        return !(this.plugin && this.plugin.settings && this.plugin.settings.swipeNavigation === false);
+    }
+
+    isMobileEnv() {
+        if (this._forceMobile !== undefined) return !!this._forceMobile;
+        try {
+            if (typeof Platform !== 'undefined' && Platform && Platform.isMobile) return true;
+            if (typeof document !== 'undefined' && document.body && document.body.classList &&
+                document.body.classList.contains('is-mobile')) return true;
+            if (typeof navigator !== 'undefined' && navigator.userAgent &&
+                /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
+        } catch (err) { /* 忽略 */ }
+        return false;
+    }
+
+    // 关闭「移动端右滑翻上一页」后，右向手势整条让给 Obsidian 侧边栏
+    allowRightSwipe() {
+        return !(this.isMobileEnv() && this.plugin && this.plugin.settings &&
+            this.plugin.settings.mobileRightSwipe === false);
+    }
+
+    hasBlockingOverlay() {
+        try {
+            if (typeof document !== 'undefined' && document.querySelector &&
+                document.querySelector('.bible-inline-tooltip-host, .bible-projection-fullscreen, .bible-compare-modal')) return true;
+        } catch (err) { /* 忽略 */ }
+        return false;
+    }
+
+    hasTextSelection() {
+        try {
+            const sel = typeof window !== 'undefined' && window.getSelection ? window.getSelection() : null;
+            return !!(sel && String(sel).length > 0);
+        } catch (err) { return false; }
+    }
+
+    setupSwipeNavigation() {
+        const host = this.container;
+        if (!host || this._swipeHandlers) return;
+        const MIN_DISTANCE = 60;    // 水平位移阈值（px）
+        const MIN_RATIO = 1.4;      // 水平位移须明显大于垂直位移，避免误伤上下滚动
+        const MAX_DURATION = 900;   // 超过此时长视为拖拽 / 选字，不当作翻页
+        const COOLDOWN = 350;       // 一次翻页后的冷却，避免惯性连翻多页
+        const self = this;
+        let startX = 0, startY = 0, startAt = 0, tracking = false, horizontal = false, lastSwipeAt = 0;
+
+        const edgeGuard = () => {
+            const vw = (typeof window !== 'undefined' && window.innerWidth) || 0;
+            if (!vw) return 28;
+            // 手机 / 平板侧边抽屉的感应带更宽，从这一带起手时完全让给系统手势
+            return self.isMobileEnv() ? Math.min(80, Math.max(44, vw * 0.14)) : 28;
+        };
+
+        const onStart = (e) => {
+            const t = e.touches && e.touches[0];
+            tracking = false; horizontal = false;
+            if (!t || (e.touches && e.touches.length !== 1)) return;
+            // 部分移动 WebView 不派发 pointerdown，用 touchstart 兜底同步选框
+            self.syncKeyboardCursorFromTarget(e.target);
+            const vw = (typeof window !== 'undefined' && window.innerWidth) || 0;
+            const eg = edgeGuard();
+            if (vw > 0 && (t.clientX < eg || t.clientX > vw - eg)) return;
+            if (self.isSwipeBlockedTarget(e.target)) return;
+            startX = t.clientX; startY = t.clientY; startAt = Date.now();
+            tracking = true;
+        };
+
+        const onMove = (e) => {
+            if (!tracking) return;
+            const t = e.touches && e.touches[0];
+            if (!t || (e.touches && e.touches.length !== 1)) return;
+            const dx = t.clientX - startX, dy = t.clientY - startY;
+            if (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+            if (dx > 0 && !self.allowRightSwipe()) { tracking = false; horizontal = false; return; }
+            horizontal = true;
+            // 移动端：确认为横向翻页手势后，同时拦下浏览器默认滚动与 Obsidian 侧边抽屉的
+            // 冒泡 touch 监听，避免「翻了页，侧边栏也被划走 / 被划出」。
+            if (self.isMobileEnv()) {
+                try { if (e.cancelable && e.preventDefault) e.preventDefault(); } catch (err) { /* 忽略 */ }
+                try { if (e.stopPropagation) e.stopPropagation(); } catch (err) { /* 忽略 */ }
+            }
+        };
+
+        const onEnd = (e) => {
+            if (!tracking) return;
+            tracking = false;
+            const wasHorizontal = horizontal;
+            horizontal = false;
+            const t = e.changedTouches && e.changedTouches[0];
+            // 多指手势（缩放等）不翻页
+            if (!t || (e.touches && e.touches.length > 0)) return;
+            const now = Date.now();
+            const dx = t.clientX - startX, dy = t.clientY - startY;
+            if (Math.abs(dx) < MIN_DISTANCE) return;
+            if (Math.abs(dx) < Math.abs(dy) * MIN_RATIO) return;
+            if (now - startAt > MAX_DURATION) return;
+            if (now - lastSwipeAt < COOLDOWN) return;
+            if (dx > 0 && !self.allowRightSwipe()) return;
+            if (!self.navEnabled() || self.hasBlockingOverlay() || self.hasTextSelection()) return;
+            if (self.isSwipeBlockedTarget(e.target)) return;
+            const moved = dx < 0 ? self.swipeNext() : self.swipePrev();
+            if (!moved) return;
+            lastSwipeAt = now;
+            if (self.isMobileEnv() && wasHorizontal) {
+                // 阻止翻页后合成的 click（避免误选中卡片），并拦下抽屉的 touchend
+                try { if (e.cancelable && e.preventDefault) e.preventDefault(); } catch (err) { /* 忽略 */ }
+                try { if (e.stopPropagation) e.stopPropagation(); } catch (err) { /* 忽略 */ }
+            }
+        };
+        const onCancel = () => { tracking = false; horizontal = false; };
+        host.addEventListener('touchstart', onStart, { passive: true });
+        host.addEventListener('touchmove', onMove, { passive: false });
+        host.addEventListener('touchend', onEnd, { passive: false });
+        host.addEventListener('touchcancel', onCancel, { passive: true });
+        this._swipeHandlers = { host, onStart, onMove, onEnd, onCancel };
+    }
+
+    // 鼠标拖拽（触屏式四向）+ 触控板双指横滑：
+    // 横向翻页 / 翻章，纵向跟手滚动内容；纵向滚轮仍完全交给浏览器原生滚动。
+    setupPointerNavigation() {
+        const host = this.container;
+        if (!host || this._pointerHandlers) return;
+        const MIN_DISTANCE = 60;   // 横向翻页阈值
+        const DRAG_SLOP = 6;       // 超过这个位移才认定为拖拽，轻点仍是点击 / 选字起点
+        const WHEEL_THRESHOLD = 90;
+        const COOLDOWN = 400;
+        const self = this;
+        let tracking = false, dragX = 0, dragY = 0, dragAt = 0;
+        let axis = '', dragged = false, scrollArea = null, startScrollTop = 0;
+        let lastNavAt = 0, wheelAcc = 0, wheelAt = 0, wheelDir = 0;
+
+        const pointerEnabled = () => !(self.plugin && self.plugin.settings &&
+            self.plugin.settings.pointerNavigation === false);
+        // 拖拽过程中浏览器可能顺带选中卡片文字，因此不在移动中检查「已选中文字」，
+        // 改为手势确认后清掉这段顺带产生的选区。
+        const blocked = (target) => self.isSwipeBlockedTarget(target) || self.hasBlockingOverlay();
+        const clearIncidentalSelection = () => {
+            try {
+                const s = typeof window !== 'undefined' && window.getSelection ? window.getSelection() : null;
+                if (s && s.removeAllRanges) s.removeAllRanges();
+            } catch (err) { /* 忽略 */ }
+        };
+        // 找离手势起点最近的可纵向滚动容器；找不到就退回当前标签页的内容区
+        const findScrollArea = (target) => {
+            const hit = target && target.closest ? target.closest(
+                '.bible-search-scroll-area, .bible-reader-scroll-area, .bible-search-fixed-top, .bible-reader-fixed-top') : null;
+            if (hit) return hit;
+            return typeof self.getKeyboardScrollArea === 'function' ? self.getKeyboardScrollArea() : null;
+        };
+        const setDragCursor = (on) => {
+            try {
+                if (host.classList && host.classList.toggle) host.classList.toggle('bible-pointer-dragging', on);
+            } catch (err) { /* 忽略 */ }
+        };
+        // 拖拽进行中临时挂到 window 的监听，结束手势时统一卸载（避免泄漏）
+        const detachWindow = () => {
+            try {
+                if (typeof window !== 'undefined') {
+                    window.removeEventListener('pointermove', onPointerMove, { passive: false });
+                    window.removeEventListener('pointerup', onPointerUp, { passive: true });
+                    window.removeEventListener('pointercancel', onPointerCancel, { passive: true });
+                }
+            } catch (err) { /* 忽略 */ }
+        };
+        const finishDrag = () => {
+            tracking = false; axis = ''; dragged = false; scrollArea = null;
+            setDragCursor(false);
+            detachWindow();
+        };
+
+        const onPointerDown = (e) => {
+            finishDrag();       // 拖到面板外释放时不会留下残留状态
+            if (!pointerEnabled()) return;
+            if (e.pointerType && e.pointerType !== 'mouse') return;
+            if (e.button != null && e.button !== 0) return;
+            // 按住修饰键时保持浏览器原生框选 / 选字（复制经文的通道）
+            if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+            // 只让行链接与表单控件；正文文字、注解文字上也能像触屏一样四向滑动
+            if (e.target && e.target.closest && e.target.closest(
+                'a, input, textarea, select, button, label, [contenteditable="true"]')) return;
+            if (blocked(e.target)) return;
+            tracking = true;
+            dragX = e.clientX || 0; dragY = e.clientY || 0; dragAt = Date.now();
+            scrollArea = findScrollArea(e.target);
+            startScrollTop = scrollArea && typeof scrollArea.scrollTop === 'number' ? scrollArea.scrollTop : 0;
+            // 不用 setPointerCapture：捕获会把后续 click 重定向到容器，破坏子元素
+            // （经文卡片）的点击选中。改为在 window 上临时挂 move / up / cancel，
+            // 既能跟住拖出容器的手势，又不干扰正常点击选中。
+            try {
+                if (typeof window !== 'undefined') {
+                    window.addEventListener('pointermove', onPointerMove, { passive: false });
+                    window.addEventListener('pointerup', onPointerUp, { passive: true });
+                    window.addEventListener('pointercancel', onPointerCancel, { passive: true });
+                }
+            } catch (err) { /* 忽略 */ }
+        };
+        const onPointerMove = (e) => {
+            if (!tracking) return;
+            if (e.buttons != null && e.buttons === 0) { finishDrag(); return; }
+            const dx = (e.clientX || 0) - dragX, dy = (e.clientY || 0) - dragY;
+            if (!axis) {
+                if (Math.max(Math.abs(dx), Math.abs(dy)) < DRAG_SLOP) return;
+                axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
+                dragged = true;
+                setDragCursor(true);
+                clearIncidentalSelection();
+            }
+            if (axis === 'y' && scrollArea && typeof scrollArea.scrollTop === 'number') {
+                // 与触屏一致：往下拖 dy > 0，内容跟着往下走，scrollTop 减小
+                scrollArea.scrollTop = startScrollTop - dy;
+            }
+            // 手势已确认：吃掉浏览器默认的文字选中 / 原生图片拖拽
+            try { if (e.cancelable && e.preventDefault) e.preventDefault(); } catch (err) { /* 忽略 */ }
+        };
+        const onPointerUp = (e) => {
+            if (!tracking) return;
+            const wasAxis = axis, wasDragged = dragged;
+            const dx = (e.clientX || 0) - dragX, dy = (e.clientY || 0) - dragY;
+            finishDrag();
+            // 部分 WebView / 合成事件只派发 down + up、不发 move：按终点位移兜底判定横向拖拽
+            const isHorizontal = wasAxis === 'x' || (wasAxis === '' &&
+                Math.abs(dx) >= MIN_DISTANCE && Math.abs(dx) >= Math.abs(dy) * 1.4);
+            if (wasDragged || isHorizontal) {
+                clearIncidentalSelection();
+                // 拖拽后浏览器补发的 click 不该误选中卡片
+                self._suppressNextClickUntil = Date.now() + 250;
+            }
+            if (!isHorizontal) return;      // 纵向拖拽只滚动，不翻页
+            if (!pointerEnabled() || blocked(e.target)) return;
+            if (Math.abs(dx) < MIN_DISTANCE) return;
+            if (Math.abs(dx) < Math.abs(dy) * 1.4) return;
+            if (Date.now() - dragAt > 900) return;
+            if (Date.now() - lastNavAt < COOLDOWN) return;
+            const moved = dx < 0 ? self.swipeNext() : self.swipePrev();
+            if (moved) lastNavAt = Date.now();
+        };
+        const onPointerCancel = () => { finishDrag(); };
+        const onClickCapture = (e) => {
+            if (Date.now() >= (self._suppressNextClickUntil || 0)) return;
+            self._suppressNextClickUntil = 0;
+            try {
+                if (e.preventDefault) e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+            } catch (err) { /* 忽略 */ }
+        };
+
+        const onWheel = (e) => {
+            if (!pointerEnabled()) return;
+            const dx = e.deltaX || 0, dy = e.deltaY || 0;
+            if (Math.abs(dx) < 1 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+            if (blocked(e.target)) return;
+            const now = Date.now();
+            const dir = dx > 0 ? 1 : -1;
+            if (now - wheelAt > 300 || dir !== wheelDir) { wheelAcc = 0; wheelDir = dir; }
+            wheelAt = now;
+            const unit = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1);
+            wheelAcc += Math.abs(dx) * unit;
+            // 横向手势一律吃掉：既不让页面横向滚动，也避免 macOS 触发浏览器前进 / 后退
+            try { if (e.cancelable && e.preventDefault) e.preventDefault(); } catch (err) { /* 忽略 */ }
+            if (now - lastNavAt < COOLDOWN || wheelAcc < WHEEL_THRESHOLD) return;
+            wheelAcc = 0;
+            const moved = dx > 0 ? self.swipeNext() : self.swipePrev();
+            if (moved) lastNavAt = now;
+        };
+        host.addEventListener('pointerdown', onPointerDown, { passive: true });
+        // pointermove / pointerup / pointercancel 在每次按下后临时挂到 window，
+        // 由 finishDrag / detachWindow 负责卸载（见 onPointerDown、finishDrag）。
+        host.addEventListener('click', onClickCapture, true);
+        host.addEventListener('wheel', onWheel, { passive: false });
+        this._pointerHandlers = {
+            host, onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
+            onClickCapture, onWheel, detachWindow
+        };
+    }
+
+    // 键盘导航：←/→ 翻页，↑/↓ 移动选框，空格选中，B 切「并」，C 清空
+    setupKeyboardNavigation() {
+        const host = this.container;
+        if (!host || this._keyboardHandlers) return;
+        const self = this;
+        const keyEnabled = () => !(self.plugin && self.plugin.settings &&
+            self.plugin.settings.keyboardNavigation === false);
+        const onPointerDown = (e) => {
+            if (!keyEnabled()) return;
+            const t = e.target;
+            if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
+            // 触屏轻点 / 鼠标点选：把上下键的选框同步到手指或鼠标点到的那一条，
+            // 之后接着按 ↑/↓ 就从这里继续，不必从头再走一遍。
+            self.syncKeyboardCursorFromTarget(t);
+            try { if (typeof host.focus === 'function') host.focus({ preventScroll: true }); } catch (err) { /* 忽略 */ }
+        };
+        // 少数环境只派发 click（辅助点击、键盘激活控件），补一个兜底
+        const onClick = (e) => {
+            if (!keyEnabled()) return;
+            self.syncKeyboardCursorFromTarget(e && e.target);
+        };
+        const onKeyDown = (e) => {
+            if (!keyEnabled()) return;
+            // 输入法合成态、带修饰键、焦点在输入框 / 按钮 / 浮层里，一律让行
+            if (e.isComposing || e.keyCode === 229) return;
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const t = e.target;
+            const gridMode = self.isGridKeyboardMode();
+            const key0 = e.key;
+            const lower0 = typeof key0 === 'string' ? key0.toLowerCase() : '';
+            // X / I / Y / U 是全局动作键：点过工具栏按钮后焦点还留在按钮上，也要继续生效
+            const actionKey = lower0 === 'x' || lower0 === 'i' || lower0 === 'y' || lower0 === 'u';
+            if (t && t.closest && t.closest('input, textarea, select, button, [contenteditable="true"]')) {
+                // 输入框 / 可编辑区一律让行（打字时不能触发快捷键）
+                if (t.closest('input, textarea, select, [contenteditable="true"]')) return;
+                // 书卷 / 章节网格本身就是按钮：焦点落在它们上面时仍允许方向键导航，
+                // 其余工具栏按钮只放行上述四个动作键。
+                if (!(gridMode && t.closest('.bible-reader-book-btn, .bible-reader-chapter-btn')) && !actionKey) return;
+            }
+            if (t && t.closest && t.closest('.bible-inline-tooltip-host, .bible-inline-tooltip, .bible-projection-fullscreen, .bible-popup-menu, .modal-container')) return;
+            if (self.hasBlockingOverlay()) return;
+            const key = e.key;
+            const lower = typeof key === 'string' ? key.toLowerCase() : '';
+            let handled = true;
+            if (lower === 'x') self.keyboardSelectAllPage();
+            else if (lower === 'i') self.keyboardToggleFocusMode();
+            else if (lower === 'y') self.keyboardSwitchTab();
+            else if (lower === 'u') self.keyboardToggleCompare();
+            else if (gridMode) {
+                // 网格页：四个方向键在书卷 / 章号之间移动选框，空格 / 回车确定，
+                // ←/→ 不再翻页，B / C 也不触发「并」与清空，避免误改候选池。
+                if (key === 'ArrowLeft') self.moveGridKeyboardCursor('left');
+                else if (key === 'ArrowRight') self.moveGridKeyboardCursor('right');
+                else if (key === 'ArrowUp') self.moveGridKeyboardCursor('up');
+                else if (key === 'ArrowDown') self.moveGridKeyboardCursor('down');
+                else if (key === ' ' || key === 'Spacebar' || key === 'Enter') self.keyboardToggleSelection();
+                else if (key === 'Escape' || key === 'Backspace') self.gridGoBack();
+                else if (key === 'b' || key === 'B' || key === 'c' || key === 'C') { /* 网格页不响应 */ }
+                else handled = false;
+            }
+            else if (key === 'ArrowLeft') self.swipePrev();
+            else if (key === 'ArrowRight') self.swipeNext();
+            else if (key === 'ArrowDown') self.moveKeyboardCursor(1);
+            else if (key === 'ArrowUp') self.moveKeyboardCursor(-1);
+            else if (key === ' ' || key === 'Spacebar') self.keyboardToggleSelection();
+            else if (key === 'b' || key === 'B') self.keyboardToggleSide();
+            else if (key === 'c' || key === 'C') self.keyboardClearAll();
+            else handled = false;
+            if (handled) {
+                if (e.preventDefault) e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+            }
+        };
+        try { if (typeof host.setAttribute === 'function') host.setAttribute('tabindex', '-1'); } catch (err) { /* 忽略 */ }
+        host.addEventListener('pointerdown', onPointerDown, { passive: true });
+        host.addEventListener('click', onClick, { passive: true });
+        host.addEventListener('keydown', onKeyDown);
+        this._keyboardHandlers = { host, onPointerDown, onClick, onKeyDown };
+        this.setupScrollCursorSync();
+    }
+
+    keyboardNavEnabled() {
+        return !(this.plugin && this.plugin.settings && this.plugin.settings.keyboardNavigation === false);
+    }
+
+    // 滚动搜索结果 / 经文阅读时，把上下键的选框跟到「当前显示的内容」上。
+    // 监听两个内容区各自的 scroll（passive），滚动中节流、停止后再定案一次。
+    setupScrollCursorSync() {
+        if (this._scrollCursorHandlers) return;
+        const self = this;
+        const THROTTLE = 90;
+        let lastAt = 0, pending = null;
+        const run = () => {
+            lastAt = Date.now();
+            if (pending) { clearTimeout(pending); pending = null; }
+            if (!self.keyboardNavEnabled()) return;
+            // 翻页复位、↑/↓ 把目标滚进视野等程序滚动，不该反过来把选框拽走
+            if (Date.now() < (self._kbSuppressScrollUntil || 0)) return;
+            self.syncKeyboardCursorOnScroll();
+        };
+        const onScroll = () => {
+            if (!self.keyboardNavEnabled()) return;
+            const wait = THROTTLE - (Date.now() - lastAt);
+            if (wait <= 0) run();
+            else if (!pending) pending = setTimeout(run, wait);
+        };
+        const areas = [this.searchScrollArea, this.readerScrollArea]
+            .filter(a => a && typeof a.addEventListener === 'function');
+        areas.forEach(a => a.addEventListener('scroll', onScroll, { passive: true }));
+        this._scrollCursorHandlers = {
+            areas, onScroll,
+            cancel: () => { if (pending) { clearTimeout(pending); pending = null; } }
+        };
+    }
+
+    // 程序自身滚动前调用，短暂屏蔽滚动同步，避免「滚动 → 移框 → 再滚动」来回拉扯
+    suppressKeyboardScrollSync(ms) {
+        this._kbSuppressScrollUntil = Date.now() + (ms == null ? 180 : ms);
+    }
+
+    getKeyboardScrollArea() {
+        return this.activeTab === 'reader' ? this.readerScrollArea : this.searchScrollArea;
+    }
+
+    // 统一取几何：优先用浏览器 rect（真实环境最准），
+    // 没有 rect 的极简 DOM 环境退回 scrollTop / offsetTop。
+    getKeyboardItemGeometry(area, el) {
+        if (!area || !el) return null;
+        let viewTop = 0, viewBottom = 0, top = 0, bottom = 0;
+        try {
+            if (typeof area.getBoundingClientRect === 'function' && typeof el.getBoundingClientRect === 'function') {
+                const a = area.getBoundingClientRect(), r = el.getBoundingClientRect();
+                viewTop = a.top; viewBottom = a.bottom; top = r.top; bottom = r.bottom;
+            } else {
+                viewTop = Number(area.scrollTop) || 0;
+                viewBottom = viewTop + (Number(area.clientHeight) || 0);
+                top = Number(el.offsetTop) || 0;
+                bottom = top + (Number(el.offsetHeight) || 0);
+            }
+        } catch (err) { return null; }
+        if (!(viewBottom > viewTop) || !(bottom > top)) return null;
+        return { viewTop, viewBottom, top, bottom };
+    }
+
+    keyboardItemVisibleRatio(area, el) {
+        const g = this.getKeyboardItemGeometry(area, el);
+        if (!g) return 0;
+        const v = Math.min(g.bottom, g.viewBottom) - Math.max(g.top, g.viewTop);
+        return v <= 0 ? 0 : v / (g.bottom - g.top);
+    }
+
+    // 「当前显示的内容」= 视口内最靠上的内容条；若它已被顶部裁掉一半以上，
+    // 则取下一条完整露出的；视口里只剩被裁的条目时取可见高度最大的一条。
+    findVisibleKeyboardItem(area, items) {
+        let first = -1, firstVisible = 0, firstH = 1, firstTop = -1, best = -1, bestH = 0;
+        for (let i = 0; i < items.length; i++) {
+            const g = this.getKeyboardItemGeometry(area, items[i]);
+            if (!g) continue;
+            const v = Math.min(g.bottom, g.viewBottom) - Math.max(g.top, g.viewTop);
+            if (v <= 0) continue;
+            const h = g.bottom - g.top;
+            if (first < 0) { first = i; firstVisible = v; firstH = h; }
+            if (firstTop < 0 && g.top >= g.viewTop - 2) firstTop = i;
+            if (v > bestH) { bestH = v; best = i; }
+        }
+        if (first >= 0 && firstVisible >= firstH * 0.5) return first;
+        if (firstTop >= 0) return firstTop;
+        return best;
+    }
+
+    // 滚动稳定后调用：选框已在视野内就不动；滚出去了就落到当前显示的内容条。
+    // 选框尚未唤出时只记下锚点，下次按 ↑/↓ 或空格便从当前看到的内容开始。
+    syncKeyboardCursorOnScroll(area) {
+        const root = area || this.getKeyboardScrollArea();
+        const items = this.getKeyboardItems();
+        if (!root || !items.length) return -1;
+        if (typeof this.hasBlockingOverlay === 'function' && this.hasBlockingOverlay()) return -1;
+        const idx = this.findVisibleKeyboardItem(root, items);
+        if (idx < 0) return -1;
+        if (this._kbCursorVisible && this._kbCursorIdx !== idx &&
+            this.keyboardItemVisibleRatio(root, items[this._kbCursorIdx]) >= 0.5) return this._kbCursorIdx;
+        this._kbScrollAnchorIdx = idx;
+        if (this._kbCursorVisible && this._kbCursorIdx === idx &&
+            this._kbCursorKey === (items[idx]._kbKey || null)) return idx;
+        this._kbCursorIdx = idx;
+        this._kbCursorKey = items[idx]._kbKey || null;
+        this._kbCursorFresh = false;
+        // 只更新高亮，不再 scrollIntoView，否则会再次触发滚动
+        if (this._kbCursorVisible) this.applyKeyboardCursor();
+        return idx;
+    }
+
+    // 触屏 / 鼠标点到的内容条 → 把键盘选框移过去。
+    // 用「当前标签页里实际存在的可选条」反查，天然避开隐藏页、浮层与工具栏。
+    syncKeyboardCursorFromTarget(target) {
+        if (this.plugin && this.plugin.settings && this.plugin.settings.keyboardNavigation === false) return false;
+        if (!target || !target.closest || this.hasBlockingOverlay()) return false;
+        let card = null;
+        try { card = target.closest('[data-bible-kb-item="1"]'); } catch (err) { return false; }
+        if (!card) return false;
+        return this.setKeyboardCursorTo(card);
+    }
+
+    // 翻页 / 换章后若选框落在页内较靠下的「新选中目标」，把它滚进视野
+    settleKeyboardCursorAfterTurn() {
+        if (!this._kbCursorNeedsReveal) return;
+        this._kbCursorNeedsReveal = false;
+        const card = this.getKeyboardCursorCard();
+        if (card && typeof card.scrollIntoView === 'function') {
+            this.suppressKeyboardScrollSync();
+            try { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+            catch (err) { /* 忽略 */ }
+        }
+    }
+
+    setKeyboardCursorTo(card, reveal) {
+        const items = this.getKeyboardItems();
+        const idx = items.indexOf(card);
+        if (idx < 0) return false;
+        this._kbCursorVisible = true;
+        this._kbCursorIdx = idx;
+        this._kbCursorKey = card._kbKey || null;
+        this._kbCursorFresh = false;
+        this.applyKeyboardCursor();
+        if (reveal && typeof card.scrollIntoView === 'function') {
+            this.suppressKeyboardScrollSync();
+            try { card.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+            catch (err) { /* 忽略 */ }
+        }
+        return true;
+    }
+
+    // 翻页 / 翻章后旧目标已不在新内容里：清掉身份锚点，让重绘后的选框
+    // 落到新页里「新选中的目标」（保留候选等），没有则回到新页第一条。
+    // 同时清掉滚动锚点，并屏蔽翻页时 scrollTop = 0 带来的滚动同步。
+    resetKeyboardCursorForNewView() {
+        this._kbCursorKey = null;
+        this._kbCursorIdx = 0;
+        this._kbCursorFresh = true;
+        this._kbScrollAnchorIdx = -1;
+        this.suppressKeyboardScrollSync(220);
+    }
+
+    // 给每条可选中的内容挂上键盘动作（渲染时调用，重绘后自动重建）
+    // data.key 是跨重绘稳定的身份标识；有它时选框跟着「同一条内容」走，而不是跟着行号走。
+    markKeyboardItem(card, data) {
+        if (!card) return;
+        try { if (typeof card.setAttribute === 'function') card.setAttribute('data-bible-kb-item', '1'); } catch (err) { /* 忽略 */ }
+        card._kbKey = data.key || null;
+        card._kbToggle = data.toggle;
+        card._kbSide = data.side;
+        card._kbSelected = !!data.selected;
+    }
+
+    getKeyboardItems() {
+        const root = this.activeTab === 'reader' ? this.readerContent : this.resultsContainer;
+        if (!root || typeof root.querySelectorAll !== 'function') return [];
+        try { return Array.prototype.slice.call(root.querySelectorAll('[data-bible-kb-item="1"]')); }
+        catch (err) { return []; }
+    }
+
+    setCursorClass(el, on) {
+        if (!el) return;
+        const CLS = 'bible-kb-cursor';
+        if (el.classList && typeof el.classList.toggle === 'function') { el.classList.toggle(CLS, on); return; }
+        const cur = String(el.className || '');
+        const has = cur.split(/\s+/).indexOf(CLS) !== -1;
+        if (on && !has) el.className = (cur + ' ' + CLS).trim();
+        else if (!on && has) el.className = cur.split(/\s+/).filter(x => x && x !== CLS).join(' ');
+    }
+
+    applyKeyboardCursor() {
+        const items = this.getKeyboardItems();
+        if (!items.length) return;
+        if (!this._kbCursorVisible) {
+            items.forEach(el => this.setCursorClass(el, false));
+            this._kbCursorFresh = false;
+            return;
+        }
+        let idx = -1;
+        // 1) 优先按身份锚点找回同一条内容：点击选中后整页重绘，选框仍停在被操作的那条
+        if (this._kbCursorKey) {
+            for (let i = 0; i < items.length; i++) {
+                if (items[i]._kbKey && items[i]._kbKey === this._kbCursorKey) { idx = i; break; }
+            }
+        }
+        // 2) 锚点失效（触屏 / 鼠标 / 键盘翻页、换章）：移到新内容里的新目标，
+        //    优先落在这一页已选中的条目，没有则回到第一条
+        if (idx < 0 && this._kbCursorFresh) {
+            for (let i = 0; i < items.length; i++) {
+                if (items[i]._kbSelected) { idx = i; break; }
+            }
+            if (idx < 0) idx = 0;
+            // 落点不在页首时，翻页复位滚动之后再把它滚进视野
+            if (idx > 0) this._kbCursorNeedsReveal = true;
+        }
+        // 3) 既无锚点也不是换页：沿用行号（兼容未标记身份的内容）
+        if (idx < 0) idx = this._kbCursorIdx == null ? 0 : this._kbCursorIdx;
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        this._kbCursorIdx = idx;
+        this._kbCursorKey = items[idx]._kbKey || null;
+        this._kbCursorFresh = false;
+        items.forEach((el, i) => this.setCursorClass(el, i === idx));
+    }
+
+    moveKeyboardCursor(delta) {
+        const items = this.getKeyboardItems();
+        if (!items.length) return false;
+        let idx;
+        if (!this._kbCursorVisible || this._kbCursorIdx == null || this._kbCursorIdx < 0) {
+            // 还没唤出选框、但内容被滚动过：从当前显示的内容开始，而不是回到第一 / 最后一条
+            const anchor = this._kbScrollAnchorIdx;
+            idx = (anchor >= 0 && anchor < items.length) ? anchor : (delta > 0 ? 0 : items.length - 1);
+        } else idx = this._kbCursorIdx + delta;
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        this._kbCursorVisible = true;
+        this._kbCursorIdx = idx;
+        this._kbScrollAnchorIdx = -1;
+        // 键盘移动后锚点必须跟着更新，否则下次重绘会被旧 key 拉回原处
+        this._kbCursorKey = items[idx]._kbKey || null;
+        this._kbCursorFresh = false;
+        this.applyKeyboardCursor();
+        const el = items[idx];
+        if (el && typeof el.scrollIntoView === 'function') {
+            this.suppressKeyboardScrollSync();
+            try { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+            catch (err) { try { el.scrollIntoView(); } catch (e2) { /* 忽略 */ } }
+        }
+        return true;
+    }
+
+    // 书卷列表 / 章目录列表：这两个页面没有经文卡片，用同一套键盘选框在网格按钮间移动，
+    // 空格 / 回车等于点击按钮（复用 markKeyboardItem 挂的 _kbToggle）。
+    isGridKeyboardMode() {
+        return this.activeTab === 'reader' &&
+            (this.readerState === 'books' || this.readerState === 'chapters') &&
+            this.keyboardNavEnabled();
+    }
+
+    getGridItemTop(el) {
+        try {
+            if (el && typeof el.getBoundingClientRect === 'function') {
+                const r = el.getBoundingClientRect();
+                if (r && typeof r.top === 'number' && isFinite(r.top)) return r.top;
+            }
+        } catch (err) { /* 忽略 */ }
+        if (el && typeof el.offsetTop === 'number' && isFinite(el.offsetTop)) return el.offsetTop;
+        return null;
+    }
+
+    // 按视觉行分组（同一行按钮的 top 相同）。几何不可用时返回空数组，
+    // 调用方退化为按固定列数移动，保证极简 DOM / 尚未布局时方向键仍可用。
+    getGridKeyboardRows(items) {
+        const rows = [];
+        let cur = null, curTop = null;
+        for (let i = 0; i < items.length; i++) {
+            const top = this.getGridItemTop(items[i]);
+            if (top == null) return [];
+            if (curTop == null || Math.abs(top - curTop) > 2) {
+                cur = [];
+                rows.push(cur);
+                curTop = top;
+            }
+            cur.push(i);
+        }
+        return rows.length > 1 ? rows : [];
+    }
+
+    moveGridKeyboardCursor(dir) {
+        const items = this.getKeyboardItems();
+        if (!items.length) return false;
+        const FALLBACK_COLS = 5;   // 手机窄屏常见的每行 5 个
+        let idx;
+        if (!this._kbCursorVisible || this._kbCursorIdx == null || this._kbCursorIdx < 0) {
+            // 还没唤出选框：从当前滚动到的内容开始，而不是一律回到第一 / 最后一条
+            const anchor = this._kbScrollAnchorIdx;
+            idx = (anchor >= 0 && anchor < items.length)
+                ? anchor
+                : (dir === 'up' || dir === 'left' ? items.length - 1 : 0);
+        } else if (dir === 'left' || dir === 'right') {
+            idx = this._kbCursorIdx + (dir === 'right' ? 1 : -1);
+        } else {
+            // ↑ / ↓ 优先按视觉行上下移动并保持列；拿不到行信息时按固定列数
+            const rows = this.getGridKeyboardRows(items);
+            const cur = this._kbCursorIdx;
+            if (rows.length) {
+                const r = rows.findIndex(row => row.indexOf(cur) >= 0);
+                if (r < 0) idx = cur + (dir === 'down' ? 1 : -1);
+                else {
+                    const col = rows[r].indexOf(cur);
+                    const target = rows[r + (dir === 'down' ? 1 : -1)];
+                    if (!target || !target.length) return false;   // 已在首 / 末行
+                    idx = target[Math.min(col, target.length - 1)];
+                }
+            } else {
+                idx = cur + (dir === 'down' ? FALLBACK_COLS : -FALLBACK_COLS);
+            }
+        }
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        this._kbCursorVisible = true;
+        this._kbCursorIdx = idx;
+        this._kbCursorKey = items[idx]._kbKey || null;
+        this._kbCursorFresh = false;
+        this._kbScrollAnchorIdx = -1;
+        this.applyKeyboardCursor();
+        const el = items[idx];
+        if (el && typeof el.scrollIntoView === 'function') {
+            this.suppressKeyboardScrollSync();
+            try { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+            catch (err) { try { el.scrollIntoView(); } catch (e2) { /* 忽略 */ } }
+        }
+        return true;
+    }
+
+    getKeyboardCursorCard() {
+        const items = this.getKeyboardItems();
+        if (!items.length) return null;
+        const idx = this._kbCursorIdx == null ? 0 : Math.max(0, Math.min(items.length - 1, this._kbCursorIdx));
+        return items[idx] || null;
+    }
+
+    keyboardToggleSelection() {
+        if (!this._kbCursorVisible) this.moveKeyboardCursor(1);
+        const card = this.getKeyboardCursorCard();
+        if (card && typeof card._kbToggle === 'function') card._kbToggle();
+        this.applyKeyboardCursor();
+    }
+
+    keyboardToggleSide() {
+        if (!this._kbCursorVisible) this.moveKeyboardCursor(1);
+        let card = this.getKeyboardCursorCard();
+        if (!card) return;
+        // 「并」只在选中后可用：未选中时先选中，再切换并列
+        if (!card._kbSelected && typeof card._kbToggle === 'function') {
+            card._kbToggle();
+            this.applyKeyboardCursor();
+            card = this.getKeyboardCursorCard();
+            if (!card) return;
+        }
+        if (typeof card._kbSide === 'function') card._kbSide();
+        this.applyKeyboardCursor();
+    }
+
+    keyboardClearAll() {
+        if (typeof this.clearAllSelections === 'function') this.clearAllSelections();
+        this.applyKeyboardCursor();
+    }
+
+    // X：本页全选 / 取消本页选中。逐条走各自的 _kbToggle，保证「保留候选」、序号、
+    // 并列状态与手动点选完全一致；批量期间抑制逐条整页重绘，最后统一重绘一次。
+    keyboardSelectAllPage() {
+        if (this.isGridKeyboardMode()) return;   // 书卷 / 章目录没有「选中」概念
+        const items = this.getKeyboardItems();
+        if (!items.length) return;
+        const allSelected = items.every(el => !!el._kbSelected);
+        // 先把动作闭包固化下来：选中会重绘列表，旧节点上的引用会失效
+        const actions = items
+            .filter(el => typeof el._kbToggle === 'function' && (allSelected ? !!el._kbSelected : !el._kbSelected))
+            .map(el => el._kbToggle);
+        if (!actions.length) return;
+        this._kbBatchSelecting = true;
+        try { actions.forEach(fn => fn()); }
+        finally { this._kbBatchSelecting = false; }
+        if (this.activeTab === 'reader' && this.readerState === 'content') {
+            this.refreshAllReaderCards();
+            if (typeof this.refreshNotePanels === 'function') this.refreshNotePanels();
+        } else if (typeof this.renderResults === 'function') {
+            this.renderResults();
+        }
+        this.updateKeepCandidatesUI();
+        this.applyKeyboardCursor();
+    }
+
+    keyboardToggleFocusMode() {
+        if (typeof this.toggleFocusMode === 'function') this.toggleFocusMode();
+    }
+
+    keyboardSwitchTab() {
+        this.switchTab(this.activeTab === 'reader' ? 'search' : 'reader');
+    }
+
+    keyboardToggleCompare() {
+        if (typeof this.toggleComparePanel === 'function') this.toggleComparePanel();
+    }
+
+    // 判断手势起点 / 终点是否落在不该翻页的元素上
+    isSwipeBlockedTarget(target) {
+        if (!target || !target.closest) return false;
+        // 表单控件与按钮：点选、拖动滑块、输入都不应触发翻页
+        if (target.closest('input, textarea, select, button, label, [contenteditable="true"]')) return true;
+        // 各类浮层内不翻页
+        if (target.closest('.bible-inline-tooltip-host, .bible-inline-tooltip, .bible-projection-fullscreen, .bible-popup-menu, .menu, .suggestion-container, .modal-container')) return true;
+        // 内容自身可横向滚动时，把横滑让给该容器
+        let node = target;
+        while (node && node !== this.container) {
+            if (node.clientWidth > 0 && node.scrollWidth > node.clientWidth + 4) {
+                try {
+                    const ox = typeof getComputedStyle === 'function' ? getComputedStyle(node).overflowX : '';
+                    if (ox === 'auto' || ox === 'scroll') return true;
+                } catch (err) { /* 忽略 */ }
+            }
+            node = node.parentElement;
+        }
+        return false;
+    }
+
+    swipeNext() {
+        if (this.activeTab === 'reader') {
+            if (this.readerState !== 'content') return false;
+            return this.goReaderChapter(this.readerChapter + 1);
+        }
+        return this.goSearchPage(this.currentPage + 1);
+    }
+
+    swipePrev() {
+        if (this.activeTab === 'reader') {
+            if (this.readerState !== 'content') return false;
+            return this.goReaderChapter(this.readerChapter - 1);
+        }
+        return this.goSearchPage(this.currentPage - 1);
     }
 
     switchTab(tab) {
@@ -3897,6 +5123,14 @@ class BibleSearchView extends ItemView {
             if (this.activeTab === 'search' && this.resultsContainer) this.renderResults();
         }
         this.activeTab = tab;
+        // 换标签页后选框重新由 ↑/↓ 唤出，避免沿用另一页的行号
+        this._kbCursorVisible = false;
+        this._kbCursorIdx = -1;
+        this._kbCursorKey = null;
+        this._kbCursorFresh = false;
+        this._kbScrollAnchorIdx = -1;
+        // 切换面板时浏览器可能因内容高度变化补一次 scroll，别让它改写锚点
+        this.suppressKeyboardScrollSync(150);
         this.tabSearch.classList.toggle('active', tab === 'search');
         this.tabReader.classList.toggle('active', tab === 'reader');
         if (this.searchPanel) this.searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
@@ -3908,6 +5142,9 @@ class BibleSearchView extends ItemView {
         }
         this.updateFocusModeBtn();
         this.updateKeepCandidatesUI();
+        this.syncCompareBtnState();
+        this.updateTabBarCompact();
+        this.refreshTabButtonsVisible();
     }
 
     getPrimaryVersion() {
@@ -4441,7 +5678,8 @@ class BibleSearchView extends ItemView {
 
         const actionSection = actionSlot.createDiv({ cls: 'bible-section bible-action-section' });
         const actionHeader = actionSection.createDiv({ cls: 'bible-section-header' });
-        const actionIcon = actionHeader.createEl('span', { cls: 'bible-section-icon', text: '⚡' });
+        // 折叠箭头与阅读页、检索范围、检索种类等区块保持一致；展开态为 ▼，收起后为 ▶
+        const actionIcon = actionHeader.createEl('span', { cls: 'bible-section-icon', text: '▼' });
         actionHeader.createEl('span', { text: '全局操作' });
         // 字体大小按钮（与阅读页「全局操作」标题右侧的按钮一致）
         const searchFontBtn = actionHeader.createEl('button', { cls: 'bible-section-font-btn', attr: { title: '字体大小' } });
@@ -4619,15 +5857,26 @@ class BibleSearchView extends ItemView {
             }
         }
         this.updateFocusModeBtn();
+        // 专注模式会隐藏大量区块，布局重排后立刻核一次标签栏，
+        // 保证两个按钮不会被挤到可见区外（这正是「点专注后按钮消失」的另一条路径）
+        this.updateTabBarCompact();
     }
 
     updateFocusModeBtn() {
         if (!this.focusModeBtn) return;
-        if (this.activeTab === 'search') {
-            this.focusModeBtn.textContent = this.searchFocusMode ? '取消' : '专注';
-        } else {
-            this.focusModeBtn.textContent = this.readerFocusMode ? '取消' : '专注';
-        }
+        const on = this.activeTab === 'search' ? !!this.searchFocusMode : !!this.readerFocusMode;
+        const label = on ? '取消' : '专注';
+        if (this.focusModeBtn.textContent !== label) this.focusModeBtn.textContent = label;
+        // 明确的激活态：浅色 / 深色主题下都能看出当前在专注模式，退出入口不会「消失」
+        try {
+            if (this.focusModeBtn.classList && typeof this.focusModeBtn.classList.toggle === 'function')
+                this.focusModeBtn.classList.toggle('active', on);
+            this.focusModeBtn.title = on ? '退出专注模式' : '进入专注模式';
+            // 清掉可能存在的内联隐藏，可见性一律由 CSS 决定
+            this.focusModeBtn.style.removeProperty('display');
+            this.focusModeBtn.style.removeProperty('visibility');
+            this.focusModeBtn.style.removeProperty('opacity');
+        } catch (err) { /* 忽略 */ }
     }
 
     async performSearch() {
@@ -4741,7 +5990,20 @@ class BibleSearchView extends ItemView {
         return Math.ceil(this.results.length / this.pageSize);
     }
 
+    // 翻到指定页（页码从 0 起）：按钮、跳转框与左右滑动共用，翻页后回到结果区顶部
+    goSearchPage(n) {
+        const total = this.getTotalPages();
+        if (total < 1 || n < 0 || n >= total || n === this.currentPage) return false;
+        this.currentPage = n;
+        this.resetKeyboardCursorForNewView();
+        this.renderResults();
+        if (this.searchScrollArea) this.searchScrollArea.scrollTop = 0;
+        this.settleKeyboardCursorAfterTurn();
+        return true;
+    }
+
     renderResults() {
+        this.refreshTabButtonsVisible();
         this._renderedPoolVersion = this._poolVersion;
         this.resultsContainer.empty();
         this.updateSearchFontSize();
@@ -4772,7 +6034,7 @@ class BibleSearchView extends ItemView {
             const pageNav = this.paginationEl.createDiv({ cls: 'bible-page-nav' });
             const prevBtn = pageNav.createEl('button', { text: '◀', cls: 'bible-page-btn' });
             prevBtn.disabled = this.currentPage === 0;
-            prevBtn.addEventListener('click', () => { if (this.currentPage > 0) { this.currentPage--; this.renderResults(); } });
+            prevBtn.addEventListener('click', () => this.goSearchPage(this.currentPage - 1));
 
             const maxVisible = 7;
             let startPage = 0, endPage = totalPages - 1;
@@ -4789,24 +6051,24 @@ class BibleSearchView extends ItemView {
 
             if (startPage > 0) {
                 const firstBtn = pageNav.createEl('button', { text: '1', cls: 'bible-page-btn' });
-                firstBtn.addEventListener('click', () => { this.currentPage = 0; this.renderResults(); });
+                firstBtn.addEventListener('click', () => this.goSearchPage(0));
                 if (startPage > 1) pageNav.createEl('span', { cls: 'bible-page-ellipsis', text: '…' });
             }
 
             for (let i = startPage; i <= endPage; i++) {
                 const btn = pageNav.createEl('button', { text: String(i + 1), cls: 'bible-page-btn' + (i === this.currentPage ? ' active' : '') });
-                btn.addEventListener('click', () => { this.currentPage = i; this.renderResults(); });
+                btn.addEventListener('click', () => this.goSearchPage(i));
             }
 
             if (endPage < totalPages - 1) {
                 if (endPage < totalPages - 2) pageNav.createEl('span', { cls: 'bible-page-ellipsis', text: '…' });
                 const lastBtn = pageNav.createEl('button', { text: String(totalPages), cls: 'bible-page-btn' });
-                lastBtn.addEventListener('click', () => { this.currentPage = totalPages - 1; this.renderResults(); });
+                lastBtn.addEventListener('click', () => this.goSearchPage(totalPages - 1));
             }
 
             const nextBtn = pageNav.createEl('button', { text: '▶', cls: 'bible-page-btn' });
             nextBtn.disabled = this.currentPage >= totalPages - 1;
-            nextBtn.addEventListener('click', () => { if (this.currentPage < totalPages - 1) { this.currentPage++; this.renderResults(); } });
+            nextBtn.addEventListener('click', () => this.goSearchPage(this.currentPage + 1));
 
             const jumpWrapper = pageNav.createDiv({ cls: 'bible-page-jump' });
             jumpWrapper.createEl('span', { cls: 'bible-page-jump-label', text: '跳转' });
@@ -4816,8 +6078,7 @@ class BibleSearchView extends ItemView {
             const doJump = () => {
                 const page = parseInt(jumpInput.value);
                 if (!isNaN(page) && page >= 1 && page <= totalPages) {
-                    this.currentPage = page - 1;
-                    this.renderResults();
+                    this.goSearchPage(page - 1);
                 } else {
                     new Notice('请输入有效页码 (1-' + totalPages + ')');
                 }
@@ -4842,6 +6103,12 @@ class BibleSearchView extends ItemView {
             const selState = this.getSelectionState(item, false, !!result.selected, result.order, result.sideBySide);
 
             const card = this.resultsContainer.createDiv({ cls: 'bible-result-card' + (selState.selected ? ' selected' : '') + (item.type === 'outline' ? ' outline-type' : '') });
+            this.markKeyboardItem(card, {
+                key: 's:' + globalIdx,
+                toggle: () => this.toggleSelection(globalIdx),
+                side: () => this.toggleSideBySide(globalIdx),
+                selected: selState.selected
+            });
             const cardHeader = card.createDiv({ cls: 'bible-result-header' });
             const checkbox = cardHeader.createDiv({ cls: 'bible-result-checkbox' + (selState.selected ? ' checked' : '') });
             if (selState.selected) checkbox.setText(String(selState.order));
@@ -4939,6 +6206,7 @@ class BibleSearchView extends ItemView {
                 }
             }
         }
+        this.applyKeyboardCursor();
     }
 
     toggleCompareSelection(parentIdx, cmp) {
@@ -5061,7 +6329,8 @@ class BibleSearchView extends ItemView {
         }
         this.recalcOrders();
         this.updateKeepCandidatesUI();
-        this.renderResults();
+        // X 全选时由调用方统一重绘一次，避免每选一条就重建整页
+        if (!this._kbBatchSelecting) this.renderResults();
     }
 
     toggleSideBySide(index) {
@@ -5309,17 +6578,56 @@ class BibleSearchView extends ItemView {
         this.readerContent.createEl('h4', { cls: 'bible-reader-label', text: '旧约' });
         const oldGrid = this.readerContent.createDiv({ cls: 'bible-reader-grid' });
         for (const book of BIBLE_BOOKS.filter(b => b.testament === 'old')) {
-            const btn = oldGrid.createEl('button', { cls: 'bible-reader-book-btn', text: book.shortName });
-            btn.title = book.fullName;
-            btn.addEventListener('click', () => { this.readerBook = book; this.readerState = 'chapters'; this.renderReader(); });
+            this.createGridBookButton(oldGrid, book);
         }
         this.readerContent.createEl('h4', { cls: 'bible-reader-label', text: '新约' });
         const newGrid = this.readerContent.createDiv({ cls: 'bible-reader-grid' });
         for (const book of BIBLE_BOOKS.filter(b => b.testament === 'new')) {
-            const btn = newGrid.createEl('button', { cls: 'bible-reader-book-btn', text: book.shortName });
-            btn.title = book.fullName;
-            btn.addEventListener('click', () => { this.readerBook = book; this.readerState = 'chapters'; this.renderReader(); });
+            this.createGridBookButton(newGrid, book);
         }
+        this.resetKeyboardCursorForNewView();
+        this.applyKeyboardCursor();
+    }
+
+    // 书卷 / 章节网格的按钮复用同一套键盘选框：鼠标、触屏点击与「方向键 + 空格」
+    // 全部走同一个入口，避免出现两套选中逻辑。
+    createGridBookButton(grid, book) {
+        const btn = grid.createEl('button', { cls: 'bible-reader-book-btn', text: book.shortName });
+        btn.title = book.fullName;
+        btn.addEventListener('click', () => this.enterBook(book));
+        this.markKeyboardItem(btn, {
+            key: 'g:book:' + book.id,
+            toggle: () => this.enterBook(book),
+            side: null,
+            selected: false
+        });
+        return btn;
+    }
+
+    createGridChapterButton(grid, book, chapter) {
+        const btn = grid.createEl('button', { cls: 'bible-reader-chapter-btn', text: String(chapter) });
+        btn.addEventListener('click', () => this.enterChapter(chapter));
+        this.markKeyboardItem(btn, {
+            key: 'g:ch:' + book.id + ':' + chapter,
+            toggle: () => this.enterChapter(chapter),
+            side: null,
+            selected: false
+        });
+        return btn;
+    }
+
+    enterBook(book) {
+        this.readerBook = book;
+        this.readerState = 'chapters';
+        this.renderReader();
+    }
+
+    enterChapter(chapter) {
+        this.readerChapter = chapter;
+        this.readerState = 'content';
+        // 章目录的按钮编号与章内经文行号无关，换页后让选框重新落到页内新目标
+        this.resetKeyboardCursorForNewView();
+        this.renderReader();
     }
 
     renderChapterList() {
@@ -5327,29 +6635,73 @@ class BibleSearchView extends ItemView {
         if (!book) { this.readerState = 'books'; this.renderReader(); return; }
         const nav = this.readerContent.createDiv({ cls: 'bible-reader-nav-row' });
         const backBtn = nav.createEl('button', { cls: 'bible-reader-nav-btn', text: '返回' });
-        backBtn.addEventListener('click', () => { this.readerState = 'books'; this.renderReader(); });
+        backBtn.addEventListener('click', () => this.gridGoBack());
         const titleGroup = nav.createEl('span', { cls: 'bible-reader-nav-title' });
         const bookLabel = titleGroup.createEl('span', { cls: 'bible-reader-nav-pill', text: book.id + '. ' + book.fullName });
         bookLabel.createEl('span', { cls: 'bible-reader-nav-caret', text: ' ▼' });
         bookLabel.addEventListener('click', () => this.showBookPicker(bookLabel));
         const grid = this.readerContent.createDiv({ cls: 'bible-reader-grid' });
         for (let i = 1; i <= book.maxChapters; i++) {
-            const btn = grid.createEl('button', { cls: 'bible-reader-chapter-btn', text: String(i) });
-            btn.addEventListener('click', () => { this.readerChapter = i; this.readerState = 'content'; this.renderReader(); });
+            this.createGridChapterButton(grid, book, i);
         }
+        this.resetKeyboardCursorForNewView();
+        this.applyKeyboardCursor();
     }
 
-    // 上一章 / 下一章：直接切章并回到章首（选中状态按「保留候选」的规则在 renderChapterContent 里处理）
+    // 章节目录里按 Esc / Backspace 退回书卷列表，和「返回」按钮一致
+    gridGoBack() {
+        if (this.activeTab !== 'reader' || this.readerState !== 'chapters') return false;
+        this.readerState = 'books';
+        this.renderReader();
+        return true;
+    }
+
+    // 按书卷顺序解析「相对偏移」后的目标章：越过本卷首 / 末章时自动跨到相邻书卷。
+    // 例如创 50 再往后 = 出 1，出 1 再往前 = 创 50；创 1 往前、启 22 往后返回 null。
+    resolveReaderChapter(book, chapter, delta) {
+        if (!book) return null;
+        let b = book, ch = chapter + delta;
+        let guard = 0;
+        while (guard++ < 200) {
+            if (ch >= 1 && ch <= b.maxChapters) return { book: b, chapter: ch };
+            const idx = BIBLE_BOOKS.findIndex(x => x.id === b.id);
+            if (idx < 0) return null;
+            if (ch < 1) {
+                if (idx === 0) return null;
+                b = BIBLE_BOOKS[idx - 1];
+                ch += b.maxChapters;
+            } else {
+                if (idx >= BIBLE_BOOKS.length - 1) return null;
+                ch -= b.maxChapters;
+                b = BIBLE_BOOKS[idx + 1];
+            }
+        }
+        return null;
+    }
+
+    // 上一章 / 下一章：手势、页码按钮与键盘共用。n 是「以本卷为基准的章号」，
+    // 小于 1 或大于本卷章数时按书卷顺序跨卷；切章后回到章首。
+    // 选中状态按「保留候选」的规则在 renderChapterContent 里处理（chapterKey 含书卷 id）。
     goReaderChapter(n) {
         const book = this.readerBook;
-        if (!book || n < 1 || n > book.maxChapters) return;
-        this.readerChapter = n;
+        if (!book) return false;
+        const target = this.resolveReaderChapter(book, this.readerChapter, n - this.readerChapter);
+        if (!target) return false;
+        if (target.book.id === book.id && target.chapter === this.readerChapter) return false;
+        this.readerBook = target.book;
+        this.readerChapter = target.chapter;
         this.readerState = 'content';
+        this.resetKeyboardCursorForNewView();
         this.renderReader();
         if (this.readerContent) this.readerContent.scrollTop = 0;
+        // 真正的滚动容器是 .bible-reader-scroll-area，内层 .bible-reader-content-inner 不滚动
+        if (this.readerScrollArea) this.readerScrollArea.scrollTop = 0;
+        this.settleKeyboardCursorAfterTurn();
+        return true;
     }
 
     async renderChapterContent() {
+        this.refreshTabButtonsVisible();
         this.readerContent.empty();
         this.readerFixedTop.empty();
         const book = this.readerBook;
@@ -5449,10 +6801,17 @@ class BibleSearchView extends ItemView {
         const nextChBtn = chapterNav.createEl('button', { cls: 'bible-section-chapter-btn' });
         setIcon(prevChBtn, 'chevron-left');
         setIcon(nextChBtn, 'chevron-right');
-        prevChBtn.disabled = chapter <= 1;
-        nextChBtn.disabled = chapter >= book.maxChapters;
-        prevChBtn.title = chapter > 1 ? `上一章（${chapter - 1}章）` : '已经是第一章';
-        nextChBtn.title = chapter < book.maxChapters ? `下一章（${chapter + 1}章）` : `已经是最后一章（${book.maxChapters}章）`;
+        // 跨书卷连翻：本卷首 / 末章时按钮仍可用，指向相邻书卷的首 / 末章
+        const prevTarget = this.resolveReaderChapter(book, chapter, -1);
+        const nextTarget = this.resolveReaderChapter(book, chapter, 1);
+        prevChBtn.disabled = !prevTarget;
+        nextChBtn.disabled = !nextTarget;
+        prevChBtn.title = prevTarget
+            ? `上一章（${prevTarget.book.fullName} ${prevTarget.chapter}章）`
+            : '已经是第一卷第一章';
+        nextChBtn.title = nextTarget
+            ? `下一章（${nextTarget.book.fullName} ${nextTarget.chapter}章）`
+            : '已经是最后一卷最后一章';
         // 这两个按钮不能触发标题的折叠，否则点一下就把本页操作收起来了
         prevChBtn.addEventListener('click', (e) => { e.stopPropagation(); this.goReaderChapter(chapter - 1); });
         nextChBtn.addEventListener('click', (e) => { e.stopPropagation(); this.goReaderChapter(chapter + 1); });
@@ -5487,6 +6846,7 @@ class BibleSearchView extends ItemView {
             prevVerseKey = currentVerseKey;
             this.renderReaderItemCard(contentEl, item);
         }
+        this.applyKeyboardCursor();
 
         // ========== 全局操作函数 ==========
         const doGlobalSelectAll = () => {
@@ -5915,6 +7275,14 @@ class BibleSearchView extends ItemView {
             }
         }
 
+        this.markKeyboardItem(card, {
+            key: 'r:' + item.bookId + ':' + item.chapter + ':' + (item.lineIndex != null
+                ? item.lineIndex
+                : (item.type || '') + ':' + (item.verse || '') + (item.part || '')),
+            toggle: () => this.toggleReaderItemSelection(item),
+            side: () => this.toggleReaderSideBySide(item),
+            selected: selState.selected
+        });
     }
 
     // ==================== 恢复本注解 / 串珠展开面板 ====================
@@ -6163,6 +7531,12 @@ class BibleSearchView extends ItemView {
         });
         const body = card.createDiv({ cls: 'bible-result-text bible-result-note-text' });
         this.renderNoteParagraphs(body, result.noteText, this.keywords, { bookId: item.bookId, chapter: item.chapter });
+        this.markKeyboardItem(card, {
+            key: 'n:' + globalIdx,
+            toggle: () => this.toggleSelection(globalIdx),
+            side: () => this.toggleSideBySide(globalIdx),
+            selected: st.selected
+        });
     }
 
     // 注解正文分段：源数据用空行分段，每段单独成块（有关键词时高亮）
@@ -6366,8 +7740,11 @@ class BibleSearchView extends ItemView {
         }
         this.recalcReaderOrders();
         this.updateKeepCandidatesUI();
-        this.refreshAllReaderCards();
-        this.refreshNotePanels();
+        // X 全选时由调用方统一重绘一次，避免每选一条就刷新整章
+        if (!this._kbBatchSelecting) {
+            this.refreshAllReaderCards();
+            this.refreshNotePanels();
+        }
     }
 
     toggleReaderSideBySide(item) {
@@ -6706,6 +8083,14 @@ class BibleSearchPlugin extends Plugin {
             readerResults: [],
             readerSelectCounter: 0,
             tooltipFontSize: 14,
+            // 触屏左右滑动翻页：左滑下一页 / 下一章，右滑上一页 / 上一章（默认开启）
+            swipeNavigation: true,
+            // 移动端右滑仍翻上一页（关闭后右滑完全让给侧边栏）
+            mobileRightSwipe: true,
+            // 桌面端鼠标拖拽 / 触控板横滑翻页
+            pointerNavigation: true,
+            // 键盘 ←/→ 翻页、↑/↓ 选框、空格选中、B 并列、C 清空
+            keyboardNavigation: true,
             // 恢复本注解 / 串珠
             showNotes: true,
             searchIncludeNotes: true,

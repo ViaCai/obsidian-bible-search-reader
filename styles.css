@@ -21,6 +21,8 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    /* 只允许纵向平移与双指缩放：横向手势交给插件自己判定，避免和移动端侧边抽屉抢 */
+    touch-action: pan-y pinch-zoom;
 }
 
 /* ===== 选项卡 ===== */
@@ -30,6 +32,12 @@
     margin-bottom: 12px;
     border-bottom: 2px solid var(--bible-card-border);
     padding-bottom: 2px;
+    /* 专注模式会隐藏下方大量区块，标签栏不允许被 flex 压缩，
+       否则右侧「对照 / 专注」会跟着布局塌陷被挤出可见区域 */
+    flex-shrink: 0;
+    /* 标签栏自身不裁剪子按钮：窄屏下按钮被挤到边界外时仍能被看到并重排回来 */
+    overflow: visible;
+    position: relative;
 }
 .bible-tab {
     flex: 1;
@@ -68,7 +76,8 @@
 }
 .bible-tab.active {
     background: var(--bible-accent);
-    color: var(--text-on-accent);
+    /* 主色偏浅，用深墨色文字，浅色 / 深色主题下都看得清 */
+    color: var(--bible-on-accent);
 }
 
 /* ===== 面板 ===== */
@@ -135,61 +144,74 @@
     user-select: none;
 }
 .bible-section-icon {
-    font-size: 10px;
+    font-size: 11px;
+    line-height: 1;
+    flex-shrink: 0;
     color: var(--text-muted);
 }
-.bible-section-font-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    margin-left: 4px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-}
-.bible-section-font-btn:hover {
-    background: var(--background-modifier-hover);
-    color: var(--bible-accent);
-}
-.bible-section-font-btn svg {
-    width: 14px;
-    height: 14px;
-}
-/* 「本页操作」标题右侧的上一章 / 下一章：置右，尽量小，不喧宾夺主 */
-.bible-section-chapter-nav {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    margin-left: auto;
-}
+/* 标题右侧的图标按钮：给明确的边框、底色与前景色，
+   不再依赖主题的 --text-muted 细线图标（浅色主题下几乎看不见）。
+   28px 兼顾移动端触控目标，svg.svg-icon 提高权重避免被主题放大后溢出裁切。 */
+.bible-section-font-btn,
 .bible-section-chapter-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    border: none;
-    border-radius: 3px;
-    background: transparent;
-    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 5px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    line-height: 0;
     cursor: pointer;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
 }
-.bible-section-chapter-btn svg {
-    width: 13px;
-    height: 13px;
+.bible-section-font-btn {
+    margin-left: 4px;
 }
+.bible-section-font-btn svg,
+.bible-section-chapter-btn svg,
+.bible-section-font-btn svg.svg-icon,
+.bible-section-chapter-btn svg.svg-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    /* 不带 .svg-icon 的注入图标也能命中；强制继承按钮前景色，避免主题把图标染成背景色 */
+    color: inherit;
+    fill: none;
+    stroke: currentColor;
+}
+.bible-section-font-btn:hover:not(:disabled),
 .bible-section-chapter-btn:hover:not(:disabled) {
     background: var(--background-modifier-hover);
+    border-color: var(--bible-accent);
     color: var(--bible-accent);
 }
+.bible-section-font-btn:active:not(:disabled),
+.bible-section-chapter-btn:active:not(:disabled) {
+    background: var(--background-modifier-active-hover);
+    color: var(--text-normal);
+}
+.bible-section-font-btn:focus-visible,
+.bible-section-chapter-btn:focus-visible {
+    outline: 2px solid var(--bible-accent);
+    outline-offset: 1px;
+}
+/* 「本页操作」标题右侧的上一章 / 下一章：置右，不喧宾夺主 */
+.bible-section-chapter-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
 .bible-section-chapter-btn:disabled {
-    opacity: 0.3;
+    opacity: 0.35;
     cursor: default;
 }
 .bible-section-body {
@@ -457,6 +479,37 @@
 .bible-result-card.selected {
     border-left: 3px solid var(--bible-accent);
     background: var(--background-modifier-active-hover);
+}
+/* 键盘导航：↑ / ↓ 移动到当前内容条时显示的选框 */
+.bible-result-card.bible-kb-cursor,
+.bible-reader-verse-card.bible-kb-cursor {
+    outline: 2px solid var(--bible-accent);
+    outline-offset: 1px;
+    background: var(--background-modifier-hover);
+}
+/* 书卷列表 / 章目录的网格按钮：方向键选择时同样的选框，避免两个页面看起来是两套交互 */
+.bible-reader-book-btn.bible-kb-cursor,
+.bible-reader-chapter-btn.bible-kb-cursor {
+    outline: 2px solid var(--bible-accent);
+    outline-offset: 1px;
+    border-color: var(--bible-accent);
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+    font-weight: 600;
+}
+/* 对照设置弹窗：方向键停在的选项。弹窗挂在 body 上，用自己的类名避免与视图内选框混淆 */
+.bible-compare-modal button.bible-cmp-kb-cursor,
+.bible-compare-modal button.bible-cmp-kb-cursor:hover,
+.bible-compare-modal .bible-compare-modal-notes-row.bible-cmp-kb-cursor,
+.bible-compare-modal .bible-compare-modal-row.bible-cmp-kb-cursor,
+.bible-compare-modal .bible-compare-modal-row.bible-cmp-kb-cursor:hover {
+    outline: 2px solid var(--bible-accent);
+    outline-offset: 1px;
+    border-color: var(--bible-accent);
+    background: var(--background-modifier-hover);
+}
+.bible-search-container:focus {
+    outline: none;
 }
 .bible-result-header {
     display: flex;
@@ -1322,21 +1375,103 @@
     color: var(--text-muted);
 }
 
-/* ===== 专注模式 ===== */
-.bible-focus-mode-btn {
+/* ===== 标签栏右侧「对照 / 专注」按钮 =====
+   移动端 WebView 点击 button 后，:hover / :focus 会「粘住」直到下一次触摸别处；
+   而激活态过去靠「翻转成白底浅字」表达，视觉上就像按钮整个消失，
+   要到再点一次屏幕、伪类被清掉才回来。这里改成：
+   1) 常态 / 激活态都是实心高对比色块，绝不出现白底或透明底；
+   2) 所有悬停 / 按下变化只在真正有鼠标的设备生效，触屏端完全没有伪类可粘；
+   3) 尺寸、可见性、flex 收缩全部显式写死，专注模式隐藏大量区块后也挤不掉。 */
+.bible-focus-mode-btn,
+.bible-compare-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 52px;
+    min-height: 32px;
     padding: 3px 10px;
     border: 1px solid var(--bible-accent);
     border-radius: 4px;
     background: var(--bible-accent);
-    color: var(--text-on-accent);
+    color: var(--bible-on-accent);
     font-size: 11px;
     font-weight: 600;
-    cursor: pointer;
+    line-height: 1.2;
     white-space: nowrap;
+    cursor: pointer;
+    flex: 0 0 auto;
+    flex-shrink: 0;
+    opacity: 1;
+    visibility: visible;
+    position: relative;
+    z-index: 1;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
+}
+/* 只由「专注」把整组推到右侧，避免两个 auto 平分剩余空间 */
+.bible-focus-mode-btn {
     margin-left: auto;
 }
-.bible-focus-mode-btn:hover {
-    opacity: 0.9;
+.bible-compare-toggle-btn {
+    margin-left: 0;
+}
+/* 激活态只换略深的底色 + 内描边，文字与底色始终高对比，不会出现「只剩一个空框」 */
+.bible-focus-mode-btn.active,
+.bible-compare-toggle-btn.active {
+    background: var(--bible-accent-hover);
+    color: var(--bible-on-accent);
+    border-color: var(--bible-on-accent);
+    box-shadow: inset 0 0 0 1px var(--bible-on-accent);
+    opacity: 1;
+    visibility: visible;
+}
+.bible-focus-mode-btn:focus-visible,
+.bible-compare-toggle-btn:focus-visible {
+    outline: 2px solid var(--text-normal);
+    outline-offset: 1px;
+}
+/* 悬停 / 按下只给鼠标；触屏设备的按钮不存在任何会改变可见性的伪类规则 */
+@media (hover: hover) and (pointer: fine) {
+    .bible-focus-mode-btn:hover,
+    .bible-compare-toggle-btn:hover {
+        background: var(--bible-accent-hover);
+        opacity: 1;
+    }
+    .bible-focus-mode-btn:active,
+    .bible-compare-toggle-btn:active {
+        background: var(--bible-accent-hover);
+        color: var(--bible-on-accent);
+        opacity: 1;
+        transform: translateY(1px);
+    }
+}
+/* 触屏兜底：即便主题或 WebView 偷偷注入了 :hover / :focus 规则，
+   也把两个按钮的背景、文字、可见性锁回实心色块（放在最后以覆盖上面的常态规则）。 */
+@media (hover: none) {
+    .bible-tab-bar > .bible-focus-mode-btn,
+    .bible-tab-bar > .bible-focus-mode-btn:hover,
+    .bible-tab-bar > .bible-focus-mode-btn:active,
+    .bible-tab-bar > .bible-focus-mode-btn:focus,
+    .bible-tab-bar > .bible-compare-toggle-btn,
+    .bible-tab-bar > .bible-compare-toggle-btn:hover,
+    .bible-tab-bar > .bible-compare-toggle-btn:active,
+    .bible-tab-bar > .bible-compare-toggle-btn:focus {
+        display: inline-flex;
+        background: var(--bible-accent);
+        color: var(--bible-on-accent);
+        opacity: 1;
+        visibility: visible;
+        min-width: 52px;
+        min-height: 32px;
+    }
+    .bible-tab-bar > .bible-focus-mode-btn.active,
+    .bible-tab-bar > .bible-compare-toggle-btn.active {
+        background: var(--bible-accent-hover);
+        color: var(--bible-on-accent);
+        opacity: 1;
+        visibility: visible;
+    }
 }
 /* 搜索页面专注模式 */
 .bible-search-fixed-top.focus-mode .bible-section,
@@ -2162,26 +2297,8 @@
 }
 
 
-/* ===== 对照按钮样式（与专注按钮一致） ===== */
-.bible-compare-toggle-btn {
-    padding: 3px 10px;
-    border: 1px solid var(--bible-accent);
-    border-radius: 4px;
-    background: var(--bible-accent);
-    color: var(--text-on-accent);
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    margin-left: auto;
-}
-.bible-compare-toggle-btn:hover {
-    opacity: 0.9;
-}
-.bible-compare-toggle-btn.active {
-    background: var(--text-on-accent);
-    color: var(--bible-accent);
-}
+/* 对照按钮的几何、配色、伪类规则已与专注按钮合并到文件上方
+   「标签栏右侧『对照 / 专注』按钮」一节，避免两份规则互相覆盖。 */
 
 /* ==================== 文章内圣经引用高亮 (v3.0.0) ==================== */
 
@@ -2754,5 +2871,77 @@ button.bible-notes-toggle-btn,
     color: var(--text-accent);
     border-color: var(--interactive-accent);
     background-color: var(--background-modifier-hover);
+}
+
+/* ==================== 标签栏右侧按钮：最终可见性兜底 ====================
+   搜索框打字、展开检索范围、阅读内容重绘时，宿主主题或移动 WebView 注入的
+   button:focus / button:hover 规则可能把「对照 / 专注」画成透明或白底；
+   元素仍在原位、仍然能点，看起来就是「按钮不见了」。
+   这一节放在样式表最后，用更高特异性的选择器 + 不依赖任何变量的硬编码色值，
+   把所有状态统一锁成实心色块；标签栏整体抬到内容区之上，避免被覆盖。
+   选择器列表只用 :hover / :active / :focus 这类所有 WebView 都支持的基础伪类：
+   :focus-visible 命中时元素必然同时命中 :focus，已一并覆盖；不混进列表可避免
+   老 WebView 因不认识某个新伪类而把整条规则丢弃。
+   不使用强制优先级声明，靠选择器特异性与先后顺序生效。 */
+.bible-search-container .bible-tab-bar {
+    z-index: 2;
+}
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn,
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:hover,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:hover,
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:active,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:active,
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:focus,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:focus {
+    display: inline-flex;
+    visibility: visible;
+    opacity: 1;
+    background-color: #4ecdc4;
+    background-image: none;
+    color: #0b2b29;
+    -webkit-text-fill-color: #0b2b29;
+    border: 1px solid #3dbdb4;
+    box-shadow: none;
+    transform: none;
+    filter: none;
+    min-width: 52px;
+    min-height: 32px;
+}
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active,
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active:hover,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:hover,
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active:active,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:active,
+.bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active:focus,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:focus {
+    background-color: #3dbdb4;
+    background-image: none;
+    color: #0b2b29;
+    -webkit-text-fill-color: #0b2b29;
+    border-color: #0b2b29;
+    box-shadow: inset 0 0 0 1px #0b2b29;
+    visibility: visible;
+    opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+    .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:hover,
+    .bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:hover {
+        filter: brightness(0.94);
+    }
+    .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:active,
+    .bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:active {
+        filter: brightness(0.88);
+    }
+}
+
+/* 鼠标在内容上做四向拖拽手势时的反馈：抓取光标 + 暂时禁掉文字框选，
+   避免翻页 / 跟手滚动的同时拖出一片蓝色选区（松手即恢复）。 */
+.bible-search-container.bible-pointer-dragging,
+.bible-search-container.bible-pointer-dragging * {
+    cursor: grabbing;
+    user-select: none;
+    -webkit-user-select: none;
 }
 /* （注：内容由AI生成） */
