@@ -480,6 +480,16 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '4.0.19': `## [4.0.19] - 2026-11-10
+
+### 新增
+- **QWE 同键关闭投影**：投影已处在该模式时，再按对应的 Q / W / E 键即可关闭投影；按别的键仍是切换模式。
+
+### 修复
+- **退出投影后快捷键恢复**：退出投影后，I / Y 等快捷键能继续控制侧边栏。
+- **投影内容可上下键滚动**：投影内容超过一屏时，上下方向键与鼠标滚轮一样能滚动内容。
+- **投影中可操控侧边栏**：投影中按 S 打开侧边栏后，方向键 / Y / I / 空格等可操控侧边栏并显示选框；再按 S 可恢复全屏投影。
+- **移动端翻页不再带动侧边栏**：从内容区起手的横向翻页手势更早拦截，避免把侧边栏带出一点；投影内容较多时的上下键滚动也一并修好。`,
     '4.0.18': `## [4.0.18] - 2026-11-10
 
 ### 新增
@@ -2419,6 +2429,16 @@ class BibleProjectionOverlay {
                 }
                 return false;
             }
+            // S：投影「开关侧边栏」快捷键。放在输入框让行判断之前，保证侧边栏搜索框聚焦时也能用 S 收起侧边栏、恢复全屏投影。
+            // 仅在投影可操作时拦截，避免劫持笔记正文里的正常打字：① 独占全屏（ownsScreen）必拦；
+            // ② 检索分屏 / 标签页态（isSearchMode）必拦（焦点常在侧边栏搜索框，需要 S 收回全屏）；
+            // ③ 其余（焦点在笔记编辑器且投影未独占）不拦，S 照常打字。输入法合成态放行。
+            if (!inFloatingUi && (e.key === 's' || e.key === 'S') && !e.isComposing && e.keyCode !== 229) {
+                if (this.ownsScreen() || this.isSearchMode) {
+                    this.toggleSearchMode();
+                    return true;
+                }
+            }
             // 逃生通道：焦点卡在本插件的搜索框里时，按 Esc 只「退出输入态」而不是关闭投影，
             // 焦点回到投影后 S / O / Q / W / E / C / R / 方向键立即恢复可用（否则只能先用鼠标点一下投影）
             if (typingTarget && e.key === 'Escape') {
@@ -2439,6 +2459,39 @@ class BibleProjectionOverlay {
             if (ae && ae.tagName === 'BUTTON' && ae.closest && ae.closest('.bible-projection-fullscreen, .bible-proj-fullscreen') && (e.key === ' ' || e.key === 'Enter')) {
                 ae.blur();
             }
+            // 检索分屏 / 标签页模式下，投影只占一侧或独立标签，主视图侧边栏才是当前操作对象。
+            // 直接把方向键 / 空格 / 选择类动作键委派给主视图的键盘导航方法（含选框移动、Y/I 切换、
+            // 空格选中），无论焦点此时落在投影还是搜索框都能操控侧边栏；反过来，焦点在搜索输入框里时
+            // 这些字母 / 空格要能正常打字，故输入框聚焦时不拦截（交给主视图 onKeyDown 同样的让行规则）。
+            // 否则这些键会被投影吃掉翻页，或主视图因 hasBlockingOverlay 提前 return 而全哑。
+            if (this.isSearchMode && !this.getFullscreenElement()) {
+                const ae2 = document.activeElement;
+                const inInput = !!(ae2 && ae2.tagName &&
+                    (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.isContentEditable));
+                const v = (this.plugin && typeof this.plugin.getVisibleSearchView === 'function')
+                    ? this.plugin.getVisibleSearchView() : null;
+                if (v && typeof v.moveKeyboardCursor === 'function' && !inInput) {
+                    const k = e.key;
+                    const lk = typeof k === 'string' ? k.toLowerCase() : '';
+                    if (k === 'ArrowDown') { v.moveKeyboardCursor(1); return true; }
+                    if (k === 'ArrowUp') { v.moveKeyboardCursor(-1); return true; }
+                    if (k === 'ArrowLeft') { v.swipePrev(); return true; }
+                    if (k === 'ArrowRight') { v.swipeNext(); return true; }
+                    if (k === ' ' || k === 'Spacebar') { v.keyboardToggleSelection(); return true; }
+                    if (lk === 'x') { v.keyboardSelectAllPage(); return true; }
+                    if (lk === 'i') { v.keyboardToggleFocusMode(); return true; }
+                    if (lk === 'y') { v.keyboardSwitchTab(); return true; }
+                    if (lk === 'u') { v.keyboardToggleCompare(); return true; }
+                    if (lk === 'b') { v.keyboardToggleSide(); return true; }
+                    if (lk === 'c') { v.keyboardClearAll(); return true; }
+                }
+                // 输入框里或拿不到视图：方向键 / 字母放行，不拦截打字；不消费事件
+                return false;
+            }
+            // 投影内容较长、超出可视区时，上 / 下方向键滚动内容（仅独占全屏、未开检索时生效）；
+            // 滚到顶 / 底或内容无需滚动则交给下方翻页逻辑
+            if (e.key === 'ArrowDown') { if (this.scrollProjectionContent(1)) return true; }
+            if (e.key === 'ArrowUp') { if (this.scrollProjectionContent(-1)) return true; }
             if (e.key === 'ArrowRight' || e.key === ' ') this.nextSlide();
             else if (e.key === 'ArrowLeft') this.prevSlide();
             else if (e.key === 'Escape') {
@@ -2464,7 +2517,11 @@ class BibleProjectionOverlay {
                 if (ownsScreen && !(this.plugin && this.plugin.currentTooltipProjector)) {
                     const map = { q: 'focus', w: 'parallel', e: 'mixed' };
                     const next = map[String(e.key).toLowerCase()];
-                    if (next) this.setMode(next);
+                    if (next) {
+                        // 同键切换为关闭：投影已处在该模式时，再按对应键关闭投影
+                        if (next === this.mode) this.close();
+                        else this.setMode(next);
+                    }
                     return true;
                 }
                 return false;
@@ -3043,6 +3100,14 @@ class BibleProjectionOverlay {
             this._focusGuard = null;
         }
         if (this.plugin && this.plugin.currentProjection === this) this.plugin.currentProjection = null;
+        // 关闭投影后把键盘焦点交还主视图（圣经检索 / 阅读）：投影是 document 级捕获监听，
+        // 主视图的快捷键（I / Y / X / U / 方向键 / 空格）挂在视图容器上，焦点若不交还就会全哑。
+        try {
+            if (this.plugin && typeof this.plugin.getVisibleSearchView === 'function') {
+                const v = this.plugin.getVisibleSearchView();
+                if (v && typeof v.restoreViewFocus === 'function') v.restoreViewFocus();
+            }
+        } catch (err) { /* 忽略 */ }
     }
 
     // ===== 投影内打开检索窗口（不关闭投影）=====
@@ -3074,6 +3139,26 @@ class BibleProjectionOverlay {
             if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
             el.focus({ preventScroll: true });
         } catch (e) { /* 忽略 */ }
+    }
+
+    // 投影内容较长、超出可视区时，上 / 下方向键滚动内容（每次约 15% 视高，最少 40px）。
+    // 真正可滚动的是 contentArea 内部的 .bible-proj-slide-wrapper（带 overflow-y:auto），
+    // 而不是 contentArea 本身（它只做 flex 容器、不溢出），所以必须滚 wrapper，否则方向键点了没反应。
+    // 返回是否真的滚动了：到边界或内容无需滚动时返回 false，让调用方改走翻页逻辑。
+    scrollProjectionContent(dir) {
+        const area = this.contentArea;
+        if (!area) return false;
+        const el = area.querySelector('.bible-proj-slide-wrapper') || area;
+        if (!el || typeof el.scrollTop !== 'number' || typeof el.scrollHeight !== 'number') return false;
+        const canScroll = el.scrollHeight > el.clientHeight + 2;
+        if (!canScroll) return false;
+        const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+        const atTop = el.scrollTop <= 0;
+        if (dir > 0 && atBottom) return false;   // 已到底，交给下一页
+        if (dir < 0 && atTop) return false;      // 已到顶，交给上一页
+        const step = Math.max(40, Math.round((el.clientHeight || 600) * 0.15));
+        el.scrollTop += dir * step;
+        return true;
     }
 
     toggleSearchMode() {
@@ -4342,7 +4427,16 @@ class BibleSearchView extends ItemView {
     hasBlockingOverlay() {
         try {
             if (typeof document !== 'undefined' && document.querySelector &&
-                document.querySelector('.bible-inline-tooltip-host, .bible-projection-fullscreen, .bible-compare-modal')) return true;
+                document.querySelector('.bible-inline-tooltip-host, .bible-compare-modal')) return true;
+            // 投影处于「独占全屏」才算遮挡主视图；检索分屏 / 标签页模式下主视图侧边栏可见可操作，
+            // 不应被当成遮挡层拦掉键盘导航（否则 S 打开侧边栏后方向键 / Y / I / 空格都失灵）
+            const proj = this.plugin && this.plugin.currentProjection;
+            if (proj) {
+                if (proj.isSearchMode) return false;       // 检索分屏（含标签页）
+                if (proj.projectionLeaf) return false;     // 标签页模式
+            }
+            if (typeof document !== 'undefined' && document.querySelector &&
+                document.querySelector('.bible-projection-fullscreen')) return true;
         } catch (err) { /* 忽略 */ }
         return false;
     }
@@ -4390,10 +4484,17 @@ class BibleSearchView extends ItemView {
             const t = e.touches && e.touches[0];
             if (!t || (e.touches && e.touches.length !== 1)) return;
             const dx = t.clientX - startX, dy = t.clientY - startY;
+            // 横向手势一旦起头（哪怕几像素）立刻拦下系统 / 侧边栏抽屉的冒泡 touch 监听，
+            // 避免「翻了页，侧边栏也被带动一点」。仅在「明显横向（dx>dy 且已有几像素位移）」时拦，
+            // 纵向手势（dy≥dx）全程放行，保证内容能正常滚动。边缘起手的手势在 onStart 已让给系统，不会进入这里。
+            if (self.isMobileEnv() && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 4) {
+                try { if (e.stopPropagation) e.stopPropagation(); } catch (err) { /* 忽略 */ }
+                try { if (e.cancelable && e.preventDefault) e.preventDefault(); } catch (err) { /* 忽略 */ }
+            }
             if (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
             if (dx > 0 && !self.allowRightSwipe()) { tracking = false; horizontal = false; return; }
             horizontal = true;
-            // 移动端：确认为横向翻页手势后，同时拦下浏览器默认滚动与 Obsidian 侧边抽屉的
+            // 移动端：确认为横向翻页手势后，再次拦下浏览器默认滚动与 Obsidian 侧边抽屉的
             // 冒泡 touch 监听，避免「翻了页，侧边栏也被划走 / 被划出」。
             if (self.isMobileEnv()) {
                 try { if (e.cancelable && e.preventDefault) e.preventDefault(); } catch (err) { /* 忽略 */ }
@@ -7975,7 +8076,13 @@ class BibleSearchPlugin extends Plugin {
             if (!mode) return;
             // ① 经文弹窗打开时优先：等同点击弹窗里的「投影」按钮（会自动关闭弹窗）
             if (this.currentTooltipProjector) { this.currentTooltipProjector(mode); return; }
-            // ② 投影正独占屏幕（全屏覆盖 / 桌面全屏）：此时够不到插件界面，
+            // ② 投影已开且正处在该模式：再按对应键关闭投影（同键切换为关闭）；
+            //    放在独占屏幕 / 界面可见等分支之前，对标签页 / 后台运行等所有「投影已存在」的情形统一生效
+            if (this.currentProjection && this.currentProjection.mode === mode) {
+                this.currentProjection.close();
+                return;
+            }
+            // ③ 投影正独占屏幕（全屏覆盖 / 桌面全屏）：此时够不到插件界面，
             //    按 Q/W/E 等同于切换当前投影的排版模式
             if (projOwnsScreen) { this.currentProjection.setMode(mode); return; }
             // ③ 插件界面可见（侧边栏停在本插件的检索页 / 阅读页；也包括投影已切成标签页、
