@@ -2944,4 +2944,361 @@ button.bible-notes-toggle-btn,
     user-select: none;
     -webkit-user-select: none;
 }
+
+/* ==================== 搜索框书卷短拼自动补全 ====================
+   浮层挂在 body 上：侧边栏固定头部有 overflow 裁剪，投影检索分屏态还会把主视图
+   整个搬进覆盖层，只有 body + fixed 定位才不会被裁掉或跟着滚动。
+   候选行用实心底 + 明确的文字色，避免宿主主题的 :hover / :focus 伪类把它画成透明。 */
+.bible-abbr-suggestion {
+    /* 挂在 body 上，取不到容器里那份主色变量，这里单独补一份（与顶部定义保持一致） */
+    --bible-accent: #4ecdc4;
+    --bible-on-accent: #0b2b29;
+    position: fixed;
+    z-index: 10002;
+    display: none;
+    flex-direction: column;
+    box-sizing: border-box;
+    max-height: 260px;
+    max-width: calc(100vw - 8px);
+    padding: 4px;
+    background-color: var(--background-primary, #ffffff);
+    background-image: none;
+    color: var(--text-normal, #222222);
+    border: 1px solid var(--background-modifier-border, #cccccc);
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+    visibility: visible;
+    opacity: 1;
+    font-size: 13px;
+    line-height: 1.4;
+}
+.bible-abbr-suggestion.bible-abbr-open {
+    display: flex;
+}
+.bible-abbr-suggestion-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.bible-abbr-suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 6px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    color: var(--text-normal, #222222);
+    -webkit-text-fill-color: var(--text-normal, #222222);
+}
+.bible-abbr-suggestion-item .bible-abbr-name {
+    flex: 1 1 auto;
+    font-weight: 600;
+}
+.bible-abbr-suggestion-item .bible-abbr-short,
+.bible-abbr-suggestion-item .bible-abbr-code {
+    flex: 0 0 auto;
+    font-size: 11px;
+    opacity: 0.72;
+}
+.bible-abbr-suggestion-item .bible-abbr-code {
+    font-family: var(--font-monospace, monospace);
+}
+.bible-abbr-suggestion-item.is-active {
+    background-color: var(--bible-accent);
+    color: var(--bible-on-accent);
+    -webkit-text-fill-color: var(--bible-on-accent);
+}
+.bible-abbr-suggestion-foot {
+    flex: 0 0 auto;
+    padding: 4px 8px 2px;
+    font-size: 10px;
+    color: var(--text-faint, #888888);
+    border-top: 1px solid var(--background-modifier-border, #cccccc);
+}
+/* 触屏设备不保留 :hover 态，避免点过一行之后高亮一直黏在那一行 */
+@media (hover: hover) and (pointer: fine) {
+    .bible-abbr-suggestion-item:hover {
+        background-color: var(--background-modifier-hover, #eeeeee);
+    }
+    .bible-abbr-suggestion-item.is-active:hover {
+        background-color: var(--bible-accent);
+    }
+}
+@media (max-width: 600px) {
+    .bible-abbr-suggestion {
+        max-height: 40vh;
+        font-size: 14px;
+    }
+    .bible-abbr-suggestion-item {
+        min-height: 40px;
+        padding: 8px 10px;
+    }
+}
+/* 末尾高特异性兜底：主题 / 移动 WebView 注入的 :hover / :focus 规则不该把候选行改透明。
+   不设 background-color，选中行的强调色底由上面 .is-active 规则保留。 */
+body > .bible-abbr-suggestion .bible-abbr-suggestion-item,
+body > .bible-abbr-suggestion .bible-abbr-suggestion-item:hover,
+body > .bible-abbr-suggestion .bible-abbr-suggestion-item:active,
+body > .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
+    visibility: visible;
+    opacity: 1;
+    background-image: none;
+    box-shadow: none;
+    transform: none;
+}
+
+/* ===== 投影顶部常驻快速搜索框 =====
+   顶栏是 Electron 的窗口拖动区（-webkit-app-region:drag），搜索框与按钮必须显式设成
+   no-drag，否则在桌面端点不中、也拿不到键盘焦点。按钮用实心底 + 深墨字，避免主题
+   注入的 :hover / :focus 伪类把文字改透明（"看得见但点不中"的老问题）。 */
+.bible-projection-fullscreen .bible-proj-toprow > div:first-child,
+.bible-projection-fullscreen .bible-proj-toprow > div:last-child {
+    flex: 0 0 auto;
+}
+.bible-projection-fullscreen .bible-proj-quick-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 620px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-quick-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 30px;
+    padding: 4px 10px;
+    font-size: 13px;
+    line-height: 1.3;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(0, 0, 0, 0.35);
+    color: #ffffff;
+    -webkit-text-fill-color: #ffffff;
+    -webkit-app-region: no-drag;
+    outline: none;
+}
+.bible-projection-fullscreen .bible-proj-quick-search-input::placeholder {
+    color: rgba(255, 255, 255, 0.52);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.52);
+    opacity: 1;
+}
+.bible-projection-fullscreen .bible-proj-quick-search-input:focus {
+    border-color: #4ecdc4;
+    background: rgba(0, 0, 0, 0.5);
+}
+.bible-projection-fullscreen .bible-proj-quick-search-clear,
+.bible-projection-fullscreen .bible-proj-quick-search-go {
+    flex: 0 0 auto;
+    height: 30px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-quick-search-clear {
+    width: 30px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+.bible-projection-fullscreen .bible-proj-quick-search-go {
+    padding: 0 12px;
+    border: 1px solid #4ecdc4;
+    background: #4ecdc4;
+    color: #0b2b29;
+    font-weight: 600;
+    -webkit-text-fill-color: #0b2b29;
+}
+@media (hover: hover) and (pointer: fine) {
+    .bible-projection-fullscreen .bible-proj-quick-search-clear:hover {
+        background: rgba(255, 255, 255, 0.22);
+    }
+    .bible-projection-fullscreen .bible-proj-quick-search-go:hover {
+        background: #6ee0d8;
+    }
+}
+.bible-projection-fullscreen .bible-proj-tophint {
+    font-size: 11px;
+    opacity: 0.62;
+    text-align: center;
+    line-height: 1.5;
+    padding-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.bible-projection-fullscreen .bible-proj-empty {
+    text-align: center;
+    padding: 24px;
+    max-width: 90%;
+}
+.bible-projection-fullscreen .bible-proj-empty-title {
+    font-size: 26px;
+    font-weight: 600;
+    opacity: 0.9;
+    margin-bottom: 12px;
+}
+.bible-projection-fullscreen .bible-proj-empty-hint {
+    font-size: 16px;
+    opacity: 0.72;
+    margin-bottom: 8px;
+}
+.bible-projection-fullscreen .bible-proj-empty-eg {
+    font-size: 13px;
+    opacity: 0.55;
+    line-height: 1.8;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-quick-search-input {
+    background: #ffffff;
+    color: #1f2937;
+    -webkit-text-fill-color: #1f2937;
+    border-color: rgba(0, 0, 0, 0.25);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-quick-search-input::placeholder {
+    color: #6b7280;
+    -webkit-text-fill-color: #6b7280;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-quick-search-clear {
+    background: rgba(0, 0, 0, 0.06);
+    color: #1f2937;
+    border-color: rgba(0, 0, 0, 0.3);
+}
+.bible-proj-search-mode .bible-proj-quick-search {
+    max-width: 480px;
+}
+@media (max-width: 600px) {
+    .bible-projection-fullscreen .bible-proj-toprow {
+        gap: 6px;
+    }
+    .bible-projection-fullscreen .bible-proj-tophint {
+        display: none;
+    }
+    .bible-projection-fullscreen .bible-proj-quick-search-input {
+        height: 34px;
+        font-size: 14px;
+    }
+    .bible-projection-fullscreen .bible-proj-quick-search-clear,
+    .bible-projection-fullscreen .bible-proj-quick-search-go {
+        height: 34px;
+        min-width: 34px;
+        font-size: 13px;
+    }
+}
+/* 投影层的补全下拉挂在覆盖层内部（桌面全屏时只有覆盖层子树在 top layer 里可见）。
+   ⚠️ 投影底色由插件写死为深蓝，候选行原先却取宿主的 --text-normal：宿主是浅色主题时
+   深字压深底，整片看不清。这里把容器 / 候选行 / 简称 / 短拼 / 脚注的文字色全部换成
+   插件自定的固定值，并加高特异性兜底压住主题注入的 :hover / :focus 透明规则。 */
+.bible-projection-fullscreen .bible-abbr-suggestion {
+    background-color: #22223c;
+    background-image: none;
+    color: #f3f4f6;
+    border-color: rgba(255, 255, 255, 0.28);
+    visibility: visible;
+    opacity: 1;
+}
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item:hover,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item:active,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
+    color: #f3f4f6;
+    -webkit-text-fill-color: #f3f4f6;
+    background-color: transparent;
+    background-image: none;
+    visibility: visible;
+    opacity: 1;
+    box-shadow: none;
+    transform: none;
+}
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-short,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-code {
+    color: rgba(255, 255, 255, 0.82);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.82);
+    opacity: 1;
+}
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:hover,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:active,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:focus {
+    background-color: #4ecdc4;
+    background-image: none;
+    color: #0b2b29;
+    -webkit-text-fill-color: #0b2b29;
+}
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-short,
+body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-code {
+    color: rgba(11, 43, 41, 0.78);
+    -webkit-text-fill-color: rgba(11, 43, 41, 0.78);
+}
+@media (hover: hover) and (pointer: fine) {
+    body .bible-projection-fullscreen .bible-abbr-suggestion .bible-abbr-suggestion-item:not(.is-active):hover {
+        background-color: rgba(255, 255, 255, 0.12);
+    }
+}
+.bible-projection-fullscreen .bible-abbr-suggestion-foot {
+    color: rgba(255, 255, 255, 0.72);
+    -webkit-text-fill-color: rgba(255, 255, 255, 0.72);
+    border-top-color: rgba(255, 255, 255, 0.16);
+}
+/* 投影切到浅色主题时整体翻回白底深字，同上不引用宿主变量 */
+.bible-projection-fullscreen.light-mode .bible-abbr-suggestion {
+    background-color: #ffffff;
+    color: #1f2937;
+    border-color: rgba(0, 0, 0, 0.25);
+}
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item:hover,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item:active,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
+    color: #1f2937;
+    -webkit-text-fill-color: #1f2937;
+    background-color: transparent;
+}
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-short,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-code {
+    color: rgba(31, 41, 55, 0.75);
+    -webkit-text-fill-color: rgba(31, 41, 55, 0.75);
+}
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:hover,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:active,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:focus {
+    background-color: #4ecdc4;
+    color: #0b2b29;
+    -webkit-text-fill-color: #0b2b29;
+}
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-short,
+body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-code {
+    color: rgba(11, 43, 41, 0.78);
+    -webkit-text-fill-color: rgba(11, 43, 41, 0.78);
+}
+@media (hover: hover) and (pointer: fine) {
+    body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-suggestion-item:not(.is-active):hover {
+        background-color: rgba(0, 0, 0, 0.07);
+    }
+}
+.bible-projection-fullscreen.light-mode .bible-abbr-suggestion-foot {
+    color: #6b7280;
+    -webkit-text-fill-color: #6b7280;
+    border-top-color: rgba(0, 0, 0, 0.12);
+}
+
+/* 末尾高特异性兜底：无论弹层挂在 body 还是被搬进标签页，投影按钮都不许被主题伪类改透明 */
+body .bible-projection-fullscreen .bible-proj-quick-search-go,
+body .bible-projection-fullscreen .bible-proj-quick-search-go:hover,
+body .bible-projection-fullscreen .bible-proj-quick-search-go:active,
+body .bible-projection-fullscreen .bible-proj-quick-search-go:focus {
+    visibility: visible;
+    opacity: 1;
+    background-color: #4ecdc4;
+    color: #0b2b29;
+    -webkit-text-fill-color: #0b2b29;
+    background-image: none;
+}
+
 /* （注：内容由AI生成） */
