@@ -421,7 +421,7 @@ function applyBookAbbrSuggestion(value, caret, suggestion) {
 // 投影是挂在 body 上的全屏浮层，生命周期和 BibleSearchView 不同，若把状态挂在视图实例上，
 // 关闭投影后下拉会残留在 body 里。下拉同样挂 body + fixed，层级高于投影层。
 class ProjBookAbbrSuggestion {
-    // mountEl 传投影覆盖层本身：按 O 进入桌面全屏时覆盖层会进入浏览器 top layer，
+    // mountEl 传投影覆盖层本身：按 D 进入全屏投影时覆盖层会进入浏览器 top layer，
     // 挂在 body 上的浮层（哪怕 z-index 更高）都会被挡住，只有挂进覆盖层内部才看得见。
     constructor(input, onApply, mountEl) {
         this.input = input;
@@ -874,6 +874,17 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '5.0.1': `## [5.0.1] - 2026-11-12
+
+### 新增
+- **全屏投影改用 \`D\`**：\`O / P\` 让给 Hymns 插件，两个插件不再抢键。
+- **与 Hymns 投影互切**：诗歌投影在前台时按 \`Q / W / E\`，直接切回经文投影。
+
+### 修复
+- **投影标签页更好用**：在别的标签按 \`Q / W / E\` 只切回投影；在投影标签里再按同键才关闭，按别的键切模式。
+- **重启不再出现空白投影标签**：残留的空标签会自动收掉，不会再出现两个「经文投影」。
+- **投影不再自动弹输入法**：打开投影不聚焦搜索框，按 \`Enter\` 或 \`/\` 才聚焦。
+- **提示文案**：按 \`S\` 打开侧边栏后的提示改为「恢复投影」。`,
     '5.0.0': `## [5.0.0] - 2026-11-11
 
 ### 新增
@@ -2684,6 +2695,60 @@ class BibleSearchEngine {
     }
 }
 
+// ==================== 与 Hymns 插件的投影联动 ====================
+// 两个插件互不引用、加载顺序也不确定，因此只靠「DOM 标记 + 自定义事件」协同：
+//   · Hymns 的投影层固定带 .hymns-proj 类；只要该图层还在 DOM 里，就认为诗歌投影在前台。
+//   · 诗歌投影前台时按 Q/W/E＝想切回经文投影：先派发 hymns:projection-close 请对方
+//     自己收起（它会退出浏览器整屏、移除图层、清理键盘监听），detail.done 用来确认是否被处理。
+//   · 对方是旧版、不认识该事件时走 DOM 兜底，避免画面永远卡在诗歌投影。
+// 反过来，本插件把 O/P 完全让给 Hymns（全屏投影改用 D），因此诗歌投影的打开/切换
+// 仍由 Hymns 自己的快捷键处理，本文件不注册任何 O/P 监听。
+const HYMNS_PROJECTION_SELECTOR = '.hymns-proj';
+
+function isHymnsProjectionFront() {
+    try {
+        const doc = (typeof document !== 'undefined') ? document : null;
+        if (!doc) return false;
+        if (typeof doc.querySelector === 'function' && doc.querySelector(HYMNS_PROJECTION_SELECTOR)) return true;
+        const fs = doc.fullscreenElement || doc.webkitFullscreenElement;
+        return !!(fs && fs.classList && typeof fs.classList.contains === 'function' &&
+            fs.classList.contains('hymns-proj'));
+    } catch (err) { return false; }
+}
+
+function requestHymnsProjectionClose() {
+    const doc = (typeof document !== 'undefined') ? document : null;
+    if (!doc) return;
+    let handled = false;
+    try {
+        if (typeof doc.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            const detail = { reason: 'bible-projection', done: false };
+            doc.dispatchEvent(new CustomEvent('hymns:projection-close', { detail }));
+            handled = !!detail.done;
+        }
+    } catch (err) { /* 忽略：环境不支持自定义事件 */ }
+    if (handled) return;
+    // 兜底：对方没响应时直接摘掉图层并退出整屏，保证画面能回到经文投影
+    try {
+        const left = (typeof doc.querySelectorAll === 'function')
+            ? doc.querySelectorAll(HYMNS_PROJECTION_SELECTOR) : [];
+        for (let i = 0; i < left.length; i++) {
+            const el = left[i];
+            if (el && el.parentNode && typeof el.parentNode.removeChild === 'function') {
+                el.parentNode.removeChild(el);
+            }
+        }
+        const fs = doc.fullscreenElement || doc.webkitFullscreenElement;
+        if (fs) {
+            const fn = doc.exitFullscreen || doc.webkitExitFullscreen;
+            if (typeof fn === 'function') {
+                const p = fn.call(doc);
+                if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ });
+            }
+        }
+    } catch (err) { /* 忽略 */ }
+}
+
 // ==================== 投影覆盖层（支持多版本）====================
 class BibleProjectionOverlay {
     constructor(app, plugin, results, mode, showSource) {
@@ -2774,7 +2839,9 @@ class BibleProjectionOverlay {
         const topRight = topRow.createDiv();
         topRight.createEl('span', { cls: 'bible-proj-page-num', text: (this.slides.length ? (this.currentSlide + 1) : 0) + '/' + this.slides.length + '页' });
         const hintRow = topBar.createDiv({ cls: 'bible-proj-tophint' });
-        hintRow.setText('← → 翻页 · / 搜索 · Q 逐节 · W 并列 · E 混合 · S 检索 · O 桌面全屏 · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭');
+        // D 键说明随全屏状态变化（全屏时提示「退出全屏投影」），由 updateDesktopBtn() 同步
+        this.hintRow = hintRow;
+        hintRow.setText('← → 翻页 · / 搜索 · Q 逐节 · W 并列 · E 混合 · S 检索 · D 全屏投影 · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭');
         this.overlay.appendChild(topBar);
         this.setupQuickSearch(qsInput, qsClear, qsGo);
 
@@ -2815,7 +2882,7 @@ class BibleProjectionOverlay {
         setIcon(centerBtn, 'align-center');
         const themeBtn = addToolBtn('', 'toggle-theme', '切换主题', 'bible-proj-tool-icon');
         setIcon(themeBtn, this.isDark ? 'moon' : 'sun');
-        const desktopFullBtn = addToolBtn('⛶', 'toggle-desktop-full', '扩展到整个桌面显示（O）', 'bible-proj-tool-emoji');
+        const desktopFullBtn = addToolBtn('⛶', 'toggle-desktop-full', '全屏投影（D）', 'bible-proj-tool-emoji');
         this.desktopFullBtn = desktopFullBtn;
         const searchBtn = addToolBtn('', 'open-search', '打开检索窗口（S）', 'bible-proj-tool-icon');
         setIcon(searchBtn, 'search');
@@ -2841,18 +2908,13 @@ class BibleProjectionOverlay {
         document.addEventListener('click', this._noteOutsideHandler);
         this.bindEvents(toolCenter, bottomRow);
         this.renderSlide();
-        // 投影刚打开就把键盘焦点从笔记编辑器 / 输入框收回投影：
+        // 投影刚打开就把键盘焦点从笔记编辑器 / 输入框收回投影容器：
         // iPad 上笔记处于编辑模式时 contentEditable 会持续持有焦点，
-        // 否则按快捷键会直接写进笔记正文并唤起输入法。延后执行以应对 Obsidian 的自动重聚焦
-        // 空投影（未选中任何经文就打开）时直接把焦点交给顶部搜索框，打开即可输入出处；
-        // 有内容的投影仍沿用原来的「焦点收回投影容器」，保证翻页 / QWE 快捷键立刻可用
-        if (this.results.length === 0) {
-            setTimeout(() => this.focusQuickSearch(), 0);
-            setTimeout(() => this.focusQuickSearch(), 150);
-        } else {
-            setTimeout(() => this.focusProjection(true), 0);
-            setTimeout(() => this.focusProjection(true), 150);
-        }
+        // 否则按快捷键会直接写进笔记正文并唤起输入法。延后执行以应对 Obsidian 的自动重聚焦。
+        // 焦点一律先给投影容器（空投影也一样），保证翻页 / QWE / D 等快捷键打开即可用；
+        // 想搜索时按 / 或 Enter 再把焦点交给顶部搜索框，避免一开投影就弹输入法、快捷键全哑。
+        setTimeout(() => this.focusProjection(true), 0);
+        setTimeout(() => this.focusProjection(true), 150);
     }
 
     // ===== 顶部常驻快速搜索框 =====
@@ -3061,6 +3123,20 @@ class BibleProjectionOverlay {
             // 系统组合键（Ctrl+R / Cmd+W 等）一律放行，绝不能被投影拦截
             if (e.ctrlKey || e.metaKey || e.altKey) return false;
             const ae = document.activeElement;
+            // 跨插件联动：Hymns 诗歌投影在前台时，键盘一律归对方（方向键、空格、Esc、
+            // O/P、搜索框打字等），只有 Q/W/E 用来「切回经文投影」。
+            // 不这么做的话，本投影虽被压在底下仍会吃掉按键去翻页 / 切模式 / 关投影，
+            // 焦点守卫还会抢走诗歌投影搜索框的焦点，表现就是「按 QWE 切不回来」。
+            if (isHymnsProjectionFront()) {
+                const hk = String(e.key || '').toLowerCase();
+                const switchBack = (hk === 'q' || hk === 'w' || hk === 'e') &&
+                    !e.isComposing && e.keyCode !== 229;
+                const inHymnsInput = !!(ae && ae.closest && ae.closest(
+                    '.hymns-proj input, .hymns-proj textarea, .hymns-proj [contenteditable="true"]'));
+                if (!switchBack || inHymnsInput) return false;
+                this.switchBackFromHymns(hk);
+                return true;
+            }
             // 顶部常驻搜索框聚焦时，所有按键都归输入框与它自己的短拼补全：
             // 否则 csj / ss / mtfy 里的 s、q、w、e、c、r、t、z 会被当成投影快捷键，
             // 短拼根本输不进去；S 的侧边栏开关也在这条判断之后，必须在这里提前放行。
@@ -3094,7 +3170,21 @@ class BibleProjectionOverlay {
                 }
                 return false;
             }
-            // S：投影「开关侧边栏」快捷键。放在输入框让行判断之前，保证侧边栏搜索框聚焦时也能用 S 收起侧边栏、恢复全屏投影。
+            // 确定键：焦点不在顶部搜索框时把焦点交给它，方便直接输入出处投影。
+            // 已在搜索框聚焦的情况上面已放行（Enter 走「确认投影 / 选补全候选」）；
+            // 投影内其它输入框、浮层、投影内按钮也让行，保留各自的键盘行为。
+            // 标签页 / 分屏模式（ownsScreen=false）不抢，侧边栏才是当时的操作对象。
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 &&
+                !inFloatingUi && ownsScreen && this.quickSearchInput) {
+                const tag = ae && ae.tagName ? String(ae.tagName).toUpperCase() : '';
+                const inProjInput = typingTarget && insideProjection;
+                const inProjButton = tag === 'BUTTON' && insideProjection;
+                if (!inProjInput && !inProjButton) {
+                    this.focusQuickSearch();
+                    return true;
+                }
+            }
+            // S：投影「开关侧边栏」快捷键。放在输入框让行判断之前，保证侧边栏搜索框聚焦时也能用 S 收起侧边栏、恢复投影。
             // 仅在投影可操作时拦截，避免劫持笔记正文里的正常打字：① 独占全屏（ownsScreen）必拦；
             // ② 检索分屏 / 标签页态（isSearchMode）必拦（焦点常在侧边栏搜索框，需要 S 收回全屏）；
             // ③ 其余（焦点在笔记编辑器且投影未独占）不拦，S 照常打字。输入法合成态放行。
@@ -3105,7 +3195,7 @@ class BibleProjectionOverlay {
                 }
             }
             // 逃生通道：焦点卡在本插件的搜索框里时，按 Esc 只「退出输入态」而不是关闭投影，
-            // 焦点回到投影后 S / O / Q / W / E / C / R / 方向键立即恢复可用（否则只能先用鼠标点一下投影）
+            // 焦点回到投影后 S / D / Q / W / E / C / R / 方向键立即恢复可用（否则只能先用鼠标点一下投影）
             if (typingTarget && e.key === 'Escape') {
                 if (ae.closest && ae.closest('.bible-search-input, .bible-proj-search-box, .bible-inline-tooltip, .bible-tooltip-menu')) {
                     try { ae.blur(); } catch (err) { /* 忽略 */ }
@@ -3171,7 +3261,8 @@ class BibleProjectionOverlay {
             else if (e.key === '-') { this.fontSize = Math.max(16, this.fontSize - 4); this.updateFontSize(); }
             else if (e.key === 't' || e.key === 'T') this.toggleTheme();
             else if (e.key === 's' || e.key === 'S') this.toggleSearchMode();
-            else if (e.key === 'o' || e.key === 'O') this.toggleDesktopFullscreen();
+            // 全屏投影改用 D；O / P 让行给 Hymns 插件的投影快捷键（见文件顶部的跨插件联动说明）
+            else if (e.key === 'd' || e.key === 'D') this.toggleDesktopFullscreen();
             else if (e.key === 'c' || e.key === 'C') this.toggleCentered();
             else if (e.key === 'r' || e.key === 'R') { this.fontSize = 48; this.updateFontSize(); }
             else if (e.key === 'z' || e.key === 'Z') this.goBackProjection();
@@ -3208,7 +3299,8 @@ class BibleProjectionOverlay {
         // 备选保险：触屏输入法 / IME 有时会绕过 keydown 直接产生 beforeinput。
         // 独占屏幕时统一拦下笔记区域的输入，杜绝字迹被写进正文
         this._beforeInputHandler = (e) => {
-            if (!this.ownsScreen()) return;
+            // Hymns 投影在前台时让行，否则它搜索框里的输入会被这里拦掉
+            if (!this.ownsScreen() || isHymnsProjectionFront()) return;
             const t = e && e.target;
             if (t && t.closest && t.closest('.bible-projection-fullscreen')) return;
             try { e.preventDefault(); e.stopPropagation(); } catch (err) { /* 忽略 */ }
@@ -3220,7 +3312,8 @@ class BibleProjectionOverlay {
         // contentEditable 只要一拿到焦点就会唤起输入法（iPad 直接弹软键盘），下一次按键即写进笔记正文。
         // 单靠 setTimeout 抢焦点抢不过 Obsidian 的异步重聚焦，故改为事件级拦截。
         this._focusGuard = (e) => {
-            if (!this.ownsScreen() || this._focusGuarding) return;
+            // Hymns 投影在前台时让行：否则它 open() 里 el.focus() / 搜索框聚焦都会被抢回本投影
+            if (!this.ownsScreen() || isHymnsProjectionFront() || this._focusGuarding) return;
             const t = e && e.target;
             if (t && t.closest && t.closest('.bible-projection-fullscreen')) return;
             this._focusGuarding = true;
@@ -3793,6 +3886,32 @@ class BibleProjectionOverlay {
     // ===== 投影内打开检索窗口（不关闭投影）=====
     // 不再缩成左下角小窗：投影区保持全高、只把宽度收窄，右侧正好空出侧边栏显示圣经检索；
     // 在侧边栏里改选经文后点投影，内容原地更新（不再来回放大缩小），点「⛶ 全屏」才恢复全屏。
+    // 从 Hymns 诗歌投影切回经文投影：请对方收起（含退出浏览器整屏），再把自己提回前台，
+    // 并切到用户按下的模式。对方退出整屏 / onClose 交还焦点都是异步的，故同步 + rAF +
+    // 延时各抢一次焦点；若用户已经回到投影顶部搜索框打字，则不再抢，避免打断输入。
+    switchBackFromHymns(key) {
+        const map = { q: 'focus', w: 'parallel', e: 'mixed' };
+        const next = map[key] || null;
+        requestHymnsProjectionClose();
+        // 经文投影已切成标签页时，还要把那个标签调回前台：
+        // 切去诗歌投影之前用户可能停在 Hymns / 笔记标签，只抢焦点仍看不到经文投影。
+        if (this.projectionLeaf && this.plugin && typeof this.plugin.revealProjectionTab === 'function') {
+            this.plugin.revealProjectionTab(this);
+        }
+        const bringToFront = () => {
+            if (!this.overlay) return;
+            if (next && this.mode !== next) this.setMode(next);
+            const ae = document.activeElement;
+            if (ae && ae.closest && ae.closest('.bible-proj-quick-search, .bible-proj-search-box')) return;
+            this.focusProjection(true);
+        };
+        bringToFront();
+        try {
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(bringToFront);
+        } catch (err) { /* 忽略 */ }
+        try { setTimeout(bringToFront, 150); } catch (err) { /* 忽略 */ }
+    }
+
     // 投影是否「独占屏幕」：全屏覆盖层，或已扩展到桌面全屏。
     // 此时整个屏幕都是投影，键盘应当归投影；标签页模式（投影只占一个标签）则不是。
     ownsScreen() {
@@ -3804,7 +3923,7 @@ class BibleProjectionOverlay {
     }
 
     // 把键盘焦点收回到投影本身：先让输入框失焦，再聚焦投影容器（tabindex=-1），
-    // 这样 S / O / Q / W / E / C / R / 方向键等快捷键不必先用鼠标或触屏点一下投影就能生效。
+    // 这样 S / D / Q / W / E / C / R / 方向键等快捷键不必先用鼠标或触屏点一下投影就能生效。
     // force=true 用于「刚打开 / 刚从标签页切回全屏」这类必须对抗 Obsidian 自动重聚焦的场景；
     // 默认只在投影「独占屏幕」时抢，标签页模式下不能抢——用户可能正要在侧边栏搜索框里打字。
     focusProjection(force) {
@@ -3858,15 +3977,16 @@ class BibleProjectionOverlay {
             if (this.getFullscreenElement()) { this.exitDesktopFullscreen(); return; }
             const el = this.overlay || document.documentElement;
             const fn = el && (el.requestFullscreen || el.webkitRequestFullscreen);
-            if (!fn) { new Notice('当前环境不支持桌面全屏'); return; }
+            if (!fn) { new Notice('当前环境不支持全屏投影'); return; }
             const p = fn.call(el);
             if (p && typeof p.catch === 'function') {
-                p.catch(err => console.warn('[Bible] 进入桌面全屏失败:', err));
+                p.catch(err => console.warn('[Bible] 进入全屏投影失败:', err));
             }
-            new Notice('已扩展到整个桌面；再按 O 退出');
+            this.updateDesktopBtn();
+            new Notice('已进入全屏投影；再按 D 退出全屏投影');
         } catch (e) {
-            console.warn('[Bible] 桌面全屏切换失败:', e);
-            new Notice('桌面全屏切换失败，请确认是在桌面版 Obsidian 中使用');
+            console.warn('[Bible] 全屏投影切换失败:', e);
+            new Notice('全屏投影切换失败，请确认是在桌面版 Obsidian 中使用');
         }
     }
 
@@ -3876,16 +3996,26 @@ class BibleProjectionOverlay {
             if (!fn) return;
             const p = fn.call(document);
             if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ });
+            this.updateDesktopBtn();
         } catch (e) { /* 忽略 */ }
     }
 
     updateDesktopBtn() {
-        const btn = this.desktopFullBtn || (this.overlay && this.overlay.querySelector('[data-action="toggle-desktop-full"]'));
-        if (!btn) return;
         const on = !!this.getFullscreenElement();
-        btn.classList.toggle('active', on);
-        btn.title = on ? '退出桌面全屏（O）' : '扩展到整个桌面显示（O）';
-        // 全屏时投影层铺满屏幕，加回 CSS 里设定的默认留白边框即可，无需额外处理
+        const btn = this.desktopFullBtn || (this.overlay && this.overlay.querySelector('[data-action="toggle-desktop-full"]'));
+        if (btn) {
+            btn.classList.toggle('active', on);
+            btn.title = on ? '退出全屏投影（D）' : '全屏投影（D）';
+        }
+        // 顶部快捷键提示与按钮说明保持同步：全屏时 D 的作用变成「退出全屏投影」
+        const hint = this.hintRow || (this.overlay && this.overlay.querySelector('.bible-proj-tophint'));
+        if (hint) {
+            const text = '← → 翻页 · / 搜索 · Q 逐节 · W 并列 · E 混合 · S 检索 · ' +
+                (on ? 'D 退出全屏投影' : 'D 全屏投影') +
+                ' · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭';
+            if (typeof hint.setText === 'function') hint.setText(text);
+            else hint.textContent = text;
+        }
     }
 
     // 把投影覆盖层搬进一个独立标签页：布局交给 Obsidian，投影与侧边栏各占一块，
@@ -3893,6 +4023,20 @@ class BibleProjectionOverlay {
     async mountToTab() {
         try {
             const ws = this.app.workspace;
+            // 已经挂在标签页里：直接调回，绝不新建第二个「经文投影」标签
+            if (this.projectionLeaf) {
+                if (typeof ws.revealLeaf === 'function') ws.revealLeaf(this.projectionLeaf);
+                return this.projectionLeaf.view;
+            }
+            // 重启恢复 / 异常残留的空白「经文投影」标签先收掉，避免出现两个同名标签。
+            // 视图的 onOpen 自检是第一道保险，这里是打开投影时的第二道保险。
+            try {
+                const orphans = (typeof ws.getLeavesOfType === 'function')
+                    ? (ws.getLeavesOfType(BIBLE_PROJECTION_VIEW_TYPE) || []) : [];
+                for (const l of orphans) {
+                    try { l.detach(); } catch (e) { /* 忽略 */ }
+                }
+            } catch (e) { /* 忽略 */ }
             let leaf = null;
             const isInSidebar = (el) => !!(el && el.closest && el.closest('.mod-left-split, .mod-right-split'));
             // ① 优先加到主区域「已有的标签组」里（作为普通标签页，不会产生分屏）。
@@ -3920,16 +4064,20 @@ class BibleProjectionOverlay {
                 }
             }
             if (!leaf) return null;
+            // 标记「正在挂载」：即便视图 onOpen 的自检在同一帧同步执行，也不会把新标签误判成孤儿
+            this._pendingProjectionLeaf = leaf;
+            try { leaf._bibleProjectionMounting = true; } catch (e) { /* 忽略 */ }
             await leaf.setViewState({ type: BIBLE_PROJECTION_VIEW_TYPE, active: false });
             const view = leaf.view;
             const host = view && view.contentEl;
-            if (!host) return null;
+            if (!host) { this.clearProjectionMounting(); return null; }
             if (typeof host.empty === 'function') host.empty(); else host.innerHTML = '';
             host.style.padding = '0';
             host.style.overflow = 'hidden';
             host.style.position = 'relative';
             host.appendChild(this.overlay);
             this.projectionLeaf = leaf;
+            this.clearProjectionMounting();
             this.overlay.classList.add('bible-proj-in-tab');
             // 标签页内：不再遮盖整个窗口，只填满本标签的内容区
             this.overlay.style.position = 'absolute';
@@ -3943,9 +4091,17 @@ class BibleProjectionOverlay {
             if (ws && typeof ws.revealLeaf === 'function') ws.revealLeaf(leaf);
             return view;
         } catch (e) {
+            this.clearProjectionMounting();
             console.warn('[Bible] 投影切换到标签页失败，回退到收窄布局:', e);
             return null;
         }
+    }
+
+    // 挂载结束后清掉「正在挂载」标记，让视图自检能正常识别真正的孤儿标签
+    clearProjectionMounting() {
+        const l = this._pendingProjectionLeaf;
+        if (l) { try { l._bibleProjectionMounting = false; } catch (e) { /* 忽略 */ } }
+        this._pendingProjectionLeaf = null;
     }
 
     // 把覆盖层从标签页搬回 body，恢复全屏覆盖式投影
@@ -3997,7 +4153,7 @@ class BibleProjectionOverlay {
             setTimeout(() => this.focusProjection(), 0);
             setTimeout(() => this.focusProjection(), 120);
             setTimeout(() => this.focusProjection(), 400);
-            new Notice('投影已切换为标签页；侧边栏改选经文后可继续投影，按 S（或点「全屏」）恢复全屏投影（光标若在搜索框内，先按 Esc）');
+            new Notice('投影已切换为标签页；侧边栏改选经文后可继续投影，按 S（或点「全屏」）恢复投影（光标若在搜索框内，先按 Esc）');
             return;
         }
         if (this.projectionLeaf) this.restoreToFullscreen();
@@ -4014,7 +4170,7 @@ class BibleProjectionOverlay {
         setTimeout(() => this.applySplitLayout(), 400);
         this.watchSidebar();
         setTimeout(() => this.focusProjection(), 0);
-        new Notice('已在右侧打开圣经检索；改选后可继续投影，按 S（或点「全屏」）恢复全屏投影');
+        new Notice('已在右侧打开圣经检索；改选后可继续投影，按 S（或点「全屏」）恢复投影');
     }
 
     exitSearchMode() {
@@ -4043,7 +4199,7 @@ class BibleProjectionOverlay {
         o.classList.remove('bible-proj-search-mode');
         this.unwatchSidebar();
         this.updateFontSize();
-        // 退出检索后把焦点带回投影，紧接着再按 S / O / 方向键才能直接生效
+        // 退出检索后把焦点带回投影，紧接着再按 S / D / 方向键才能直接生效
         this.focusProjection();
     }
 
@@ -4142,7 +4298,7 @@ class BibleProjectionOverlay {
             // 用蓝色高亮（.active）表示检索已打开，作为视觉标志
             setIcon(btn, 'search');
             btn.classList.toggle('active', !!this.isSearchMode);
-            btn.title = this.isSearchMode ? '恢复全屏投影（S）' : '打开检索窗口（S）';
+            btn.title = this.isSearchMode ? '恢复投影（S）' : '打开检索窗口（S）';
         }
     }
 
@@ -4244,7 +4400,34 @@ class BibleProjectionView extends ItemView {
             this.contentEl.style.overflow = 'hidden';
             this.contentEl.style.position = 'relative';
         }
+        // Obsidian 退出时会把「经文投影」标签连同 view 类型一起存进 workspace，重启后照原样恢复；
+        // 但投影覆盖层是运行时创建的，新会话里没有任何插件实例与之对应，于是只剩一个空白标签，
+        // 再开投影就会出现「空白 + 正常」两个经文投影标签。这里延迟一拍自检：
+        // 既没有挂载投影层、也不是当前投影的宿主，就当作孤儿标签自行关掉。
+        // 延迟是为了让 mountToTab() 里 setViewState 之后的 appendChild 先同步完成。
+        const check = () => { try { this.dropOrphanProjectionTab(); } catch (e) { /* 忽略 */ } };
+        try {
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(check);
+            else if (typeof setTimeout === 'function') setTimeout(check, 0);
+            else check();
+        } catch (e) { /* 忽略 */ }
     }
+
+    // 关掉「重启恢复出来的空白投影标签」；返回是否真的关了。
+    dropOrphanProjectionTab() {
+        const host = this.contentEl;
+        // 环境不支持查询时保守跳过，避免误伤正常标签
+        if (!host || typeof host.querySelector !== 'function') return false;
+        if (host.querySelector('.bible-projection-fullscreen')) return false;  // 已挂载投影层
+        const leaf = this.leaf;
+        if (leaf && leaf._bibleProjectionMounting) return false;               // 正在挂载中
+        const proj = this.plugin && this.plugin.currentProjection;
+        if (proj && proj.projectionLeaf === leaf) return false;                 // 当前投影的宿主
+        if (!leaf || typeof leaf.detach !== 'function') return false;
+        try { leaf.detach(); } catch (e) { return false; }
+        return true;
+    }
+
     async onClose() {
         // 用户点了标签页的 ✕：直接关闭整个投影（而非搬回全屏继续投影）
         const proj = this.plugin && this.plugin.currentProjection;
@@ -8971,7 +9154,18 @@ class BibleSearchPlugin extends Plugin {
             const editingNote = ae && ae.isContentEditable && !this.currentTooltipProjector && !projOwnsScreen;
             // 输入法合成态（候选框开着，keyCode 229 / isComposing）同样放行，否则中文候选会被吃掉
             const composing = !!e.isComposing || e.keyCode === 229;
-            if (typingText || editingNote || composing) return;
+            // 经文投影已切成标签页、当前显示的却不是它时，Q/W/E 的语义是「把标签调回来」。
+            // 此时即便焦点落在 Hymns 面板等别的输入框里也必须生效，否则从 Hymns 标签按 QWE
+            // 会被 typingText 门禁整个吞掉，表现就是「按 QWE 切不回来」。
+            // 笔记正文编辑、输入法合成态、组合键，以及本插件检索框里的短拼输入仍一律让行。
+            const qweKey = e.key === 'q' || e.key === 'Q' || e.key === 'w' || e.key === 'W' ||
+                e.key === 'e' || e.key === 'E';
+            const projTabBehind = !!(this.currentProjection && this.currentProjection.projectionLeaf &&
+                !this.isProjectionTabActive(this.currentProjection));
+            const inBibleInput = !!(ae && ae.closest && ae.closest(
+                '.bible-search-input, .bible-proj-quick-search, .bible-inline-tooltip, .bible-tooltip-menu'));
+            const forceReveal = qweKey && projTabBehind && !inBibleInput;
+            if ((typingText && !forceReveal) || editingNote || composing) return;
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             // ⑤ 恢复本注解 / 串珠开关：裸字母 A（不按任何修饰键）即切换。
             //    与 Q/W/E 同理走插件自有监听 + 上下文门禁：焦点在输入框 / 笔记正文 / 输入法合成态时
@@ -8986,10 +9180,52 @@ class BibleSearchPlugin extends Plugin {
             else if (e.key === 'w' || e.key === 'W') mode = 'parallel';
             else if (e.key === 'e' || e.key === 'E') mode = 'mixed';
             if (!mode) return;
+            // 连投影实例都没有时（例如刚重启、或投影被关掉），先把可能残留的空白
+            //「经文投影」标签收掉，免得下面新建投影后又变成「空白标签 + 正常投影」两处。
+            if (!this.currentProjection) this.cleanupOrphanProjectionTabs();
+            // 标签页模式：必须在任何 revealLeaf 之前「快照」标签是否在后台。
+            // revealLeaf 会改写 activeLeaf / 标签头 is-active，事后再判断就会把
+            //「刚从别的标签调回来」误看成「一直在前台」，进而落到同键关闭把标签 detach 掉。
+            // 反过来，若简单规定「标签页模式永不关闭」，用户在投影标签里再按 q 也关不掉。
+            // 用快照把两种情形分开：后台只调回，前台同键照常关闭（q/w/e 各自对应自己的模式）。
+            const projTab = (this.currentProjection && this.currentProjection.projectionLeaf)
+                ? this.currentProjection : null;
+            const tabWasBehind = !!(projTab && !this.isProjectionTabActive(projTab));
+            const tabAction = this.resolveQweTabAction(projTab, mode, tabWasBehind);
+            // 后台标签先调回前台；⓪/① 两个优先级更高的分支仍需执行，故此处不 return。
+            if (tabAction === 'reveal') this.revealProjectionTab(projTab);
+            // ⓪ 跨插件联动：Hymns 诗歌投影在前台时，Q/W/E 一律表示「切回经文投影」。
+            // 已有本插件投影时通常由覆盖层的捕获监听先处理（switchBackFromHymns）并阻断传播；
+            // 这里负责「圣经投影根本没开」的场景——收起诗歌投影后打开对应模式的空投影。
+            if (isHymnsProjectionFront()) {
+                requestHymnsProjectionClose();
+                const cur = this.currentProjection;
+                if (cur) {
+                    if (cur.mode !== mode) cur.setMode(mode);
+                    const refocus = () => {
+                        if (!cur.overlay) return;
+                        const ae = document.activeElement;
+                        if (ae && ae.closest && ae.closest('.bible-proj-quick-search, .bible-proj-search-box')) return;
+                        cur.focusProjection(true);
+                    };
+                    refocus();
+                    try { if (typeof requestAnimationFrame === 'function') requestAnimationFrame(refocus); } catch (err) { /* 忽略 */ }
+                    try { setTimeout(refocus, 150); } catch (err) { /* 忽略 */ }
+                } else {
+                    const emptyProj = new BibleProjectionOverlay(this.app, this, [], mode, true);
+                    emptyProj.open();
+                }
+                return;
+            }
             // ① 经文弹窗打开时优先：等同点击弹窗里的「投影」按钮（会自动关闭弹窗）
             if (this.currentTooltipProjector) { this.currentTooltipProjector(mode); return; }
-            // ② 投影已开且正处在该模式：再按对应键关闭投影（同键切换为关闭）；
-            //    放在独占屏幕 / 界面可见等分支之前，对标签页 / 后台运行等所有「投影已存在」的情形统一生效
+            // ② 标签页模式的 QWE 动作在这里统一执行（用 tabAction 快照，不再实时判激活）：
+            //    后台 → 只调回 + 按需切模式；前台同模式 → 关闭（detach 宿主标签）；
+            //    前台异模式 → 原地切排版。已消费按键就不再往下走原有分派，
+            //    避免 openProjection 又新建一层投影覆盖 / 第二个标签页。
+            if (this.applyQweTabAction(projTab, mode, tabAction)) return;
+            // ②′ 走到这里说明不是标签页模式：投影已开且正处在该模式时，再按对应键关闭投影。
+            //    （同键切换为关闭；放在独占屏幕 / 界面可见等分支之前统一生效）
             if (this.currentProjection && this.currentProjection.mode === mode) {
                 this.currentProjection.close();
                 return;
@@ -9094,6 +9330,18 @@ class BibleSearchPlugin extends Plugin {
         for (const leaf of leaves) {
             try { leaf.detach(); } catch (e) {}
         }
+        // 投影标签页的内容是运行时生成的，插件重启后无法还原。卸载 / 退出时主动收掉，
+        // 否则 Obsidian 会把这个 view 类型存进 workspace，下次启动恢复出一个空白「经文投影」标签。
+        // 先摘掉宿主引用，避免 detach 触发 BibleProjectionView.onClose() 反向调用 close()。
+        try {
+            if (this.currentProjection && this.currentProjection.projectionLeaf) {
+                this.currentProjection.projectionLeaf = null;
+            }
+            const projLeaves = this.app.workspace.getLeavesOfType(BIBLE_PROJECTION_VIEW_TYPE) || [];
+            for (const leaf of projLeaves) {
+                try { leaf.detach(); } catch (e) {}
+            }
+        } catch (e) {}
         document.querySelectorAll('.bible-projection-fullscreen').forEach(el => el.remove());
     }
 
@@ -10532,6 +10780,87 @@ class BibleSearchPlugin extends Plugin {
         }
         if (last < src.length) this.appendHighlighted(frag, src.slice(last), keywords);
         container.appendChild(frag);
+    }
+
+    // Q/W/E 在「经文投影已切成标签页」时的动作决策（纯函数，便于回归测试）：
+    //   reveal —— 按键瞬间标签在后台：只调回，绝不关闭；
+    //   close  —— 标签已在前台且当前正是该模式：再按同键关闭（q/w/e 各管各的模式）；
+    //   mode   —— 标签已在前台但按了别的模式：原地切排版；
+    //   pass   —— 不是标签页模式：交回原有的全屏 / 侧边栏分派。
+    resolveQweTabAction(projTab, mode, tabWasBehind) {
+        if (!projTab) return 'pass';
+        if (tabWasBehind) return 'reveal';
+        if (projTab.mode === mode) return 'close';
+        return 'mode';
+    }
+
+    // 执行上面的决策；返回 true 表示按键已被标签页模式消费。
+    applyQweTabAction(projTab, mode, tabAction) {
+        if (!projTab || tabAction === 'pass') return false;
+        if (tabAction === 'reveal') {
+            if (projTab.mode !== mode) projTab.setMode(mode);
+            return true;
+        }
+        if (tabAction === 'close') { projTab.close(); return true; }
+        if (tabAction === 'mode') { projTab.setMode(mode); return true; }
+        return false;
+    }
+
+    // 经文投影切成标签页后，判断那个标签是否正是当前显示的标签。
+    // ⚠️ 绝不能用 overlay / containerEl 的 offsetWidth 判断：Obsidian 的非激活标签仍留在
+    // DOM 里且保有布局尺寸，背景标签会被误判成「正显示」，QWE 就会落到同键关闭把标签 detach 掉。
+    // 只认 workspace 的活动 leaf；activeLeaf 明确指向别的标签时立即判定为后台。
+    // 完全拿不到信息时按「后台」处理——宁可多调回一次，也绝不误关标签页。
+    isProjectionTabActive(proj) {
+        const leaf = proj && proj.projectionLeaf;
+        if (!leaf) return true;
+        const ws = this.app && this.app.workspace;
+        if (!ws) return false;
+        // ① 标签头的 is-active 由 Obsidian 自己同步维护，是判断「当前显示哪个标签」最可靠的信号。
+        //    workspace.activeLeaf 在部分版本里是废弃字段，切换标签后可能滞后不更新，
+        //    导致在 Hymns / 笔记标签里按 QWE 时被误判成「投影标签已激活」而不去调回。
+        try {
+            const th = leaf.tabHeaderEl;
+            if (th && th.classList && typeof th.classList.contains === 'function') {
+                return th.classList.contains('is-active');
+            }
+        } catch (e) { /* 忽略 */ }
+        let al = null;
+        try { al = ws.activeLeaf; } catch (e) { /* 忽略 */ }
+        if (al) return al === leaf;
+        try {
+            if (typeof ws.getActiveViewOfType === 'function') {
+                const av = ws.getActiveViewOfType(BIBLE_PROJECTION_VIEW_TYPE);
+                return !!(av && av.leaf === leaf);
+            }
+        } catch (e) { /* 忽略 */ }
+        return false;
+    }
+
+    // 收掉「重启恢复出来、没有对应投影实例」的空白经文投影标签。
+    // 视图 onOpen 的自检是主力，这里是插件级兜底（按 QWE 重新投影之前的最后一道保险）。
+    cleanupOrphanProjectionTabs() {
+        const ws = this.app && this.app.workspace;
+        if (!ws || typeof ws.getLeavesOfType !== 'function') return 0;
+        let n = 0;
+        try {
+            const leaves = ws.getLeavesOfType(BIBLE_PROJECTION_VIEW_TYPE) || [];
+            for (const l of leaves) {
+                try { l.detach(); n++; } catch (e) { /* 忽略 */ }
+            }
+        } catch (e) { /* 忽略 */ }
+        return n;
+    }
+
+    // 把投影标签页调回前台：只激活，不重建、不关闭
+    revealProjectionTab(proj) {
+        const leaf = proj && proj.projectionLeaf;
+        const ws = this.app && this.app.workspace;
+        if (!leaf || !ws) return;
+        try {
+            if (typeof ws.revealLeaf === 'function') ws.revealLeaf(leaf);
+            else if (typeof ws.setActiveLeaf === 'function') ws.setActiveLeaf(leaf, { focus: false });
+        } catch (e) { /* 忽略 */ }
     }
 
     async activateSearchView() {
