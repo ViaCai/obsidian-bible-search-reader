@@ -874,6 +874,18 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '5.1.0': `## [5.1.0] - 2026-11-13
+
+### 新增
+- **投影左上角能点开模式菜单**：逐节 / 并列 / 混合，以及诗歌全屏 / 诗歌窗口，点一下就切，和按 Q / W / E / O / P 一样。当前模式会高亮，点它不会关掉投影。
+- **插件一启用，侧边栏就有检索面板**：不用再去点功能区图标；不顶掉 Hymns 的面板，也不抢笔记焦点。设置里可以关掉。
+- **Esc 可以关投影**：菜单开着先收菜单；全屏投影先退回窗口，再按一次才关闭。
+- **没装 Hymns 会讲清楚**：菜单里的诗歌项置灰并写明原因，提示显示在投影画面内，不会被全屏盖住。
+
+### 修复
+- **禁用插件终于真的关掉了**：以前禁用后只剩没样式的空壳，必须重启 Obsidian 才能重新启用；现在「禁用 → 立即重新启用」都正常。
+- **手机投影顶部不再被状态栏 / 灵动岛挡住**；移动端自动隐藏不支持的全屏投影入口，菜单里也不再列诗歌全屏。
+- **来回切换投影模式后 Esc 偶尔失灵**、点菜单切模式误关投影等问题一并修好。`,
     '5.0.1': `## [5.0.1] - 2026-11-12
 
 ### 新增
@@ -2093,6 +2105,15 @@ class BibleSettingTab extends PluginSettingTab {
         // ===== 板块：检索与阅读交互 =====
         containerEl.createEl('h3', { text: '检索与阅读', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
         new Setting(containerEl)
+            .setName('启动时自动打开圣经检索侧边栏')
+            .setDesc('安装 / 启用插件后自动在右侧边栏生成「圣经检索」面板，不必再点功能区图标。已有的面板或折叠侧边栏里的面板不会被重复创建；右侧栏被其它插件占用时会另开一个标签，不顶掉对方。关闭后仍可用功能区图标或命令手动打开。')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.autoOpenSidebar !== false)
+                .onChange(async (value) => {
+                    this.plugin.settings.autoOpenSidebar = value;
+                    await this.plugin.saveSettings();
+                }));
+        new Setting(containerEl)
             .setName('左右滑动翻页')
             .setDesc('触屏设备上，在检索结果或经文阅读区左滑翻到下一页 / 下一章，右滑翻到上一页 / 上一章，可跨书卷连续翻。上下滚动、点击与文字选择不受影响；不需要时可关闭。')
             .addToggle(toggle => toggle
@@ -2695,6 +2716,21 @@ class BibleSearchEngine {
     }
 }
 
+// ==================== 移动端环境判定 ====================
+// Obsidian 移动端（iOS / Android）没有元素级 Fullscreen API，Hymns 也不提供「诗歌全屏」。
+// 投影里的「全屏投影」按钮、提示条中的 D 说明、模式菜单中的「诗歌全屏」都要按平台裁掉，
+// 免得摆一个点不动、按下去也没反应的入口；桌面端窗口再窄仍按桌面处理（全屏 API 可用）。
+function isMobileDeviceEnv() {
+    try {
+        if (typeof Platform !== 'undefined' && Platform && Platform.isMobile) return true;
+        if (typeof document !== 'undefined' && document.body && document.body.classList &&
+            document.body.classList.contains('is-mobile')) return true;
+        if (typeof navigator !== 'undefined' && navigator.userAgent &&
+            /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
+    } catch (err) { /* 忽略 */ }
+    return false;
+}
+
 // ==================== 与 Hymns 插件的投影联动 ====================
 // 两个插件互不引用、加载顺序也不确定，因此只靠「DOM 标记 + 自定义事件」协同：
 //   · Hymns 的投影层固定带 .hymns-proj 类；只要该图层还在 DOM 里，就认为诗歌投影在前台。
@@ -2704,6 +2740,98 @@ class BibleSearchEngine {
 // 反过来，本插件把 O/P 完全让给 Hymns（全屏投影改用 D），因此诗歌投影的打开/切换
 // 仍由 Hymns 自己的快捷键处理，本文件不注册任何 O/P 监听。
 const HYMNS_PROJECTION_SELECTOR = '.hymns-proj';
+const HYMNS_REQUIRED_NOTICE = '请先安装并开启 Hymns 插件，才能使用诗歌投影';
+const HYMNS_REQUIRED_HINT = '需安装并开启 Hymns 插件';
+
+// 投影在前台时，Obsidian 的 Notice 挂在 body 上，会被进入 top layer 的全屏投影整块盖住：
+// 用户点了置灰的诗歌项却什么提示也看不到。因此优先把提示渲染进投影覆盖层内部，
+// 只有找不到投影层（例如还没开投影就在笔记里按 O/P）才退回系统 Notice。
+let _hymnsNoticeTimer = null;
+function showHymnsRequiredNotice(fromEl, forceNotice) {
+    try {
+        const doc = (typeof document !== 'undefined') ? document : null;
+        let overlay = null;
+        // 投影标签在后台、或压根没开投影时，提示要落在系统通知里，
+        // 否则写进一个用户看不见的投影层，等于没提示。
+        if (!forceNotice) {
+            if (fromEl && typeof fromEl.closest === 'function') {
+                overlay = fromEl.closest('.bible-projection-fullscreen');
+            }
+            if (!overlay && doc && typeof doc.querySelector === 'function') {
+                overlay = doc.querySelector('.bible-projection-fullscreen');
+            }
+        }
+        if (overlay && typeof overlay.appendChild === 'function' &&
+            typeof overlay.querySelector === 'function' && doc && doc.createElement) {
+            let box = overlay.querySelector('.bible-proj-inline-notice');
+            if (!box) {
+                box = doc.createElement('div');
+                box.className = 'bible-proj-inline-notice';
+                overlay.appendChild(box);
+            }
+            box.textContent = HYMNS_REQUIRED_NOTICE;
+            if (box.classList && typeof box.classList.add === 'function') box.classList.add('is-visible');
+            // 菜单里那行常驻说明同时闪一下，把「为什么点不动」和置灰项关联起来
+            const hint = overlay.querySelector('.bible-proj-mode-menu-hint');
+            if (hint && hint.classList && typeof hint.classList.add === 'function') {
+                hint.classList.add('is-alert');
+                setTimeout(() => { try { hint.classList.remove('is-alert'); } catch (err) { /* 忽略 */ } }, 1600);
+            }
+            if (typeof clearTimeout === 'function') clearTimeout(_hymnsNoticeTimer);
+            _hymnsNoticeTimer = setTimeout(() => {
+                try { if (box.classList) box.classList.remove('is-visible'); } catch (err) { /* 忽略 */ }
+            }, 3200);
+            return;
+        }
+    } catch (err) { /* 落到系统 Notice */ }
+    try { new Notice(HYMNS_REQUIRED_NOTICE); } catch (err) { /* 忽略 */ }
+}
+
+// Hymns 是否已安装并启用：只读 Obsidian 插件管理器的状态，不 import 对方代码。
+// 诗歌投影层已经在 DOM 里时也直接算可用（覆盖插件实例尚未注入的极端情况）。
+function isHymnsPluginReady(app) {
+    try {
+        const doc = (typeof document !== 'undefined') ? document : null;
+        if (doc && typeof doc.querySelector === 'function' && doc.querySelector(HYMNS_PROJECTION_SELECTOR)) return true;
+        const pm = app && app.plugins;
+        if (!pm) return false;
+        if (pm.enabledPlugins && typeof pm.enabledPlugins.has === 'function' && pm.enabledPlugins.has('hymns')) return true;
+        return !!(pm.plugins && pm.plugins['hymns']);
+    } catch (err) { return false; }
+}
+
+// 把「点菜单」变成「按一次快捷键」：合成 keydown 派发给 document，让 Q/W/E 走本插件
+// 既有的统一分派、O/P 走 Hymns 自己的全局监听，两边逻辑都不必重复实现一遍。
+// 派发前先把焦点从输入框移开，否则投影搜索框的打字门禁会把快捷键当普通字母吞掉。
+function dispatchProjectionHotkey(key) {
+    const doc = (typeof document !== 'undefined') ? document : null;
+    if (!doc || typeof doc.dispatchEvent !== 'function') return;
+    try {
+        const ae = doc.activeElement;
+        if (ae && typeof ae.blur === 'function' && ae.closest &&
+            ae.closest('input, textarea, select, [contenteditable="true"]')) ae.blur();
+    } catch (err) { /* 忽略：环境不支持查焦点 */ }
+    let ev = null;
+    try {
+        if (typeof KeyboardEvent === 'function') {
+            ev = new KeyboardEvent('keydown', { key: key, bubbles: true, cancelable: true });
+        }
+    } catch (err) { ev = null; }
+    if (!ev) {
+        // 老 WebView / 测试环境没有 KeyboardEvent 构造器时，用等价的普通事件对象
+        ev = { type: 'keydown', key: key, bubbles: true, cancelable: true,
+               target: doc.body || doc, isComposing: false, keyCode: 0, ctrlKey: false,
+               metaKey: false, altKey: false, shiftKey: false, defaultPrevented: false,
+               preventDefault() {}, stopPropagation() {} };
+    }
+    // 必须派发到 body，而不是 document：真实按键的 target 是页面元素，document 上的
+    // 捕获监听（投影层消费 Q/W/E、Hymns 消费 O/P）一旦 stopPropagation，冒泡阶段的
+    // 插件级监听就不会再执行；若直接派发到 document，两边都成了 at-target 的同节点监听，
+    // stopPropagation 拦不住彼此，Q/W/E 会执行两遍（刚切完模式又被当成同键关闭）。
+    // 测试环境没有 body.dispatchEvent 时退回 document，仍能把按键交给探针验证。
+    const target = (doc.body && typeof doc.body.dispatchEvent === 'function') ? doc.body : doc;
+    try { target.dispatchEvent(ev); } catch (err) { /* 忽略 */ }
+}
 
 function isHymnsProjectionFront() {
     try {
@@ -2750,6 +2878,9 @@ function requestHymnsProjectionClose() {
 }
 
 // ==================== 投影覆盖层（支持多版本）====================
+// 所有「活着」的投影实例。插件被关闭时 currentProjection 只指向最后一个，
+// 但每个投影都在 document 上挂了捕获阶段监听，漏关一个就会出现「插件关了快捷键还在」。
+const LIVE_BIBLE_PROJECTIONS = new Set();
 class BibleProjectionOverlay {
     constructor(app, plugin, results, mode, showSource) {
         this.app = app;
@@ -2811,6 +2942,7 @@ class BibleProjectionOverlay {
     }
 
     open() {
+        LIVE_BIBLE_PROJECTIONS.add(this);
         this.overlay = document.createElement('div');
         this.overlay.className = 'bible-projection-fullscreen';
         this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:#1a1a2e;color:#fff;';
@@ -2824,8 +2956,23 @@ class BibleProjectionOverlay {
         topBar.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:6px 16px;background:rgba(0,0,0,0.2);border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;-webkit-app-region:drag;';
         const topRow = topBar.createDiv({ cls: 'bible-proj-toprow' });
         topRow.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;';
-        const topLeft = topRow.createDiv();
-        topLeft.createEl('span', { cls: 'bible-proj-mode-name', text: this.getModeName() });
+        const topLeft = topRow.createDiv({ cls: 'bible-proj-mode-wrap' });
+        const modeBtn = topLeft.createEl('button', {
+            cls: 'bible-proj-mode-name bible-proj-mode-btn',
+            text: this.getModeName(),
+            attr: { type: 'button', title: isMobileDeviceEnv()
+                ? '点击选择投影模式（Q / W / E · P）'
+                : '点击选择投影模式（Q / W / E · O / P）' }
+        });
+        // 左上角模式名本身就是入口：点开菜单选经文 / 诗歌投影模式，等价于按对应快捷键。
+        // 菜单必须挂在本覆盖层内部——桌面全屏时覆盖层进入 top layer，挂到 body 的浮层会被盖住。
+        modeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const existing = topLeft.querySelector('.bible-proj-mode-menu');
+            if (existing) { existing.remove(); return; }
+            this.showModeMenu(topLeft);
+        });
         // 常驻快速搜索框：输入经文出处 / 关键词 / 短拼后按 Enter（或点「投影」）直接替换投影内容
         const quick = topRow.createDiv({ cls: 'bible-proj-quick-search' });
         const qsInput = quick.createEl('input', {
@@ -2839,9 +2986,10 @@ class BibleProjectionOverlay {
         const topRight = topRow.createDiv();
         topRight.createEl('span', { cls: 'bible-proj-page-num', text: (this.slides.length ? (this.currentSlide + 1) : 0) + '/' + this.slides.length + '页' });
         const hintRow = topBar.createDiv({ cls: 'bible-proj-tophint' });
-        // D 键说明随全屏状态变化（全屏时提示「退出全屏投影」），由 updateDesktopBtn() 同步
+        // D 键说明随全屏状态变化（全屏时提示「退出全屏投影」），由 updateDesktopBtn() 同步；
+        // 移动端没有全屏能力，buildHintText() 会整段省掉 D。
         this.hintRow = hintRow;
-        hintRow.setText('← → 翻页 · / 搜索 · Q 逐节 · W 并列 · E 混合 · S 检索 · D 全屏投影 · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭');
+        hintRow.setText(this.buildHintText(false));
         this.overlay.appendChild(topBar);
         this.setupQuickSearch(qsInput, qsClear, qsGo);
 
@@ -2884,6 +3032,9 @@ class BibleProjectionOverlay {
         setIcon(themeBtn, this.isDark ? 'moon' : 'sun');
         const desktopFullBtn = addToolBtn('⛶', 'toggle-desktop-full', '全屏投影（D）', 'bible-proj-tool-emoji');
         this.desktopFullBtn = desktopFullBtn;
+        // 移动端没有元素级 Fullscreen API：创建后直接隐藏，DOM 结构保持稳定，
+        // updateDesktopBtn() / 事件委托仍照常工作（CSS 里另有一层 body.is-mobile 兜底）。
+        if (isMobileDeviceEnv()) desktopFullBtn.style.display = 'none';
         const searchBtn = addToolBtn('', 'open-search', '打开检索窗口（S）', 'bible-proj-tool-icon');
         setIcon(searchBtn, 'search');
         addToolBtn('✕', 'close', '关闭投影', 'bible-proj-tool-emoji');
@@ -3170,6 +3321,17 @@ class BibleProjectionOverlay {
                 }
                 return false;
             }
+            // ESC 关闭投影：必须放在下面所有会提前 return 的打字 / 分屏门禁之前。
+            // 旧实现把 ESC 排在按键分派的最末尾，检索分屏、标签页模式、焦点落在投影按钮
+            // 或笔记编辑器时会被前面的分支放行，表现就是「按 ESC 关不掉投影」。
+            if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229) {
+                const openMenu = this.overlay && typeof this.overlay.querySelector === 'function'
+                    ? this.overlay.querySelector('.bible-proj-mode-menu') : null;
+                // 菜单开着时第一次 ESC 只收菜单（与弹出层习惯一致），再按一次才关投影
+                if (openMenu) { openMenu.remove(); return true; }
+                if (!typingTarget) { this.closeByEscape(); return true; }
+                // 输入框里按 ESC 沿用下面的「先退出输入态」逃生通道，不直接关投影
+            }
             // 确定键：焦点不在顶部搜索框时把焦点交给它，方便直接输入出处投影。
             // 已在搜索框聚焦的情况上面已放行（Enter 走「确认投影 / 选补全候选」）；
             // 投影内其它输入框、浮层、投影内按钮也让行，保留各自的键盘行为。
@@ -3219,7 +3381,7 @@ class BibleProjectionOverlay {
             // 空格选中），无论焦点此时落在投影还是搜索框都能操控侧边栏；反过来，焦点在搜索输入框里时
             // 这些字母 / 空格要能正常打字，故输入框聚焦时不拦截（交给主视图 onKeyDown 同样的让行规则）。
             // 否则这些键会被投影吃掉翻页，或主视图因 hasBlockingOverlay 提前 return 而全哑。
-            if (this.isSearchMode && !this.getFullscreenElement()) {
+            if (this.isSearchMode && !this.isOwnFullscreenElement()) {
                 const ae2 = document.activeElement;
                 const inInput = !!(ae2 && ae2.tagName &&
                     (ae2.tagName === 'INPUT' || ae2.tagName === 'TEXTAREA' || ae2.isContentEditable));
@@ -3252,10 +3414,7 @@ class BibleProjectionOverlay {
             if (e.key === 'ArrowRight' || e.key === ' ') this.nextSlide();
             else if (e.key === 'ArrowLeft') this.prevSlide();
             else if (e.key === 'Escape') {
-                // 处于桌面全屏时，ESC 先退出全屏（浏览器也会自行退出），不能顺带把投影关掉
-                if (this.getFullscreenElement()) { this.exitDesktopFullscreen(); return true; }
-                if (Date.now() - (this._lastFullscreenExitAt || 0) < 800) return true;
-                this.close();
+                this.closeByEscape();
             }
             else if (e.key === '+' || e.key === '=') { this.fontSize += 4; this.updateFontSize(); }
             else if (e.key === '-') { this.fontSize = Math.max(16, this.fontSize - 4); this.updateFontSize(); }
@@ -3321,8 +3480,13 @@ class BibleProjectionOverlay {
         };
         document.addEventListener('focusin', this._focusGuard, true);
         // 监听全屏状态变化，同步按钮高亮；离开全屏时记时间戳，避免 ESC 顺带关闭投影
+        this._ownFullscreenActive = false;
         this._fsChangeHandler = () => {
-            if (!this.getFullscreenElement()) this._lastFullscreenExitAt = Date.now();
+            const own = !!this.isOwnFullscreenElement();
+            // 别的插件（Hymns）进出整屏也会触发 fullscreenchange：只有「本投影自己」刚退出
+            // 全屏才记防抖时间，否则来回切投影后 ESC 会被 800ms 静默期整段吞掉。
+            if (!own && this._ownFullscreenActive) this._lastFullscreenExitAt = Date.now();
+            this._ownFullscreenActive = own;
             this.updateDesktopBtn();
         };
         document.addEventListener('fullscreenchange', this._fsChangeHandler);
@@ -3836,6 +4000,7 @@ class BibleProjectionOverlay {
         // 幂等保护：detach 宿主标签页会再次触发 BibleProjectionView.onClose → close()，防止重复清理
         if (this._closed) return;
         this._closed = true;
+        LIVE_BIBLE_PROJECTIONS.delete(this);
         // 取消尚未触发的实时投影，并让进行中的异步检索作废，避免关掉投影后又刷新画面
         this.invalidateQuickSearch();
         // 顶部搜索框的补全下拉挂在 body 上，不随 overlay 一起移除，必须单独销毁
@@ -3845,8 +4010,9 @@ class BibleProjectionOverlay {
         }
         this.quickSearchInput = null;
         this.unwatchSidebar();
-        // 处于桌面全屏时先退出全屏（否则关闭投影后 Obsidian 会一直停在全屏状态）
-        if (this.getFullscreenElement && this.getFullscreenElement()) this.exitDesktopFullscreen();
+        // 处于桌面全屏时先退出全屏（否则关闭投影后 Obsidian 会一直停在全屏状态）；
+        // 只退本投影自己的整屏，别把 Hymns 诗歌投影的整屏顺手关掉
+        if (this.isOwnFullscreenElement && this.isOwnFullscreenElement()) this.exitDesktopFullscreen();
         if (this._fsChangeHandler) {
             document.removeEventListener('fullscreenchange', this._fsChangeHandler);
             document.removeEventListener('webkitfullscreenchange', this._fsChangeHandler);
@@ -3856,10 +4022,14 @@ class BibleProjectionOverlay {
         if (this.projectionLeaf) {
             const leaf = this.projectionLeaf;
             this.projectionLeaf = null;
-            try { leaf.detach(); } catch (e) { /* 忽略 */ }
+            try {
+                const r = leaf.detach();
+                // detach() 返回 Promise：吞掉 rejection，否则会干扰插件禁用流程
+                if (r && typeof r.catch === 'function') r.catch(() => { /* 忽略 */ });
+            } catch (e) { /* 忽略 */ }
         }
         if (this.overlay) {
-            this.overlay.remove();
+            try { this.overlay.remove(); } catch (e) { /* 忽略 */ }
             this.overlay = null;
         }
         // 注意：removeEventListener 的 capture 必须与注册时一致，否则监听残留会导致关闭后快捷键仍生效
@@ -3915,10 +4085,10 @@ class BibleProjectionOverlay {
     // 投影是否「独占屏幕」：全屏覆盖层，或已扩展到桌面全屏。
     // 此时整个屏幕都是投影，键盘应当归投影；标签页模式（投影只占一个标签）则不是。
     ownsScreen() {
-        if (this.projectionLeaf) return !!this.getFullscreenElement();
+        if (this.projectionLeaf) return !!this.isOwnFullscreenElement();
         // 非标签页却处于检索模式＝走「投影收窄让出侧边栏」的回退路径，
         // 此时侧边栏搜索框是可见可打字的，键盘不能全给投影
-        if (this.isSearchMode) return !!this.getFullscreenElement();
+        if (this.isSearchMode) return !!this.isOwnFullscreenElement();
         return true;
     }
 
@@ -3972,9 +4142,21 @@ class BibleProjectionOverlay {
         return document.fullscreenElement || document.webkitFullscreenElement || null;
     }
 
+    // document.fullscreenElement 是全局的：Hymns 诗歌投影进出整屏也会触发本插件的
+    // fullscreenchange。只认「本投影自己」占着整屏，否则来回切投影后 ESC 会被
+    // 误判成「先退全屏」或撞进 800ms 静默期，表现就是偶尔关不掉投影。
+    isOwnFullscreenElement() {
+        const fs = this.getFullscreenElement();
+        if (!fs || !this.overlay) return false;
+        return fs === this.overlay ||
+            (typeof this.overlay.contains === 'function' && this.overlay.contains(fs));
+    }
+
     toggleDesktopFullscreen() {
+        // 按钮在移动端已隐藏；外接键盘按 D 时也别去调一个必然失败的 API，给一句明确说明。
+        if (isMobileDeviceEnv()) { new Notice('移动端不支持全屏投影'); return; }
         try {
-            if (this.getFullscreenElement()) { this.exitDesktopFullscreen(); return; }
+            if (this.isOwnFullscreenElement()) { this.exitDesktopFullscreen(); return; }
             const el = this.overlay || document.documentElement;
             const fn = el && (el.requestFullscreen || el.webkitRequestFullscreen);
             if (!fn) { new Notice('当前环境不支持全屏投影'); return; }
@@ -3994,25 +4176,31 @@ class BibleProjectionOverlay {
         try {
             const fn = document.exitFullscreen || document.webkitExitFullscreen;
             if (!fn) return;
+            this._lastFullscreenExitAt = Date.now();
             const p = fn.call(document);
             if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ });
             this.updateDesktopBtn();
         } catch (e) { /* 忽略 */ }
     }
 
+    // 顶部快捷键提示：移动端去掉 D（元素级全屏在 iOS / Android 上不可用），其余按键不变。
+    buildHintText(on) {
+        const d = isMobileDeviceEnv() ? '' : ' · ' + (on ? 'D 退出全屏投影' : 'D 全屏投影');
+        return '← → 翻页 · / 搜索 · Q 逐节 · W 并列 · E 混合 · S 检索' + d +
+            ' · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭';
+    }
+
     updateDesktopBtn() {
-        const on = !!this.getFullscreenElement();
+        const on = !!this.isOwnFullscreenElement();
         const btn = this.desktopFullBtn || (this.overlay && this.overlay.querySelector('[data-action="toggle-desktop-full"]'));
         if (btn) {
             btn.classList.toggle('active', on);
             btn.title = on ? '退出全屏投影（D）' : '全屏投影（D）';
         }
-        // 顶部快捷键提示与按钮说明保持同步：全屏时 D 的作用变成「退出全屏投影」
+        // 顶部快捷键提示与按钮说明保持同步：全屏时 D 的作用变成「退出全屏投影」，移动端不列 D
         const hint = this.hintRow || (this.overlay && this.overlay.querySelector('.bible-proj-tophint'));
         if (hint) {
-            const text = '← → 翻页 · / 搜索 · Q 逐节 · W 并列 · E 混合 · S 检索 · ' +
-                (on ? 'D 退出全屏投影' : 'D 全屏投影') +
-                ' · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭';
+            const text = this.buildHintText(on);
             if (typeof hint.setText === 'function') hint.setText(text);
             else hint.textContent = text;
         }
@@ -4302,6 +4490,97 @@ class BibleProjectionOverlay {
         }
     }
 
+    // ESC 专用关闭入口：handleKey 前置分支与末尾分派共用，避免两处语义走偏。
+    // 桌面整屏时第一次 ESC 只退出全屏（浏览器自己也会退出），刚退出全屏的 800ms 内
+    // 忽略同一次按键带来的重复事件，之后才真正关闭投影。
+    closeByEscape() {
+        // 只有本投影自己占着整屏时，第一次 ESC 才先退全屏；别的插件的全屏不该由我们接管
+        if (this.isOwnFullscreenElement()) { this.exitDesktopFullscreen(); return; }
+        if (Date.now() - (this._lastFullscreenExitAt || 0) < 800) return;
+        this.close();
+    }
+
+    // 左上角模式名 → 投影模式选择菜单。经文组（Q/W/E）与诗歌组（O/P）用分隔线 + 分组标题隔开；
+    // Hymns 未安装 / 未开启时诗歌组置灰、分组下写明原因，点击给出投影内可见的提示。
+    showModeMenu(anchorEl) {
+        const overlay = this.overlay;
+        if (!overlay || !anchorEl) return null;
+        const prev = overlay.querySelector('.bible-proj-mode-menu');
+        if (prev) prev.remove();
+        const menu = document.createElement('div');
+        menu.className = 'bible-proj-mode-menu';
+        const ready = isHymnsPluginReady(this.app);
+        const addTitle = (text) => {
+            const t = document.createElement('div');
+            t.className = 'bible-proj-mode-menu-title';
+            t.textContent = text;
+            menu.appendChild(t);
+        };
+        const addItem = (label, key, opts) => {
+            const o = opts || {};
+            const row = document.createElement('div');
+            row.className = 'bible-proj-mode-menu-item' +
+                (o.disabled ? ' is-disabled' : '') + (o.current ? ' is-current' : '');
+            row.setAttribute('data-key', key);
+            const name = document.createElement('span');
+            name.className = 'bible-proj-mode-menu-label';
+            name.textContent = label;
+            const kbd = document.createElement('span');
+            kbd.className = 'bible-proj-mode-menu-key';
+            kbd.textContent = key.toUpperCase();
+            row.appendChild(name);
+            row.appendChild(kbd);
+            row.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Hymns 不可用时保持菜单打开，提示直接显示在投影层内（body 上的 Notice 会被盖住）
+                if (o.disabled) { showHymnsRequiredNotice(menu); return; }
+                menu.remove();
+                // 点当前模式＝无操作：以前等价于按同键，会把投影直接关掉。
+                // 关闭投影统一交给 ESC / 投影标签的 ✕ / 快捷键同键。
+                if (o.current) return;
+                dispatchProjectionHotkey(key);
+            });
+            menu.appendChild(row);
+            return row;
+        };
+        addTitle('经文投影');
+        addItem('逐节投影', 'q', { current: this.mode === 'focus' });
+        addItem('并列投影', 'w', { current: this.mode === 'parallel' });
+        addItem('混合投影', 'e', { current: this.mode === 'mixed' });
+        const divider = document.createElement('div');
+        divider.className = 'bible-proj-mode-menu-divider';
+        menu.appendChild(divider);
+        addTitle('诗歌投影');
+        // 未安装 / 未开启 Hymns 时，在分组标题下直接写清原因，不必等点击才发现点不动
+        if (!ready) {
+            const hint = document.createElement('div');
+            hint.className = 'bible-proj-mode-menu-hint';
+            hint.textContent = HYMNS_REQUIRED_HINT;
+            menu.appendChild(hint);
+        }
+        // 移动端没有全屏投影能力，Hymns 的「诗歌全屏」也用不了：只列出「诗歌窗口」
+        if (!isMobileDeviceEnv()) addItem('诗歌全屏', 'o', { disabled: !ready });
+        addItem('诗歌窗口', 'p', { disabled: !ready });
+        anchorEl.appendChild(menu);
+        // 点菜单以外的地方收起（延后一拍，避免本次 click 立刻把自己关掉）
+        setTimeout(() => {
+            const onDoc = (ev) => {
+                if (!menu.parentNode) {
+                    try { document.removeEventListener('click', onDoc, true); } catch (err) { /* 忽略 */ }
+                    return;
+                }
+                const t = ev && ev.target;
+                if (t && menu.contains(t)) return;
+                if (t && anchorEl.contains && anchorEl.contains(t)) return;
+                menu.remove();
+                try { document.removeEventListener('click', onDoc, true); } catch (err) { /* 忽略 */ }
+            };
+            try { document.addEventListener('click', onDoc, true); } catch (err) { /* 忽略 */ }
+        }, 0);
+        return menu;
+    }
+
     // 在投影进行中，用快捷键即时切换投影模式（逐节/并列/混合），复用当前选中内容
     setMode(mode) {
         if (!mode || mode === this.mode) return;
@@ -4429,13 +4708,18 @@ class BibleProjectionView extends ItemView {
     }
 
     async onClose() {
-        // 用户点了标签页的 ✕：直接关闭整个投影（而非搬回全屏继续投影）
-        const proj = this.plugin && this.plugin.currentProjection;
-        if (proj && proj.projectionLeaf === this.leaf) {
-            // 标签页本来就在关闭流程中，先摘掉引用，避免 close() 里重复 detach
-            proj.projectionLeaf = null;
-            proj.close();
-        }
+        // ⚠️ 整个 onClose 不能抛：async 函数抛错会变成 rejected Promise，
+        // leaf.detach() 内部 await 它，进而让 Obsidian 的 disablePlugin 失败并弹「无法禁用插件」。
+        try {
+            try { if (this.plugin && this.plugin._liveViewRefs) this.plugin._liveViewRefs.delete(this); } catch (e) { /* 忽略 */ }
+            // 用户点了标签页的 ✕：直接关闭整个投影（而非搬回全屏继续投影）
+            const proj = this.plugin && this.plugin.currentProjection;
+            if (proj && proj.projectionLeaf === this.leaf) {
+                // 标签页本来就在关闭流程中，先摘掉引用，避免 close() 里重复 detach
+                proj.projectionLeaf = null;
+                proj.close();
+            }
+        } catch (e) { /* 忽略：卸载期间的异常不能让 detach() 的 Promise reject */ }
     }
 }
 
@@ -4509,62 +4793,69 @@ class BibleSearchView extends ItemView {
         this.setupKeyboardNavigation();
     }
     async onClose() {
-        if (typeof this.destroyAbbrSuggestion === 'function') this.destroyAbbrSuggestion();
-        if (this._swipeHandlers) {
-            const h = this._swipeHandlers;
-            h.host.removeEventListener('touchstart', h.onStart);
-            h.host.removeEventListener('touchmove', h.onMove);
-            h.host.removeEventListener('touchend', h.onEnd);
-            h.host.removeEventListener('touchcancel', h.onCancel);
-            this._swipeHandlers = null;
-        }
-        if (this._pointerHandlers) {
-            const h = this._pointerHandlers;
-            h.host.removeEventListener('pointerdown', h.onPointerDown);
-            h.host.removeEventListener('pointermove', h.onPointerMove);
-            h.host.removeEventListener('pointerup', h.onPointerUp);
-            h.host.removeEventListener('pointercancel', h.onPointerCancel);
-            h.host.removeEventListener('click', h.onClickCapture, true);
-            h.host.removeEventListener('wheel', h.onWheel);
-            if (typeof h.detachWindow === 'function') h.detachWindow();
-            this._pointerHandlers = null;
-        }
-        if (this._keyboardHandlers) {
-            const h = this._keyboardHandlers;
-            h.host.removeEventListener('pointerdown', h.onPointerDown);
-            h.host.removeEventListener('click', h.onClick);
-            h.host.removeEventListener('keydown', h.onKeyDown);
-            this._keyboardHandlers = null;
-        }
-        if (this._scrollCursorHandlers) {
-            const h = this._scrollCursorHandlers;
-            h.cancel();
-            h.areas.forEach(a => a.removeEventListener('scroll', h.onScroll));
-            this._scrollCursorHandlers = null;
-        }
-        if (this._tabResizeObserver) {
-            this._tabResizeObserver.disconnect();
-            this._tabResizeObserver = null;
-        }
-        if (this._tabResizeHandler) {
-            window.removeEventListener('resize', this._tabResizeHandler);
-            this._tabResizeHandler = null;
-        }
-        if (this._tabCompactRaf && typeof cancelAnimationFrame === 'function') {
-            cancelAnimationFrame(this._tabCompactRaf);
-            this._tabCompactRaf = null;
-        }
-        if (this._tabBtnRefreshHandler) {
-            if (this.container && typeof this.container.removeEventListener === 'function') {
-                this.container.removeEventListener('focusin', this._tabBtnRefreshHandler);
-                this.container.removeEventListener('input', this._tabBtnRefreshHandler);
-                this.container.removeEventListener('pointerdown', this._tabBtnRefreshHandler);
+        // 整个清理包一层：任何一项监听解绑抛错都不能让 Obsidian 的 leaf.detach() 半途中断，
+        // 否则插件被关闭后侧边栏会留下一个「没样式但还在」的空壳面板。
+        try {
+            if (typeof this.destroyAbbrSuggestion === 'function') this.destroyAbbrSuggestion();
+            if (this._swipeHandlers) {
+                const h = this._swipeHandlers;
+                h.host.removeEventListener('touchstart', h.onStart);
+                h.host.removeEventListener('touchmove', h.onMove);
+                h.host.removeEventListener('touchend', h.onEnd);
+                h.host.removeEventListener('touchcancel', h.onCancel);
+                this._swipeHandlers = null;
             }
-            this._tabBtnRefreshHandler = null;
-        }
-        if (this._tabBtnRefreshRaf && typeof cancelAnimationFrame === 'function') {
-            cancelAnimationFrame(this._tabBtnRefreshRaf);
-            this._tabBtnRefreshRaf = null;
+            if (this._pointerHandlers) {
+                const h = this._pointerHandlers;
+                h.host.removeEventListener('pointerdown', h.onPointerDown);
+                h.host.removeEventListener('pointermove', h.onPointerMove);
+                h.host.removeEventListener('pointerup', h.onPointerUp);
+                h.host.removeEventListener('pointercancel', h.onPointerCancel);
+                h.host.removeEventListener('click', h.onClickCapture, true);
+                h.host.removeEventListener('wheel', h.onWheel);
+                if (typeof h.detachWindow === 'function') h.detachWindow();
+                this._pointerHandlers = null;
+            }
+            if (this._keyboardHandlers) {
+                const h = this._keyboardHandlers;
+                h.host.removeEventListener('pointerdown', h.onPointerDown);
+                h.host.removeEventListener('click', h.onClick);
+                h.host.removeEventListener('keydown', h.onKeyDown);
+                this._keyboardHandlers = null;
+            }
+            if (this._scrollCursorHandlers) {
+                const h = this._scrollCursorHandlers;
+                h.cancel();
+                h.areas.forEach(a => a.removeEventListener('scroll', h.onScroll));
+                this._scrollCursorHandlers = null;
+            }
+            if (this._tabResizeObserver) {
+                this._tabResizeObserver.disconnect();
+                this._tabResizeObserver = null;
+            }
+            if (this._tabResizeHandler) {
+                window.removeEventListener('resize', this._tabResizeHandler);
+                this._tabResizeHandler = null;
+            }
+            if (this._tabCompactRaf && typeof cancelAnimationFrame === 'function') {
+                cancelAnimationFrame(this._tabCompactRaf);
+                this._tabCompactRaf = null;
+            }
+            if (this._tabBtnRefreshHandler) {
+                if (this.container && typeof this.container.removeEventListener === 'function') {
+                    this.container.removeEventListener('focusin', this._tabBtnRefreshHandler);
+                    this.container.removeEventListener('input', this._tabBtnRefreshHandler);
+                    this.container.removeEventListener('pointerdown', this._tabBtnRefreshHandler);
+                }
+                this._tabBtnRefreshHandler = null;
+            }
+            if (this._tabBtnRefreshRaf && typeof cancelAnimationFrame === 'function') {
+                cancelAnimationFrame(this._tabBtnRefreshRaf);
+                this._tabBtnRefreshRaf = null;
+            }
+        } catch (e) { /* 清理失败也不阻断 detach */ }
+        finally {
+            try { if (this.plugin && this.plugin._liveViewRefs) this.plugin._liveViewRefs.delete(this); } catch (e) { /* 忽略 */ }
         }
     }
 
@@ -5273,14 +5564,7 @@ class BibleSearchView extends ItemView {
 
     isMobileEnv() {
         if (this._forceMobile !== undefined) return !!this._forceMobile;
-        try {
-            if (typeof Platform !== 'undefined' && Platform && Platform.isMobile) return true;
-            if (typeof document !== 'undefined' && document.body && document.body.classList &&
-                document.body.classList.contains('is-mobile')) return true;
-            if (typeof navigator !== 'undefined' && navigator.userAgent &&
-                /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
-        } catch (err) { /* 忽略 */ }
-        return false;
+        return isMobileDeviceEnv();
     }
 
     // 关闭「移动端右滑翻上一页」后，右向手势整条让给 Obsidian 侧边栏
@@ -9023,6 +9307,16 @@ class BibleSearchView extends ItemView {
 // ==================== 插件主类 ====================
 class BibleSearchPlugin extends Plugin {
     async onload() {
+        // ⚠️ 必须排在所有 register* / registerView 之前：见 installUnloadGuard / reclaimStaleViewTypes。
+        // 禁用插件时 Obsidian 会逆序执行 Component._events 里的清理回调（无异常保护），
+        // 任一回调抛错就会中断整条卸载链，导致样式撤了、视图类型没注销、onunload() 不执行，
+        // 重新启用时报 "Attempting to register an existing view type"，只能重启 Obsidian。
+        this.installUnloadGuard();
+        this.reclaimStaleViewTypes();
+        // 卸载标记在 await 之前就初始化：若用户在启动扫描期间禁用插件，
+        // 保险丝已把标记置为 true，等到这里的 await 恢复时不能再改回 false，
+        // 否则启动期异步回调（自动开面板 / 更新提示）会在插件已禁用后继续跑。
+        if (this._unloaded !== true) this._unloaded = false;
         await this.loadSettings();
         // 启动即全库扫描：把 vault 任意位置的数据文件与插件目录里的做对比，
         // 最新一份集中到插件目录、其余旧/重复副本静默删除（详见 syncScannedVersions）。
@@ -9032,6 +9326,7 @@ class BibleSearchPlugin extends Plugin {
         // 引擎持有插件引用：支持按注 / 串出处检索时读取某一节的注解 / 串珠数据
         this.searchEngine = new BibleSearchEngine(this);
         this.allItems = [];
+        // 卸载标记已在 onload() 开头初始化，这里绝不重置（见开头注释）。
         this.currentProjection = null;  // 当前打开的投影覆盖层引用（用于投影内打开检索并复用）
         this.notesData = null;          // 恢复本注解/串珠（null = 尚未加载）
         this.notesSearchIndex = null;   // 注解正文检索索引
@@ -9040,14 +9335,22 @@ class BibleSearchPlugin extends Plugin {
         this.installTypingGuard();
         this.register(() => document.removeEventListener('keydown', this._keydownRecorder, true));
 
+        // 记录所有活着的视图实例：卸载时 workspace 的 leaf 查询可能漏掉弹出窗口 /
+        // 折叠侧边栏里的延迟视图，届时还得靠这些引用把 DOM 清干净。
+        this._liveViewRefs = new Set();
         this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => {
             const view = new BibleSearchView(leaf, this);
             this.searchViewRef = view;
+            this._liveViewRefs.add(view);
             return view;
         })
 
         // 投影「标签页模式」的宿主视图：由 Obsidian 负责与侧边栏并排排版，避免手动算宽度导致遮挡
-        this.registerView(BIBLE_PROJECTION_VIEW_TYPE, (leaf) => new BibleProjectionView(leaf, this));
+        this.registerView(BIBLE_PROJECTION_VIEW_TYPE, (leaf) => {
+            const view = new BibleProjectionView(leaf, this);
+            this._liveViewRefs.add(view);
+            return view;
+        });
 
         // 获取当前（或最近一次创建的）圣经检索视图实例
         // 经文弹窗要借助它访问「候选池」，才能与圣经搜索 / 圣经阅读的选中项一起投影
@@ -9167,6 +9470,25 @@ class BibleSearchPlugin extends Plugin {
             const forceReveal = qweKey && projTabBehind && !inBibleInput;
             if ((typingText && !forceReveal) || editingNote || composing) return;
             if (e.ctrlKey || e.metaKey || e.altKey) return;
+            // O / P 归 Hymns：已安装并开启时完全让行（由 Hymns 自己的全局监听处理）；
+            // 未安装 / 未开启时给一次明确提示，免得用户以为按键失灵。上面的 typingText /
+            // editingNote / IME 门禁已保证输入框和笔记正文里打字绝不会弹提示。
+            const hymnsKey = e.key === 'o' || e.key === 'O' || e.key === 'p' || e.key === 'P';
+            if (hymnsKey) {
+                if (!isHymnsPluginReady(this.app)) {
+                    const proj = this.currentProjection;
+                    // 只有投影在前台时才用投影内提示（此时 body 上的 Notice 会被 top layer 盖住）；
+                    // 投影在后台 / 没开投影时退回系统 Notice，避免提示落在看不见的标签里。
+                    let projFront = false;
+                    try {
+                        projFront = !!(proj && proj.overlay &&
+                            ((typeof proj.ownsScreen === 'function' && proj.ownsScreen()) ||
+                             this.isProjectionTabActive(proj)));
+                    } catch (err) { projFront = false; }
+                    showHymnsRequiredNotice(projFront ? proj.overlay : null, !projFront);
+                }
+                return;
+            }
             // ⑤ 恢复本注解 / 串珠开关：裸字母 A（不按任何修饰键）即切换。
             //    与 Q/W/E 同理走插件自有监听 + 上下文门禁：焦点在输入框 / 笔记正文 / 输入法合成态时
             //    上面的 gating 已直接放行，字母照常输入，绝不会像 Obsidian 命令快捷键那样被 preventDefault 吞掉。
@@ -9296,6 +9618,11 @@ class BibleSearchPlugin extends Plugin {
         await this.loadBibleData();
 
         this.registerEvent(this.app.workspace.onLayoutReady(async () => {
+            if (this._unloaded) return;
+            // 安装 / 启用插件后自动生成侧边栏面板，排在所有启动扫描之前：
+            // 面板先出现，后面的数据载入 / 索引刷新会把它填上内容。
+            try { await this.ensureSidebarView(); } catch (e) { /* 布局尚未就绪时静默跳过 */ }
+            if (this._unloaded) return;
             // 布局就绪后补扫一次：极少数情况下 onload 时 vault 文件索引尚未完全建立，
             // 这里再扫一遍，确保「每次启动都检索全库并集中/清理」不漏。
             // 若本轮把更新的数据集中进了插件目录，则重载经文数据让内存中的内容同步到最新。
@@ -9325,24 +9652,203 @@ class BibleSearchPlugin extends Plugin {
         }));
     }
 
-    onunload() {
-        const leaves = this.app.workspace.getLeavesOfType(BIBLE_SEARCH_VIEW_TYPE);
-        for (const leaf of leaves) {
-            try { leaf.detach(); } catch (e) {}
-        }
-        // 投影标签页的内容是运行时生成的，插件重启后无法还原。卸载 / 退出时主动收掉，
-        // 否则 Obsidian 会把这个 view 类型存进 workspace，下次启动恢复出一个空白「经文投影」标签。
-        // 先摘掉宿主引用，避免 detach 触发 BibleProjectionView.onClose() 反向调用 close()。
+    /* 给卸载链装「保险丝」。Obsidian 的 Component.unload() 大致是：
+           for (; _events.length > 0;) _events.pop()();   // 没有 try/catch
+           this.onunload();
+       _events 逆序执行：loadCSS 的样式清理最先跑（所以禁用时样式先消失），
+       registerView 的「注销视图类型」排在后面。只要中间任意一个 register() 回调
+       抛错或返回 rejected Promise，整条链就断了 —— 视图类型残留在 viewRegistry，
+       onunload() 不执行，插件实例也没从 plugins 表里删掉。表现为「样式没了但面板
+       还在、插件像没关」，重新启用时 registerView 抛
+       "Attempting to register an existing view type"，只能重启 Obsidian 恢复。
+       常见的抛错源是 registerView 自带的清理回调：_userDisabled 为真时会调
+       workspace.detachLeavesOfType()，它遍历 leaf.view.getViewType()，遇到侧边栏
+       折叠产生的「延迟视图」(view 为空) 就会同步抛 TypeError。
+       这里在实例层把 register() 包一层，让每个清理回调独立吞异常，保证链条跑完；
+       Obsidian 基类内部（registerView / registerEvent / addCommand / loadCSS 等）
+       调用的同样是 this.register，因此一并受保护。 */
+    installUnloadGuard() {
+        if (this._unloadGuardInstalled) return;
+        const baseRegister = this.register;
+        if (typeof baseRegister !== 'function') return;
+        this._unloadGuardInstalled = true;
+        const self = this;
+        this.register = function (cb) {
+            if (typeof cb !== 'function') return baseRegister.call(self, cb);
+            return baseRegister.call(self, function () {
+                // 卸载链一开始就让启动期的异步回调停手，别在禁用后又把面板建回来
+                self._unloaded = true;
+                try {
+                    const r = cb();
+                    if (r && typeof r.catch === 'function') r.catch(() => { /* 忽略 */ });
+                    return r;
+                } catch (e) { /* 单个清理回调失败，不能中断整条卸载链 */ }
+            });
+        };
+    }
+
+    /* 上一次禁用若断在「注销视图类型」之前，viewRegistry 里会留下同名类型，
+       重新启用时 registerView 直接报错。这里在注册前先回收本插件自己的两个类型，
+       让已经处于坏状态的会话不必重启 Obsidian 也能重新开启（只动本插件专属类型）。 */
+    reclaimStaleViewTypes() {
         try {
-            if (this.currentProjection && this.currentProjection.projectionLeaf) {
-                this.currentProjection.projectionLeaf = null;
+            const vr = this.app && this.app.viewRegistry;
+            if (!vr || !vr.viewByType) return;
+            for (const t of [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE]) {
+                if (!Object.prototype.hasOwnProperty.call(vr.viewByType, t)) continue;
+                try {
+                    if (typeof vr.unregisterView === 'function') vr.unregisterView(t);
+                    else delete vr.viewByType[t];
+                } catch (e) {
+                    // unregisterView 内部已 delete 再 trigger；trigger 的监听方抛错也要兜住
+                    try { delete vr.viewByType[t]; } catch (e2) { /* 忽略 */ }
+                }
             }
-            const projLeaves = this.app.workspace.getLeavesOfType(BIBLE_PROJECTION_VIEW_TYPE) || [];
-            for (const leaf of projLeaves) {
-                try { leaf.detach(); } catch (e) {}
+        } catch (e) { /* 忽略 */ }
+    }
+
+    onunload() {
+        // ⚠️ 禁用插件时 Obsidian 会在 unload() 之后自己 dispose 本插件的视图。
+        // 这里绝不能同步清空视图 DOM、也不要对同一 leaf 重复 detach：那会和它的卸载流程
+        // 抢跑，使 disablePlugin() 抛错 →「无法禁用插件 "bible-search-reader"」，
+        // 结果 styles.css 被撤走、面板却还留在侧边栏，只能重启 Obsidian 才真正关掉。
+        // 因此同步阶段只做「解绑全局监听 + 请 Obsidian 摘视图」，
+        // 破坏性的 DOM 兜底统一延后到下一轮事件循环，并且只在插件确实已卸载时执行。
+        this._unloaded = true;
+        // ③′ 第三重保险：主动注销本插件的视图类型。Obsidian 的 registerView 清理回调
+        //    排在卸载链较靠后的位置，一旦前面某个回调抛错就会被跳过；这里再兜一次，
+        //    unregisterView 幂等（内部先判 hasOwnProperty 再 delete），重复调用无害。
+        //    注销后重新启用才不会抛 "Attempting to register an existing view type"。
+        try {
+            const vr = this.app && this.app.viewRegistry;
+            if (vr && typeof vr.unregisterView === 'function') {
+                for (const t of [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE]) vr.unregisterView(t);
             }
-        } catch (e) {}
-        document.querySelectorAll('.bible-projection-fullscreen').forEach(el => el.remove());
+        } catch (e) { /* 忽略 */ }
+        try {
+            const viewTypes = [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE];
+            // detachLeavesOfType / leaf.detach 都返回 Promise；未捕获的 rejection
+            // 会让 Obsidian 的 disablePlugin 失败并弹「无法禁用插件」，必须统一吞掉。
+            const swallow = (r) => {
+                try { if (r && typeof r.catch === 'function') r.catch(() => { /* detach 失败不干扰禁用 */ }); } catch (e) { /* 忽略 */ }
+            };
+
+            // ① 投影实例必须走 close()：只有它才会解绑挂在 document 上的
+            //    keydown / beforeinput / focusin / fullscreenchange 捕获监听。
+            try {
+                for (const p of Array.from(LIVE_BIBLE_PROJECTIONS)) {
+                    try { p.close(); } catch (e) { /* 忽略 */ }
+                }
+                LIVE_BIBLE_PROJECTIONS.clear();
+            } catch (e) { /* 忽略 */ }
+            try {
+                if (this.currentProjection && typeof this.currentProjection.close === 'function') {
+                    // 先摘宿主引用，避免随后 detach 标签触发 onClose() 反向再 close() 一次
+                    if (this.currentProjection.projectionLeaf) this.currentProjection.projectionLeaf = null;
+                    this.currentProjection.close();
+                }
+            } catch (e) { /* 忽略 */ }
+            this.currentProjection = null;
+
+            // ② 请 Obsidian 摘掉本插件的所有视图（含尚未实例化的延迟视图）。
+            const ws = this.app && this.app.workspace;
+            const mainLeaves = new Set();
+            const allLeaves = new Set();
+            try {
+                if (ws && typeof ws.getLeavesOfType === 'function') {
+                    for (const t of viewTypes) {
+                        for (const l of (ws.getLeavesOfType(t) || [])) { mainLeaves.add(l); allLeaves.add(l); }
+                    }
+                }
+            } catch (e) { /* 忽略 */ }
+            try {
+                if (ws && typeof ws.iterateAllLeaves === 'function') {
+                    ws.iterateAllLeaves((l) => {
+                        try {
+                            let t = null;
+                            if (l && typeof l.getViewState === 'function') t = (l.getViewState() || {}).type;
+                            if (!t && l && l.view && typeof l.view.getViewType === 'function') t = l.view.getViewType();
+                            if (t && viewTypes.includes(t)) allLeaves.add(l);
+                        } catch (e) { /* 忽略 */ }
+                    });
+                }
+            } catch (e) { /* 忽略 */ }
+            const attempted = new Set();
+            if (ws && typeof ws.detachLeavesOfType === 'function') {
+                let officialOk = false;
+                for (const t of viewTypes) {
+                    // 每个类型独立兜底：某个类型抛错不能连累其它类型，更不能冒泡到 disablePlugin
+                    try { swallow(ws.detachLeavesOfType(t)); officialOk = true; } catch (e) { /* 忽略 */ }
+                }
+                // 官方 API 覆盖主工作区：这批不再手动 detach（重复 detach 是禁用报错的常见来源）。
+                // 只有它彻底不可用时才逐个摘，避免留下空壳。
+                if (officialOk) for (const l of mainLeaves) attempted.add(l);
+            }
+            // 弹出窗口 / 折叠侧边栏里额外发现的 leaf 补摘一次
+            for (const l of allLeaves) {
+                if (attempted.has(l)) continue;
+                attempted.add(l);
+                try { if (l && typeof l.detach === 'function') swallow(l.detach()); } catch (e) { /* 忽略 */ }
+            }
+
+            // ③ 收集可能用到的 document（主窗口 + 弹出窗口），供延后清理使用。
+            const docs = new Set();
+            try { if (typeof document !== 'undefined' && document) docs.add(document); } catch (e) { /* 忽略 */ }
+            try {
+                if (this._liveViewRefs) this._liveViewRefs.forEach(v => {
+                    try { const d = v.containerEl && v.containerEl.ownerDocument; if (d) docs.add(d); } catch (e) { /* 忽略 */ }
+                });
+            } catch (e) { /* 忽略 */ }
+            for (const l of allLeaves) {
+                try { const d = l && l.containerEl && l.containerEl.ownerDocument; if (d) docs.add(d); } catch (e) { /* 忽略 */ }
+            }
+
+            // ④ 破坏性 DOM 兜底延后：等 Obsidian 自己 dispose 完视图再做。
+            //    只有「重新启用并生成了新插件实例」才跳过，避免把新面板一起清掉；
+            //    若仍是当前旧实例（例如禁用本身失败），照样把残留清干净。
+            const stillUnloadedInstance = () => {
+                try {
+                    const pm = this.app && this.app.plugins;
+                    const id = this.manifest && this.manifest.id;
+                    if (pm && pm.plugins && id && pm.plugins[id] && pm.plugins[id] !== this) return false;
+                    return true;
+                } catch (e) { return true; }
+            };
+            const cleanupDom = () => {
+                try {
+                    if (!stillUnloadedInstance()) return;
+                    const sel = '.bible-projection-fullscreen, .bible-inline-tooltip, ' +
+                        '.bible-abbr-suggestion, .bible-overlay-backdrop, .bible-compare-modal, ' +
+                        '.bible-popup-menu, .bible-tooltip-menu, .bible-proj-inline-notice';
+                    for (const d of docs) {
+                        try { d.querySelectorAll(sel).forEach(el => { try { el.remove(); } catch (e) { /* 忽略 */ } }); } catch (e) { /* 忽略 */ }
+                        // 本插件的 Modal（首次引导 / 更新说明 / 历史更新 / 数据更新）同样会失去样式
+                        try {
+                            d.querySelectorAll('.modal-container').forEach(m => {
+                                try { if (m.querySelector('.bible-update-modal, .bible-first-run-header')) m.remove(); } catch (e) { /* 忽略 */ }
+                            });
+                        } catch (e) { /* 忽略 */ }
+                        // 万一 Obsidian 没能把视图搬走，别留一个「没样式还能点」的空壳
+                        try {
+                            d.querySelectorAll('.bible-search-container').forEach(el => {
+                                try { if (typeof el.empty === 'function') el.empty(); else el.textContent = ''; } catch (e) { /* 忽略 */ }
+                            });
+                        } catch (e) { /* 忽略 */ }
+                    }
+                } catch (e) { /* 忽略 */ }
+            };
+            try {
+                if (typeof setTimeout === 'function') setTimeout(cleanupDom, 0);
+                else cleanupDom();
+            } catch (e) { /* 忽略 */ }
+
+            try { if (this._liveViewRefs) this._liveViewRefs.clear(); } catch (e) { /* 忽略 */ }
+            this.searchViewRef = null;
+            try { if (typeof this.removeCurrentTooltip === 'function') this.removeCurrentTooltip(); } catch (e) { /* 忽略 */ }
+        } catch (e) {
+            // onunload 抛出任何错误都会让 Obsidian 报「无法禁用插件」，这里必须兜住
+            try { console.warn('[Bible] 卸载清理已跳过一处异常:', e); } catch (err) { /* 忽略 */ }
+        }
     }
 
     async loadSettings() {
@@ -9384,7 +9890,9 @@ class BibleSearchPlugin extends Plugin {
             // 开机时「不再提醒」针对的各圣经版本 key：只抑制这些版本，新版本 / 版本更新仍会提醒
             dismissedVersionPrompts: [],
             // 注解数据缺失提示是否被「不再提醒」关闭（安装成功后会复位为 false，便于日后更新仍提醒）
-            dismissedNotesPrompt: false
+            dismissedNotesPrompt: false,
+            // 安装 / 启用插件后自动在右侧边栏生成「圣经检索」面板
+            autoOpenSidebar: true
         };
         const loaded = await this.loadData() || {};
         this.settings = Object.assign({}, defaults, loaded);
@@ -10863,11 +11371,65 @@ class BibleSearchPlugin extends Plugin {
         } catch (e) { /* 忽略 */ }
     }
 
+    /* 安装 / 启用插件后自动在右侧边栏生成「圣经检索」面板。
+       仅在「一个检索面板都没有」时执行，用户上次摆好的布局原样保留；
+       侧边栏折叠时的延迟视图、弹出窗口里的面板都算已有，不重复新建。
+       右侧栏被别的插件（例如 Hymns 自动生成的诗歌面板）占着时另开一个，不顶掉对方。 */
+    async ensureSidebarView() {
+        if (this._unloaded) return;
+        if (!this.settings || this.settings.autoOpenSidebar === false) return;
+        const ws = this.app && this.app.workspace;
+        if (!ws || typeof ws.getLeavesOfType !== 'function') return;
+        let existing = [];
+        try { existing = ws.getLeavesOfType(BIBLE_SEARCH_VIEW_TYPE) || []; } catch (e) { return; }
+        if (existing.length) return;
+        // 侧边栏折叠时 Obsidian 会留下「延迟视图」：view 还没实例化，getLeavesOfType 查不到，
+        // 但布局里确实有这个面板。不判这一层，展开侧边栏时就会多出一个重复面板。
+        try {
+            if (typeof ws.iterateAllLeaves === 'function') {
+                let deferred = false;
+                ws.iterateAllLeaves((l) => {
+                    try {
+                        const st = l && typeof l.getViewState === 'function' ? l.getViewState() : null;
+                        if (st && st.type === BIBLE_SEARCH_VIEW_TYPE) deferred = true;
+                    } catch (e) { /* 忽略 */ }
+                });
+                if (deferred) return;
+            }
+        } catch (e) { /* 忽略 */ }
+        let leaf = null;
+        try { leaf = typeof ws.getRightLeaf === 'function' ? ws.getRightLeaf(false) : null; } catch (e) { leaf = null; }
+        try {
+            // getRightLeaf(false) 会复用右侧栏现有标签；那里显示别的视图时不能把对方顶掉
+            const st = leaf && typeof leaf.getViewState === 'function' ? leaf.getViewState() : null;
+            const t = st && st.type;
+            if (leaf && t && t !== 'empty' && t !== BIBLE_SEARCH_VIEW_TYPE && typeof ws.getRightLeaf === 'function') {
+                leaf = ws.getRightLeaf(true);
+            }
+        } catch (e) { /* 取不到视图状态时沿用原 leaf */ }
+        if (!leaf) return;
+        try {
+            await leaf.setViewState({ type: BIBLE_SEARCH_VIEW_TYPE, active: false });
+            // 移动端侧边栏是抽屉：开机就 reveal 会把抽屉弹出来盖住笔记，只生成面板不弹出。
+            if (!isMobileDeviceEnv() && typeof ws.revealLeaf === 'function') ws.revealLeaf(leaf);
+        } catch (e) { /* 布局尚未就绪 / API 不支持时静默跳过 */ }
+    }
+
     async activateSearchView() {
         const { workspace } = this.app;
         const existing = workspace.getLeavesOfType(BIBLE_SEARCH_VIEW_TYPE);
         if (existing.length > 0) { workspace.revealLeaf(existing[0]); return; }
-        const leaf = workspace.getRightLeaf(false);
+        let leaf = workspace.getRightLeaf(false);
+        // 右侧栏可能已经有别的插件的面板（Hymns 启用后会自动生成一个诗歌面板）。
+        // 直接在这个 leaf 上 setViewState 会把对方顶掉，先判一下，占用了就另开一个。
+        try {
+            const st = leaf && typeof leaf.getViewState === 'function' ? leaf.getViewState() : null;
+            const t = st && st.type;
+            if (leaf && t && t !== 'empty' && t !== BIBLE_SEARCH_VIEW_TYPE) {
+                const fresh = workspace.getRightLeaf(true);
+                if (fresh) leaf = fresh;
+            }
+        } catch (e) { /* 取不到视图状态时沿用原 leaf */ }
         if (leaf) {
             await leaf.setViewState({ type: BIBLE_SEARCH_VIEW_TYPE, active: true });
             workspace.revealLeaf(leaf);

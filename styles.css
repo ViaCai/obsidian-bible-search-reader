@@ -3301,4 +3301,153 @@ body .bible-projection-fullscreen .bible-proj-quick-search-go:focus {
     background-image: none;
 }
 
+/* ===== 左上角投影模式选择 ===== */
+/* 顶栏是 Electron 的窗口拖动区，按钮和菜单都要显式 no-drag，否则桌面端点不动 */
+.bible-proj-mode-wrap {
+    position: relative;
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+}
+.bible-proj-mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: -6px;
+    padding: 2px 6px;
+    background: transparent;
+    border: 0;
+    border-radius: 5px;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-app-region: no-drag;
+}
+.bible-proj-mode-btn::after {
+    content: '▾';
+    font-size: 10px;
+    opacity: 0.65;
+}
+.bible-proj-mode-btn:hover { background: rgba(255,255,255,0.12); }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-btn:hover { background: rgba(0,0,0,0.08); }
+.bible-proj-mode-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 184px;
+    padding: 6px;
+    background: #232340;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    color: #f2f2f7;
+    z-index: 20;
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu {
+    background: #ffffff;
+    border-color: rgba(0,0,0,0.14);
+    color: #232340;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+}
+.bible-proj-mode-menu-title {
+    padding: 4px 8px 2px;
+    font-size: 11px;
+    opacity: 0.55;
+    letter-spacing: 0.04em;
+}
+.bible-proj-mode-menu-divider {
+    height: 1px;
+    margin: 6px 4px;
+    background: rgba(255,255,255,0.16);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-divider { background: rgba(0,0,0,0.12); }
+.bible-proj-mode-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 7px 8px;
+    border-radius: 5px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.bible-proj-mode-menu-item:hover { background: rgba(255,255,255,0.1); }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-item:hover { background: rgba(0,0,0,0.06); }
+.bible-proj-mode-menu-item.is-current .bible-proj-mode-menu-label { font-weight: 700; }
+.bible-proj-mode-menu-key { font-size: 11px; opacity: 0.55; }
+.bible-proj-mode-menu-item.is-disabled,
+.bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-key,
+.bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-label {
+    color: #8a8a99;
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+.bible-proj-mode-menu-item.is-disabled:hover { background: transparent; }
+
+/* ===== 移动端安全区：避开状态栏 / 灵动岛 / home indicator =====
+   覆盖层是 fixed top:0 且内联 width/height 100vw/100vh，只有把安全区算进
+   padding（并改成 border-box）才能把顶栏推到状态栏下方；标签页模式不适用。 */
+.bible-projection-fullscreen:not(.bible-proj-in-tab) {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    box-sizing: border-box;
+    max-height: 100dvh;
+}
+
+/* ===== 模式菜单：诗歌投影不可用说明 ===== */
+.bible-proj-mode-menu-hint {
+    padding: 0 8px 5px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: #a9a9bb;
+    white-space: normal;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-hint { color: #6b6b7b; }
+.bible-proj-mode-menu-hint.is-alert { color: #ffcf70; }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-hint.is-alert { color: #a45c00; }
+
+/* 投影内提示条：全屏投影进入 top layer 后，body 上的 Notice 会被整块盖住，
+   所以 Hymns 不可用的提示必须渲染在覆盖层内部。 */
+.bible-proj-inline-notice {
+    position: absolute;
+    left: 50%;
+    bottom: 68px;
+    transform: translateX(-50%);
+    max-width: min(78vw, 420px);
+    padding: 10px 16px;
+    border: 1px solid rgba(255,255,255,0.24);
+    border-radius: 8px;
+    background: #2d2d4a;
+    color: #ffffff;
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.18s ease;
+    pointer-events: none;
+    z-index: 40;
+    -webkit-app-region: no-drag;
+}
+.bible-proj-inline-notice.is-visible { opacity: 1; visibility: visible; }
+.bible-projection-fullscreen.light-mode .bible-proj-inline-notice {
+    background: #ffffff;
+    color: #232340;
+    border-color: rgba(0,0,0,0.14);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+}
+
+/* ===== 移动端：隐藏不支持的「全屏投影」按钮 =====
+   iOS / Android 上的 WebView 没有元素级 Fullscreen API，按钮留着也点不动。
+   main.js 已按 Platform / body.is-mobile / UA 判定隐藏，这里再兜一层，
+   避免宿主没提供 Platform 时仍露出这个无效入口。桌面端窄窗口不受影响。 */
+body.is-mobile .bible-proj-tool-btn[data-action="toggle-desktop-full"] {
+    display: none;
+}
+
 /* （注：内容由AI生成） */
