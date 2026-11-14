@@ -3520,4 +3520,688 @@ body.is-mobile .bible-proj-tool-btn[data-action="toggle-desktop-full"] {
     display: none;
 }
 
+/* ===== 经文投影主题（暗 / 亮 / 蓝黄 / 黄黑）=====
+   T 键循环切换，默认主题由设置项 projectionTheme 决定。
+   颜色集中放在 CSS 变量里：main.js 的内联样式只写 var(...)，切主题只换覆盖层类名，
+   四套主题共用同一套 DOM 与规则，不必为每个颜色复制一份选择器。
+   暗色沿用上面的原始底稿；亮色沿用上面所有 .light-mode 规则；
+   蓝黄 / 黄黑两套新主题用下面的高优先级覆盖块把固定配色换成变量。 */
+.bible-projection-fullscreen {
+    --bp-bg: #1a1a2e;
+    --bp-fg: #ffffff;
+    --bp-ref: #a0a0a0;
+    --bp-accent: #ffd700;
+    --bp-accent-soft: #e0c060;
+    --bp-outline: #a0c4ff;
+    --bp-outline-ref: #7aa0d0;
+    --bp-bar-bg: rgba(0,0,0,0.2);
+    --bp-bar-border: rgba(255,255,255,0.1);
+    --bp-btn-bg: rgba(255,255,255,0.18);
+    --bp-btn-border: rgba(255,255,255,0.55);
+    --bp-btn-fg: #ffffff;
+    --bp-btn-hover-bg: rgba(255,255,255,0.32);
+    --bp-btn-hover-border: rgba(255,255,255,0.85);
+    --bp-nav-bg: #3b82f6;
+    --bp-nav-fg: #ffffff;
+    --bp-nav-hover: #2563eb;
+    --bp-panel-bg: rgba(255,255,255,0.05);
+    --bp-panel-border: rgba(255,255,255,0.15);
+    --bp-input-bg: rgba(0,0,0,0.35);
+    --bp-input-fg: #ffffff;
+    --bp-input-border: rgba(255,255,255,0.28);
+    --bp-placeholder: rgba(255,255,255,0.52);
+    --bp-go-bg: #4ecdc4;
+    --bp-go-fg: #0b2b29;
+    --bp-go-hover: #6ee0d8;
+    --bp-menu-bg: #211d38;
+    --bp-menu-fg: #f3f4f6;
+    --bp-menu-border: rgba(255,255,255,0.16);
+    --bp-menu-title: #aaa4c9;
+    --bp-menu-hover: rgba(255,255,255,0.10);
+    --bp-menu-current: rgba(126,110,220,0.30);
+    --bp-menu-hint: #cba9ff;
+    --bp-menu-hint-alert: #ffd18a;
+    --bp-sugg-active-bg: #4ecdc4;
+    --bp-sugg-active-fg: #0b2b29;
+    --bp-scroll-thumb: rgba(255,255,255,0.45);
+    --bp-scroll-thumb-hover: rgba(255,255,255,0.68);
+    --bp-scroll-track: rgba(255,255,255,0.08);
+    scrollbar-width: thin;
+    scrollbar-color: var(--bp-scroll-thumb) var(--bp-scroll-track);
+}
+/* 亮色模式：其余元素沿用上面原有的 .light-mode 规则，这里补齐内联样式引用的变量，
+   并把滚动条改成深灰——浏览器默认的浅灰滑块在白底上几乎看不见（反馈的看不清问题）。 */
+.bible-projection-fullscreen.light-mode {
+    --bp-bg: #f5f5f5;
+    --bp-fg: #333333;
+    --bp-ref: #666666;
+    --bp-bar-bg: rgba(0,0,0,0.05);
+    --bp-bar-border: rgba(0,0,0,0.1);
+    --bp-panel-bg: rgba(0,0,0,0.04);
+    /* 书卷 / 章数选择器等浮层与模式菜单同款淡色底稿 */
+    --bp-menu-bg: #ffffff;
+    --bp-menu-fg: #232340;
+    --bp-menu-border: rgba(0,0,0,0.14);
+    --bp-menu-title: #7a7495;
+    --bp-menu-hover: rgba(0,0,0,0.06);
+    --bp-menu-current: rgba(126,110,220,0.18);
+    --bp-scroll-thumb: rgba(31,41,59,0.62);
+    --bp-scroll-thumb-hover: rgba(31,41,59,0.86);
+    --bp-scroll-track: rgba(31,41,59,0.12);
+}
+/* 蓝黄模式：蓝底黄字，参考教会投影常见的深蓝 / 亮黄高对比配色 */
+.bible-projection-fullscreen.bp-theme-blue {
+    --bp-bg: #3338c9;
+    --bp-fg: #ffe600;
+    --bp-ref: #ddd24a;
+    --bp-accent: #ffff66;
+    --bp-accent-soft: #f0d54a;
+    --bp-outline: #fff2a8;
+    --bp-outline-ref: #ddd24a;
+    --bp-bar-bg: #2b2ff0;
+    --bp-bar-border: rgba(255,230,0,0.45);
+    --bp-btn-bg: rgba(255,230,0,0.14);
+    --bp-btn-border: rgba(255,230,0,0.65);
+    --bp-btn-fg: #ffe600;
+    --bp-btn-hover-bg: rgba(255,230,0,0.30);
+    --bp-btn-hover-border: rgba(255,230,0,0.9);
+    --bp-nav-bg: #1f2596;
+    --bp-nav-fg: #ffe600;
+    --bp-nav-hover: #3a42c0;
+    --bp-panel-bg: rgba(255,230,0,0.09);
+    --bp-panel-border: rgba(255,230,0,0.34);
+    --bp-input-bg: rgba(10,12,80,0.42);
+    --bp-input-fg: #ffe600;
+    --bp-input-border: rgba(255,230,0,0.55);
+    --bp-placeholder: rgba(255,230,0,0.58);
+    --bp-go-bg: #ffe600;
+    --bp-go-fg: #1a1f80;
+    --bp-go-hover: #fff36b;
+    --bp-menu-bg: #232a9c;
+    --bp-menu-fg: #ffe600;
+    --bp-menu-border: rgba(255,230,0,0.38);
+    --bp-menu-title: #ddd24a;
+    --bp-menu-hover: rgba(255,230,0,0.14);
+    --bp-menu-current: rgba(255,230,0,0.26);
+    --bp-menu-hint: #fff2a8;
+    --bp-menu-hint-alert: #ffffff;
+    --bp-sugg-active-bg: #ffe600;
+    --bp-sugg-active-fg: #1a1f80;
+    --bp-scroll-thumb: #ffe600;
+    --bp-scroll-thumb-hover: #fff36b;
+    --bp-scroll-track: rgba(255,230,0,0.16);
+}
+/* 黄黑模式：米黄底黑字，出处与纲目用深褐，主题标题用暗红，接近纸质纲目投影的观感 */
+.bible-projection-fullscreen.bp-theme-yellow {
+    --bp-bg: #fff0c2;
+    --bp-fg: #1a1a1a;
+    --bp-ref: #6b5a2a;
+    --bp-accent: #8a2b2b;
+    --bp-accent-soft: #7a5a18;
+    --bp-outline: #6b4f14;
+    --bp-outline-ref: #7a6a3a;
+    --bp-bar-bg: rgba(160,120,20,0.13);
+    --bp-bar-border: rgba(120,90,20,0.30);
+    --bp-btn-bg: rgba(120,90,20,0.10);
+    --bp-btn-border: rgba(120,90,20,0.50);
+    --bp-btn-fg: #1a1a1a;
+    --bp-btn-hover-bg: rgba(120,90,20,0.22);
+    --bp-btn-hover-border: rgba(120,90,20,0.75);
+    --bp-nav-bg: #3b3220;
+    --bp-nav-fg: #fff0c2;
+    --bp-nav-hover: #5c4c2c;
+    --bp-panel-bg: rgba(120,90,20,0.08);
+    --bp-panel-border: rgba(120,90,20,0.32);
+    --bp-input-bg: #fffaf0;
+    --bp-input-fg: #1a1a1a;
+    --bp-input-border: rgba(120,90,20,0.50);
+    --bp-placeholder: #8a7a52;
+    --bp-go-bg: #3b3220;
+    --bp-go-fg: #fff0c2;
+    --bp-go-hover: #5c4c2c;
+    --bp-menu-bg: #fff8e2;
+    --bp-menu-fg: #1a1a1a;
+    --bp-menu-border: rgba(120,90,20,0.36);
+    --bp-menu-title: #7a6a3a;
+    --bp-menu-hover: rgba(120,90,20,0.12);
+    --bp-menu-current: rgba(160,120,20,0.24);
+    --bp-menu-hint: #8a2b2b;
+    --bp-menu-hint-alert: #a33a1a;
+    --bp-sugg-active-bg: #3b3220;
+    --bp-sugg-active-fg: #fff0c2;
+    --bp-scroll-thumb: #5a4a20;
+    --bp-scroll-thumb-hover: #7a6428;
+    --bp-scroll-track: rgba(120,90,20,0.16);
+}
+
+/* ---- 投影滚动条：四套主题通用，滑块与轨道都跟主题走 ---- */
+.bible-projection-fullscreen .bible-proj-content::-webkit-scrollbar,
+.bible-projection-fullscreen .bible-proj-slide-wrapper::-webkit-scrollbar,
+.bible-projection-fullscreen .bible-proj-mode-menu::-webkit-scrollbar,
+.bible-projection-fullscreen .bible-proj-notes::-webkit-scrollbar,
+.bible-projection-fullscreen .bible-abbr-suggestion-list::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+.bible-projection-fullscreen .bible-proj-content::-webkit-scrollbar-track,
+.bible-projection-fullscreen .bible-proj-slide-wrapper::-webkit-scrollbar-track,
+.bible-projection-fullscreen .bible-proj-mode-menu::-webkit-scrollbar-track,
+.bible-projection-fullscreen .bible-proj-notes::-webkit-scrollbar-track,
+.bible-projection-fullscreen .bible-abbr-suggestion-list::-webkit-scrollbar-track {
+    background: var(--bp-scroll-track);
+    border-radius: 8px;
+}
+.bible-projection-fullscreen .bible-proj-content::-webkit-scrollbar-thumb,
+.bible-projection-fullscreen .bible-proj-slide-wrapper::-webkit-scrollbar-thumb,
+.bible-projection-fullscreen .bible-proj-mode-menu::-webkit-scrollbar-thumb,
+.bible-projection-fullscreen .bible-proj-notes::-webkit-scrollbar-thumb,
+.bible-projection-fullscreen .bible-abbr-suggestion-list::-webkit-scrollbar-thumb {
+    background: var(--bp-scroll-thumb);
+    border-radius: 8px;
+}
+.bible-projection-fullscreen .bible-proj-content::-webkit-scrollbar-thumb:hover,
+.bible-projection-fullscreen .bible-proj-slide-wrapper::-webkit-scrollbar-thumb:hover,
+.bible-projection-fullscreen .bible-proj-mode-menu::-webkit-scrollbar-thumb:hover,
+.bible-projection-fullscreen .bible-proj-notes::-webkit-scrollbar-thumb:hover,
+.bible-projection-fullscreen .bible-abbr-suggestion-list::-webkit-scrollbar-thumb:hover {
+    background: var(--bp-scroll-thumb-hover);
+}
+
+/* ---- 蓝黄 / 黄黑：把深色底稿里的固定配色替换成主题变量 ---- */
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-tool-row,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-tool-row {
+    border-bottom-color: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-tool-btn,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-tool-btn {
+    background: var(--bp-btn-bg);
+    border-color: var(--bp-btn-border);
+    color: var(--bp-btn-fg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-tool-btn:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-tool-btn:hover {
+    background: var(--bp-btn-hover-bg);
+    border-color: var(--bp-btn-hover-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-tool-btn.active,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-tool-btn.active {
+    background: var(--bp-nav-bg);
+    border-color: var(--bp-nav-bg);
+    color: var(--bp-nav-fg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-nav-btn,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-nav-btn {
+    background: var(--bp-nav-bg);
+    color: var(--bp-nav-fg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-nav-btn:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-nav-btn:hover {
+    background: var(--bp-nav-hover);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-btn:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-btn:hover {
+    background: var(--bp-menu-hover);
+}
+.bible-projection-fullscreen.bp-theme-blue.bible-proj-search-mode,
+.bible-projection-fullscreen.bp-theme-yellow.bible-proj-search-mode {
+    border-right-color: var(--bp-panel-border);
+}
+/* 出处 / 主题 / 纲目 */
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-ref,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-focus-ref,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-parallel-ref,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mixed-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-focus-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-parallel-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mixed-ref {
+    color: var(--bp-ref);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-focus-theme,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-parallel-theme-text,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-focus-theme,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-parallel-theme-text {
+    color: var(--bp-accent);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-focus-theme-ref,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-parallel-theme-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-focus-theme-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-parallel-theme-ref {
+    color: var(--bp-accent-soft);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-focus-outline,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-parallel-outline-text,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-focus-outline,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-parallel-outline-text {
+    color: var(--bp-outline);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-focus-outline-ref,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-parallel-outline-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-focus-outline-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-parallel-outline-ref {
+    color: var(--bp-outline-ref);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-verse-box,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-verse-box {
+    background: var(--bp-panel-bg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-theme-box,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-theme-box {
+    border-bottom-color: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-outline-box,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-outline-box {
+    border-left-color: var(--bp-panel-border);
+}
+/* 注解 / 串珠 / 对照 */
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-text sup.bible-note-mark-note,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-ref-text sup.bible-note-mark-note,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-text sup.bible-note-mark-note,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-ref-text sup.bible-note-mark-note {
+    color: var(--bp-outline);
+    background-color: var(--bp-panel-bg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-text sup.bible-note-mark-ref,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-ref-text sup.bible-note-mark-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-text sup.bible-note-mark-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-ref-text sup.bible-note-mark-ref {
+    color: var(--bp-ref);
+    background-color: var(--bp-panel-bg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-text sup.bible-note-mark:hover,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-ref-text sup.bible-note-mark:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-text sup.bible-note-mark:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-ref-text sup.bible-note-mark:hover {
+    background-color: var(--bp-menu-hover);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-text.bible-proj-item-note,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-text.bible-proj-item-chain,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-text.bible-proj-item-note,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-text.bible-proj-item-chain {
+    background-color: var(--bp-panel-bg);
+    color: var(--bp-fg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-text.bible-proj-item-note,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-text.bible-proj-item-note {
+    border-left-color: var(--bp-outline);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-text.bible-proj-item-chain,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-text.bible-proj-item-chain {
+    border-left-color: var(--bp-accent-soft);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-notes,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-notes {
+    background-color: var(--bp-panel-bg);
+    color: var(--bp-fg);
+    border-top-color: var(--bp-panel-border);
+    border-left-color: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-dismiss,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-dismiss {
+    border-color: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-label-note,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-label-note {
+    color: var(--bp-outline);
+    background-color: var(--bp-panel-bg);
+    border-color: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-label-ref,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-label-ref {
+    color: var(--bp-accent);
+    background-color: var(--bp-panel-bg);
+    border-color: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-refs,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-ref-verse,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-ref-addr,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-verse-compare,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-refs,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-ref-verse,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-ref-addr,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-verse-compare {
+    color: var(--bp-ref);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-note-ref-verse,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-verse-compare,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-note-ref-verse,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-verse-compare {
+    border-left-color: var(--bp-panel-border);
+}
+/* 顶部快速搜索框 */
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-input,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-input {
+    background: var(--bp-input-bg);
+    color: var(--bp-input-fg);
+    -webkit-text-fill-color: var(--bp-input-fg);
+    border-color: var(--bp-input-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-input::placeholder,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-input::placeholder {
+    color: var(--bp-placeholder);
+    -webkit-text-fill-color: var(--bp-placeholder);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-input:focus,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-input:focus {
+    border-color: var(--bp-go-bg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-clear,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-clear {
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border-color: var(--bp-input-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-clear:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-clear:hover {
+    background: var(--bp-btn-hover-bg);
+}
+body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go,
+body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go:hover,
+body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go:active,
+body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go:focus,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go:hover,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go:active,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go:focus {
+    background-color: var(--bp-go-bg);
+    border-color: var(--bp-go-bg);
+    color: var(--bp-go-fg);
+    -webkit-text-fill-color: var(--bp-go-fg);
+}
+/* 短拼补全下拉（挂在投影层内部，整屏时必须跟着主题走） */
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion {
+    background-color: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    border-color: var(--bp-menu-border);
+}
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item,
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item:hover,
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item:active,
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item:focus,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item:hover,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item:active,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
+    color: var(--bp-menu-fg);
+    -webkit-text-fill-color: var(--bp-menu-fg);
+    background-color: transparent;
+}
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-short,
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-code,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-short,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item .bible-abbr-code {
+    color: var(--bp-ref);
+    -webkit-text-fill-color: var(--bp-ref);
+}
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active,
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:hover,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active:hover {
+    background-color: var(--bp-sugg-active-bg);
+    color: var(--bp-sugg-active-fg);
+    -webkit-text-fill-color: var(--bp-sugg-active-fg);
+}
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-short,
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-code,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-short,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item.is-active .bible-abbr-code {
+    color: var(--bp-sugg-active-fg);
+    -webkit-text-fill-color: var(--bp-sugg-active-fg);
+}
+body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion .bible-abbr-suggestion-item:not(.is-active):hover,
+body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion .bible-abbr-suggestion-item:not(.is-active):hover {
+    background-color: var(--bp-menu-hover);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion-foot,
+.bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion-foot {
+    color: var(--bp-ref);
+    -webkit-text-fill-color: var(--bp-ref);
+    border-top-color: var(--bp-panel-border);
+}
+/* 模式菜单 */
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu {
+    background: var(--bp-menu-bg);
+    border-color: var(--bp-menu-border);
+    color: var(--bp-menu-fg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-title,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-title {
+    color: var(--bp-menu-title);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-divider,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-divider {
+    background: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-item:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-item:hover {
+    background: var(--bp-menu-hover);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-item.is-current,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-item.is-current {
+    background: var(--bp-menu-current);
+    color: var(--bp-menu-fg);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-key,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-key {
+    border-color: var(--bp-menu-border);
+    color: var(--bp-ref);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-item.is-disabled,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-item.is-disabled {
+    color: var(--bp-menu-title);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-item.is-disabled:hover,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-item.is-disabled:hover {
+    background: var(--bp-menu-hover);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-key,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-key {
+    color: var(--bp-menu-title);
+    border-color: var(--bp-panel-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-hint,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-hint {
+    color: var(--bp-menu-hint);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-mode-menu-hint.is-alert,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-mode-menu-hint.is-alert {
+    color: var(--bp-menu-hint-alert);
+}
+/* 投影内提示条 / 空态 */
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-inline-notice,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-inline-notice {
+    background: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    border-color: var(--bp-menu-border);
+}
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-empty-title,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-empty-hint,
+.bible-projection-fullscreen.bp-theme-blue .bible-proj-empty-eg,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-empty-title,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-empty-hint,
+.bible-projection-fullscreen.bp-theme-yellow .bible-proj-empty-eg {
+    color: var(--bp-fg);
+}
+
+/* ===== 长按搜索框：书卷 / 章数选择器 =====
+   整屏投影进入 top layer，选择器挂在投影覆盖层内部；书卷区与章数区各有一条独立滚动条，
+   父级一律 overflow:hidden + overscroll-behavior:contain，滚动不会互相串。 */
+.bible-projection-fullscreen .bible-proj-book-picker {
+    position: absolute;
+    top: 54px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(900px, calc(100vw - 32px));
+    max-height: min(72vh, 660px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+    z-index: 60;
+    -webkit-app-region: no-drag;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.bible-projection-fullscreen .bible-proj-picker-head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--bp-menu-border);
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-picker-title {
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.bible-projection-fullscreen .bible-proj-picker-tip {
+    flex: 1 1 auto;
+    font-size: 12px;
+    opacity: 0.72;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.bible-projection-fullscreen .bible-proj-picker-close,
+.bible-projection-fullscreen .bible-proj-picker-whole {
+    border: 1px solid var(--bp-btn-border);
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-picker-close:hover,
+.bible-projection-fullscreen .bible-proj-picker-whole:hover {
+    background: var(--bp-btn-hover-bg);
+    border-color: var(--bp-btn-hover-border);
+}
+.bible-projection-fullscreen .bible-proj-picker-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px 14px;
+    overflow: hidden;
+}
+/* 两条互不干扰的滚动条：书卷区 / 章数区 */
+.bible-projection-fullscreen .bible-proj-picker-pane {
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-color: var(--bp-scroll-thumb) var(--bp-scroll-track);
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-picker-books { flex: 1 1 62%; }
+.bible-projection-fullscreen .bible-proj-picker-chapters {
+    flex: 1 1 38%;
+    border-left: 1px solid var(--bp-menu-border);
+    padding-left: 12px;
+}
+.bible-projection-fullscreen .bible-proj-picker-pane::-webkit-scrollbar { width: 10px; height: 10px; }
+.bible-projection-fullscreen .bible-proj-picker-pane::-webkit-scrollbar-track {
+    background: var(--bp-scroll-track);
+    border-radius: 8px;
+}
+.bible-projection-fullscreen .bible-proj-picker-pane::-webkit-scrollbar-thumb {
+    background: var(--bp-scroll-thumb);
+    border-radius: 8px;
+}
+.bible-projection-fullscreen .bible-proj-picker-pane::-webkit-scrollbar-thumb:hover {
+    background: var(--bp-scroll-thumb-hover);
+}
+.bible-projection-fullscreen .bible-proj-picker-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.bible-projection-fullscreen .bible-proj-picker-col-title {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 5px 4px 7px;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    color: var(--bp-menu-title);
+    background: var(--bp-menu-bg);
+}
+.bible-projection-fullscreen .bible-proj-picker-book-list,
+.bible-projection-fullscreen .bible-proj-picker-chapter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+    gap: 5px;
+    padding-bottom: 4px;
+}
+.bible-projection-fullscreen .bible-proj-picker-book,
+.bible-projection-fullscreen .bible-proj-picker-chapter {
+    min-height: 30px;
+    padding: 4px 2px;
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 6px;
+    background: var(--bp-panel-bg);
+    color: var(--bp-menu-fg);
+    font-size: 13px;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-picker-book:hover,
+.bible-projection-fullscreen .bible-proj-picker-chapter:hover {
+    background: var(--bp-menu-hover);
+}
+.bible-projection-fullscreen .bible-proj-picker-book.is-current,
+.bible-projection-fullscreen .bible-proj-picker-chapter.is-current {
+    background: var(--bp-menu-current);
+    border-color: var(--bp-btn-border);
+    font-weight: 600;
+}
+.bible-projection-fullscreen .bible-proj-picker-chapter-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 2px 9px;
+    background: var(--bp-menu-bg);
+}
+.bible-projection-fullscreen .bible-proj-picker-chapter-name {
+    flex: 1 1 auto;
+    font-size: 14px;
+    font-weight: 600;
+}
+/* 亮色模式沿用淡色浮层（与模式菜单一致） */
+.bible-projection-fullscreen.light-mode .bible-proj-book-picker {
+    box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+}
+@media (max-width: 600px) {
+    .bible-projection-fullscreen .bible-proj-book-picker {
+        top: 46px;
+        width: calc(100vw - 16px);
+        max-height: 76vh;
+    }
+    .bible-projection-fullscreen .bible-proj-picker-tip { display: none; }
+    .bible-projection-fullscreen .bible-proj-picker-body { padding: 8px; gap: 6px; }
+    .bible-projection-fullscreen .bible-proj-picker-chapters { padding-left: 8px; }
+    .bible-projection-fullscreen .bible-proj-picker-book-list,
+    .bible-projection-fullscreen .bible-proj-picker-chapter-grid {
+        grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+        gap: 4px;
+    }
+    .bible-projection-fullscreen .bible-proj-picker-book,
+    .bible-projection-fullscreen .bible-proj-picker-chapter { font-size: 12px; min-height: 32px; }
+}
+
 /* （注：内容由AI生成） */

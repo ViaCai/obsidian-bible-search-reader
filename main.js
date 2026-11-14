@@ -338,6 +338,21 @@ function normalizeBookAbbr(token) {
 function bookAbbrOf(token) {
     return /^[A-Za-z]+$/.test(token) ? (BOOK_PINYIN_ABBR[token.toLowerCase()] || null) : null;
 }
+// 单独一个书卷短拼＝整卷书（csj＝全卷创世记、tslnjhs＝全卷帖撒罗尼迦后书）。
+// 只认解析层里唯一的短拼：th / tq / ys 这类多卷撞车的短拼仍按普通关键词处理，
+// 必须先由补全下拉补成完整短拼才能命中，绝不在解析层硬指派给某一卷。
+function wholeBookRefOf(token) {
+    if (!/^[A-Za-z]+$/.test(token)) return null;
+    const shortName = BOOK_PINYIN_ABBR[token.toLowerCase()];
+    if (!shortName) return null;
+    const book = BOOK_MAP[shortName];
+    if (!book) return null;
+    return {
+        bookId: book.id, startChapter: 1, startVerse: 1,
+        endChapter: book.maxChapters, endVerse: Number.MAX_SAFE_INTEGER,
+        chapterOnly: true, wholeBook: true
+    };
+}
 
 // ===== 搜索框书卷短拼自动补全 =====
 // 与 BOOK_PINYIN_ABBR 的区别：这里保留「全部」短拼条目（包括因多卷撞车而没有注册进解析层的），
@@ -379,9 +394,24 @@ function getAbbrTokenAtCaret(value, caret) {
     return { token, start: pos - token.length, letters: m[1], rest: m[2] || '', value: text };
 }
 
+// 每卷书一句「解析层唯一」的完整短拼，供候选项被选中时补全。
+// th 会同时提示「帖后 / 提后」，两行的 abbr 都等于 th；若照旧把 th 写回输入框，
+// 选中谁都还是 th，检索层无从区分。改成补成 tslnjhs / tmths 这类全名短拼即可唯一定位。
+// 全名短拼本身也撞车时退回中文简称（解析层一定认得）；目前 66 卷书没有这种情况。
+const BOOK_UNIQUE_ABBR = (() => {
+    const map = {};
+    for (const book of BIBLE_BOOKS) {
+        const ab = pinyinInitials(book.fullName);
+        map[book.id] = (ab && BOOK_PINYIN_ABBR[ab] === book.shortName) ? ab : book.shortName;
+    }
+    return map;
+})();
+
 // 按前缀取候选。同一卷在当前前缀下只出一行（优先精确短拼，其次解析层认得的、再其次更短的），
 // 列表一律按圣经书卷次序（创世记 → 启示录）排列，不再按短拼长度或字母序插队：
 // 输入 c 时「创世记、出埃及记…」的顺序应当和圣经目录一致，方便按方向键顺序找书卷。
+// 每行的 fill 是「选中后真正写进输入框的文本」：候选短拼本身已唯一就原样保留，
+// 否则换成该卷唯一的完整短拼，避免歧义短拼补了个寂寞。
 function getBookAbbrSuggestions(prefix, limit) {
     const p = String(prefix || '').toLowerCase();
     if (!/^[a-z]+$/.test(p)) return [];
@@ -392,7 +422,9 @@ function getBookAbbrSuggestions(prefix, limit) {
         const prev = byBook.get(s.bookId);
         if (!prev || score(s) < score(prev)) byBook.set(s.bookId, s);
     }
-    const list = Array.from(byBook.values());
+    const list = Array.from(byBook.values()).map(s => Object.assign({}, s, {
+        fill: (BOOK_PINYIN_ABBR[s.abbr] === s.shortName) ? s.abbr : (BOOK_UNIQUE_ABBR[s.bookId] || s.abbr)
+    }));
     list.sort((a, b) => a.bookId - b.bookId);
     return list.slice(0, Math.max(1, Number(limit) || 12));
 }
@@ -400,20 +432,50 @@ function getBookAbbrSuggestions(prefix, limit) {
 // 输入已经是一条完整且唯一的短拼（mtfy / lq / csj / tmtqs …）时，下拉依然要出现：
 // 用户需要「这串短拼到底是哪卷书」的确认提示。但此时补全不会改写文本，若照常
 // 吃掉 Enter，就得按两次才能检索；所以这类「精确提示」下 Enter / Tab 放行给查询。
+// ⚠️ 判断一律以解析层为准，不能只看「候选是否只剩一条」：lwj 会同时列出利未记、
+// 列王纪上 / 下三条候选，但首行 lwj 本身就是利未记的唯一短拼，Enter 同样得放行。
+// 要求首行的 abbr 就等于输入串，避免 ys 这类「唯一短拼却排在候选末尾」的情况误判。
 function isExactAbbrHit(letters, cands) {
-    return !!(cands && cands.length === 1 &&
-        cands[0].abbr === String(letters || '').toLowerCase());
+    const l = String(letters || '').toLowerCase();
+    if (!l || !cands || !cands.length) return false;
+    if (BOOK_PINYIN_ABBR[l] && cands[0].abbr === l) return true;
+    return cands.length === 1 && cands[0].abbr === l;
 }
 
-// 选中候选项后只把字母段换成该卷的完整短拼，章号等后续内容原样保留：
-// 「mtfy1，tm」→「mtfy1，tmtqs」，搜索框里始终显示短拼而不是中文书名。
+// 选中候选项后只把字母段换成该卷可唯一定位的短拼，章号等后续内容原样保留：
+// 「mtfy1，tm」→「mtfy1，tmtqs」；「th」选中帖后 →「tslnjhs」、选中提后 →「tmths」。
+// 搜索框里始终显示短拼而不是中文书名。
 function applyBookAbbrSuggestion(value, caret, suggestion) {
     const tok = getAbbrTokenAtCaret(value, caret);
-    if (!tok || !suggestion || !suggestion.abbr) return null;
-    const abbr = String(suggestion.abbr).toLowerCase();
-    const head = tok.value.slice(0, tok.start) + abbr + tok.rest;
+    if (!tok || !suggestion) return null;
+    const fill = String(suggestion.fill || suggestion.abbr || '').toLowerCase();
+    if (!fill) return null;
+    const head = tok.value.slice(0, tok.start) + fill + tok.rest;
     const tail = tok.value.slice(tok.start + tok.token.length);
     return { value: head + tail, caret: head.length };
+}
+
+// ===== 经文投影主题 =====
+// T 键按此顺序循环；默认主题由设置项 projectionTheme 决定（设置页可改）。
+// 颜色一律写在 CSS 变量里（见 styles.css 末尾的「投影主题」段），JS 只切类名，
+// 四套主题共用同一套 DOM，不用为每套主题复制一遍配色规则。
+const PROJECTION_THEMES = [
+    { id: 'dark',   label: '暗色模式', icon: 'moon' },
+    { id: 'light',  label: '亮色模式', icon: 'sun' },
+    { id: 'blue',   label: '蓝黄模式', icon: 'palette' },
+    { id: 'yellow', label: '黄黑模式', icon: 'contrast' }
+];
+function normalizeProjectionTheme(id) {
+    const hit = PROJECTION_THEMES.find(t => t.id === id);
+    return hit ? hit.id : PROJECTION_THEMES[0].id;
+}
+function nextProjectionTheme(id) {
+    const i = PROJECTION_THEMES.findIndex(t => t.id === id);
+    return PROJECTION_THEMES[(i < 0 ? 0 : i + 1) % PROJECTION_THEMES.length].id;
+}
+function projectionThemeLabel(id) {
+    const hit = PROJECTION_THEMES.find(t => t.id === id);
+    return hit ? hit.label : PROJECTION_THEMES[0].label;
 }
 
 // 投影顶部搜索框专用的短拼补全控制器。
@@ -498,6 +560,7 @@ class ProjBookAbbrSuggestion {
         this.dismissed = null;
         const cands = getBookAbbrSuggestions(tok.letters, 12);
         if (!cands.length) { this.close(); return; }
+        this._letters = String(tok.letters).toLowerCase();
         // 输全的唯一短拼也照常显示，作为「这串短拼是哪卷书」的确认提示
         this.render(cands, isExactAbbrHit(tok.letters, cands));
     }
@@ -536,7 +599,9 @@ class ProjBookAbbrSuggestion {
             short.textContent = c.shortName;
             const code = doc.createElement('span');
             code.className = 'bible-abbr-code';
-            code.textContent = c.abbr;
+            // 右侧灰字显示「选中后实际补全成什么」：th 两行会分别显示 tslnjhs / tmths，
+            // 不再两行都写 th 让人分不清选了谁
+            code.textContent = c.fill || c.abbr;
             row.appendChild(name);
             row.appendChild(short);
             row.appendChild(code);
@@ -606,8 +671,12 @@ class ProjBookAbbrSuggestion {
             return true;
         }
         if (key === 'Enter' || key === 'Tab') {
-            // 精确提示（mtfy / lq …）下补全不会改动文本，收起提示并放行，让 Enter 直接投影
-            if (this.exactHit) { this.close(); return false; }
+            // 精确提示（mtfy / lq / lwj …）下「高亮行正是这串唯一短拼」才放行给检索；
+            // 用户用方向键挑了别的书卷就必须先补全，不能把 Enter 直接放走。
+            const active = this.cands[this.index];
+            if (this.exactHit && active && (active.fill || active.abbr) === this._letters) {
+                this.close(); return false;
+            }
             this.pick(this.index);
             e.preventDefault(); e.stopPropagation();
             return true;
@@ -874,6 +943,20 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '5.3.0': `## [5.3.0] - 2026-11-15
+
+### 新增
+- **四套投影主题（暗色 / 亮色 / 蓝黄 / 黄黑）**：按 T 键在四套主题间循环切换，设置里也能选默认主题。顶栏、底栏、工具栏、经文出处、注解、搜索框、补全下拉、模式菜单、提示条都按主题统一配色；亮色主题滚动条改用深灰，在浅色背景上更易辨认。
+- **长按搜索框弹出书卷与章数选择器**：在投影搜索框长按约半秒弹出选择器，左侧旧约、右侧新约，下方独立显示章数；书卷区与章数区各自滚动、互不联动。选好书卷与章数后，投影立即显示所选内容（整卷或单章）。
+- **书卷简拼直接查整卷**：输入单一书卷短拼（如 mtfy）即查该卷全部章节；并列模式下按一章一页分页显示。
+
+### 修复
+- **查无结果显示整屏空态**：无论初次查询还是已有结果后再查一个不存在的内容，整屏都会显示「没有找到匹配的内容」＋原查询词＋0/0 页，不再残留旧内容、也不再只弹一个小框。
+- **整卷并列时主题归到章首**：并列投影整卷时，该卷的主题 / 纲目自动排到第一章开头；没有章节的内容兜底排到末尾。
+- **撞车短拼选中后正确补全**：th / tq 等会和其它短拼撞车的书卷缩写，从候选里选中后会自动补全成唯一书卷（如 th 补成 tslnjhs），不再停在半截拼音。
+
+### 小提示
+- 本次仅更新经文投影（BSAR）；诗歌投影（Hymns）保持 2.6.0 即可正常使用新增的投影主题与书卷选择器。`,
     '5.2.0': `## [5.2.0] - 2026-11-14
 
 ### 新增
@@ -2165,6 +2248,21 @@ class BibleSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // ===== 经文投影默认主题 =====
+        // 只决定「新打开投影」时的初始配色；投影里按 T 循环切换不改变此设置。
+        new Setting(containerEl)
+            .setName('经文投影默认主题')
+            .setDesc('暗色（深底白字）/ 亮色（浅底深字）/ 蓝黄（蓝底黄字）/ 黄黑（黄底黑字）。投影中按 T 可依次循环切换这四套主题，切换结果不会改写这里的默认值。')
+            .addDropdown(dropdown => {
+                for (const t of PROJECTION_THEMES) dropdown.addOption(t.id, t.label);
+                dropdown
+                    .setValue(normalizeProjectionTheme(this.plugin.settings.projectionTheme))
+                    .onChange(async (value) => {
+                        this.plugin.settings.projectionTheme = normalizeProjectionTheme(value);
+                        await this.plugin.saveSettings();
+                    });
+            });
+
         // ===== 板块 B：插件更新 =====
         containerEl.createEl('h3', { text: '插件更新', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
         new Setting(containerEl)
@@ -2431,6 +2529,13 @@ class BibleSearchEngine {
                 tokens[i] = shortName + tokens[i + 1];
                 tokens.splice(i + 1, 1);
             }
+        }
+        // 单独一个书卷短拼＝整卷书（csj / tslnjhs / tmths …）。
+        // 必须先于关键词循环摘出来，否则会当成普通英文词去经文正文里搜，一本书也出不来。
+        // 用 chapterOnly + 全书卷范围的哨兵值，matchVerseRef 会带上该书卷所有章节与主题/纲目。
+        for (let i = tokens.length - 1; i >= 0; i--) {
+            const wb = wholeBookRefOf(tokens[i]);
+            if (wb) { refs.unshift(wb); tokens.splice(i, 1); }
         }
         let currentBookId = null;
         let currentChapter = 1;
@@ -3080,7 +3185,12 @@ class BibleProjectionOverlay {
         this.currentSlide = 0;
         this.slides = [];
         this.fontSize = 48;
-        this.isDark = true;
+        // 主题默认取设置项；T 键在四套主题间循环。isDark 保留给仍按明暗取色的旧代码读，
+        // 新代码一律读 CSS 变量，不再自己判断明暗。
+        this.themeId = normalizeProjectionTheme(plugin && plugin.settings ? plugin.settings.projectionTheme : null);
+        this.isDark = (this.themeId === 'dark');
+        // 整卷书查询在并列模式下按「一章一页」分页（普通选中仍是全部并列在一页）
+        this.chapterPaged = false;
         // 逐节模式默认居中（沿用原外观），其余模式默认左对齐，均可按 C 切换
         this.isCentered = (mode === 'focus');
         this.isSearchMode = false;
@@ -3107,8 +3217,46 @@ class BibleProjectionOverlay {
             }
         } else if (this.mode === 'parallel') {
             // 并列模式：所有选中项在一页。空选中时不要推出一个空白页，
-            // 否则「不选中经文直接开投影」会显示空白而不是顶部搜索框的空态引导
-            if (selected.length) this.slides.push({ items: [...selected] });
+            // 否则「不选中经文直接开投影」会显示空白而不是顶部搜索框的空态引导。
+            // 整卷书（csj）会有上千节经文，挤在一页根本没法看，此时改成一章一页；
+            // 章号按结果顺序首次出现分组，保持书卷 + 章的自然次序。
+            // ⚠️ 主题（type==='theme'）是每卷一条的全书卷级内容，chapter 恒为 0：
+            // 绝不能让它单独占一页，必须插到该书卷第一章那一页的最开头
+            //（与阅读页 chapter===1 时把主题放在章首是同一套约定）。
+            if (selected.length) {
+                if (this.chapterPaged) {
+                    const groups = new Map();
+                    const themeByBook = new Map();
+                    const orphanThemes = [];
+                    for (const r of selected) {
+                        const it = r.item || {};
+                        const bookId = (it.bookId == null ? 0 : it.bookId);
+                        if (it.type === 'theme') {
+                            if (!themeByBook.has(bookId)) themeByBook.set(bookId, []);
+                            themeByBook.get(bookId).push(r);
+                            continue;
+                        }
+                        const chapter = (typeof it.chapter === 'number' ? it.chapter : 0);
+                        const key = bookId + ':' + chapter;
+                        if (!groups.has(key)) groups.set(key, { bookId, chapter, items: [] });
+                        groups.get(key).items.push(r);
+                    }
+                    // 主题归到该书卷章号最小的一页；整卷查询里那就是第一章
+                    for (const [bookId, themes] of themeByBook) {
+                        let target = null;
+                        for (const g of groups.values()) {
+                            if (g.bookId !== bookId) continue;
+                            if (!target || g.chapter < target.chapter) target = g;
+                        }
+                        if (target) target.items.unshift(...themes);
+                        else orphanThemes.push(...themes);
+                    }
+                    for (const g of groups.values()) this.slides.push({ items: g.items });
+                    if (orphanThemes.length) this.slides.push({ items: orphanThemes });
+                } else {
+                    this.slides.push({ items: [...selected] });
+                }
+            }
         } else if (this.mode === 'mixed') {
             // 混合模式：按选中顺序逐页展示，勾了并列的项与前一页合并
             selected.forEach((r, i) => {
@@ -3133,7 +3281,7 @@ class BibleProjectionOverlay {
         LIVE_BIBLE_PROJECTIONS.add(this);
         this.overlay = document.createElement('div');
         this.overlay.className = 'bible-projection-fullscreen';
-        this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:#1a1a2e;color:#fff;';
+        this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:var(--bp-bg);color:var(--bp-fg);';
 
         const topBar = document.createElement('div');
         topBar.className = 'bible-proj-topbar';
@@ -3141,7 +3289,8 @@ class BibleProjectionOverlay {
         // 从而在投影全屏遮挡原生标题栏时仍能拖动整个 Obsidian 窗口。
         // 顶栏改成上下两行：第一行常驻搜索框，第二行保留快捷键提示；
         // 搜索框与按钮单独设 no-drag，否则在 Electron 里点不中、也拿不到键盘焦点。
-        topBar.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:6px 16px;background:rgba(0,0,0,0.2);border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;-webkit-app-region:drag;';
+        // 顶栏 / 底栏 / 覆盖层的配色全部交给 CSS 变量，T 切主题时只改覆盖层类名即可整屏换色
+        topBar.style.cssText = 'display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:6px 16px;background:var(--bp-bar-bg);border-bottom:1px solid var(--bp-bar-border);flex-shrink:0;-webkit-app-region:drag;';
         const topRow = topBar.createDiv({ cls: 'bible-proj-toprow' });
         topRow.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;';
         const topLeft = topRow.createDiv({ cls: 'bible-proj-mode-wrap' });
@@ -3165,9 +3314,9 @@ class BibleProjectionOverlay {
         const quick = topRow.createDiv({ cls: 'bible-proj-quick-search' });
         const qsInput = quick.createEl('input', {
             cls: 'bible-proj-quick-search-input',
-            attr: { type: 'text', autocomplete: 'off', spellcheck: 'false', title: '投影经文：输入即自动投影，支持整章、章范围、短拼、注串出处与关键词' }
+            attr: { type: 'text', autocomplete: 'off', spellcheck: 'false', title: '投影经文：输入即自动投影，支持整章、章范围、短拼、注串出处与关键词；长按弹出书卷 / 章数选择器' }
         });
-        qsInput.placeholder = '投影经文：太1、太1-3、csj1:1、恩典…（输入即投影）';
+        qsInput.placeholder = '投影经文：太1、太1-3、csj1:1、恩典…（输入即投影 · 长按选书卷）';
         this.quickSearchInput = qsInput;
         const qsClear = quick.createEl('button', { cls: 'bible-proj-quick-search-clear', text: '✕', attr: { type: 'button', title: '清空搜索框' } });
         const qsGo = quick.createEl('button', { cls: 'bible-proj-quick-search-go', text: '投影', attr: { type: 'button', title: '立即投影并把焦点交还画面（Enter）' } });
@@ -3188,7 +3337,7 @@ class BibleProjectionOverlay {
 
         const bottomBar = document.createElement('div');
         bottomBar.className = 'bible-proj-bottombar';
-        bottomBar.style.cssText = 'flex-shrink:0;background:rgba(0,0,0,0.2);border-top:1px solid rgba(255,255,255,0.1);';
+        bottomBar.style.cssText = 'flex-shrink:0;background:var(--bp-bar-bg);border-top:1px solid var(--bp-bar-border);';
 
         const bottomRow = bottomBar.createDiv({ cls: 'bible-proj-bottom-row' });
         bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 16px;gap:8px;';
@@ -3216,8 +3365,8 @@ class BibleProjectionOverlay {
         setIcon(resetBtn, 'rotate-ccw');
         const centerBtn = addToolBtn('', 'toggle-centered', '切换居中', 'bible-proj-tool-icon');
         setIcon(centerBtn, 'align-center');
-        const themeBtn = addToolBtn('', 'toggle-theme', '切换主题', 'bible-proj-tool-icon');
-        setIcon(themeBtn, this.isDark ? 'moon' : 'sun');
+        const themeBtn = addToolBtn('', 'toggle-theme', '切换主题（T）', 'bible-proj-tool-icon');
+        setIcon(themeBtn, (PROJECTION_THEMES.find(t => t.id === this.themeId) || PROJECTION_THEMES[0]).icon);
         const desktopFullBtn = addToolBtn('⛶', 'toggle-desktop-full', '全屏投影（D）', 'bible-proj-tool-emoji');
         this.desktopFullBtn = desktopFullBtn;
         // 移动端没有元素级 Fullscreen API：创建后直接隐藏，DOM 结构保持稳定，
@@ -3231,6 +3380,8 @@ class BibleProjectionOverlay {
         this.overlay.appendChild(bottomBar);
 
         document.body.appendChild(this.overlay);
+        // 挂载后立刻套用默认主题：类名决定 CSS 变量，内联样式里的 var(...) 随之解析
+        this.applyTheme(this.themeId, true);
         // 安卓状态栏兜底必须在挂载后调用（要读宿主的 computed 变量）
         applyProjectionSafeAreaFallback(this.overlay, '--bible-android-inset-top');
         if (this.plugin) this.plugin.currentProjection = this;
@@ -3296,6 +3447,9 @@ class BibleProjectionOverlay {
             self.scheduleQuickSearch();
         });
         input.addEventListener('input', (e) => {
+            // 输入一变就收起上一次「查无结果」的常驻提示，避免旧提示压在新画面上
+            self.hideInlineNotice();
+            self._lastNoResultQuery = '';
             // isComposing / keyCode 229 是 IME 组字中的 input，此时文本尚未定稿
             const composing = !!(e && (e.isComposing || e.keyCode === 229)) || self._projComposing;
             self.invalidateQuickSearch();
@@ -3306,11 +3460,15 @@ class BibleProjectionOverlay {
         goBtn.addEventListener('click', confirm);
         clearBtn.addEventListener('click', () => {
             input.value = '';
+            self.hideInlineNotice();
+            self._lastNoResultQuery = '';
             // 清空只收起下拉与待触发的实时投影，保留上一版画面，不闪空白
             self.invalidateQuickSearch();
             if (self._projAbbr) { self._projAbbr.dismissed = null; self._projAbbr.close(); }
             try { input.focus({ preventScroll: true }); } catch (err) { /* 忽略 */ }
         });
+        // 长按搜索框 → 书卷 / 章数选择器（与「输入即投影」并行，不占用点击）
+        self.bindQuickSearchLongPress(input);
     }
 
     // 取消尚未触发的实时投影，并让已经发出但还没回来的异步检索作废
@@ -3347,6 +3505,235 @@ class BibleProjectionOverlay {
         if (this._projAbbr) this._projAbbr.refresh();
     }
 
+    // ===== 长按搜索框：书卷 / 章数选择器 =====
+    // 整屏投影会进入浏览器 top layer，选择器必须挂在本覆盖层内部，挂到 body 会被盖住。
+    // 书卷区（左旧约 / 右新约）与章数区是两棵独立的滚动容器：各自 overflow-y:auto、
+    // 父级 overflow:hidden，再加 overscroll-behavior:contain，滚动绝不会串到对方。
+    bindQuickSearchLongPress(input) {
+        const self = this;
+        const LONG_PRESS_MS = 500;
+        let timer = null;
+        let startX = 0;
+        let startY = 0;
+        const clearTimer = () => {
+            if (timer) { try { clearTimeout(timer); } catch (err) { /* 忽略 */ } timer = null; }
+        };
+        const reset = () => { clearTimer(); };
+        const start = (x, y) => {
+            reset();
+            startX = x || 0;
+            startY = y || 0;
+            timer = setTimeout(() => {
+                timer = null;
+                self.openBookPicker();
+            }, LONG_PRESS_MS);
+        };
+        const move = (x, y) => {
+            if (!timer) return;
+            if (Math.abs((x || 0) - startX) > 10 || Math.abs((y || 0) - startY) > 10) reset();
+        };
+        // 现代 WebView 一律用 Pointer Events；极老的环境退回 touch，避免长按完全无反应
+        const pointerOk = (typeof window === 'undefined') || !!window.PointerEvent;
+        if (pointerOk) {
+            input.addEventListener('pointerdown', (e) => {
+                if (e && typeof e.button === 'number' && e.button !== 0) return;
+                start(e && e.clientX, e && e.clientY);
+            });
+            input.addEventListener('pointermove', (e) => move(e && e.clientX, e && e.clientY));
+            input.addEventListener('pointerup', clearTimer);
+            input.addEventListener('pointercancel', reset);
+            input.addEventListener('pointerleave', reset);
+        } else {
+            input.addEventListener('touchstart', (e) => {
+                const t = e && e.touches && e.touches[0];
+                start(t && t.clientX, t && t.clientY);
+            }, { passive: true });
+            input.addEventListener('touchmove', (e) => {
+                const t = e && e.touches && e.touches[0];
+                move(t && t.clientX, t && t.clientY);
+            }, { passive: true });
+            input.addEventListener('touchend', clearTimer);
+            input.addEventListener('touchcancel', reset);
+        }
+        // 移动端长按会弹系统菜单 / 触发文字选择，长按刚发生的一小段时间内统一吞掉
+        input.addEventListener('contextmenu', (e) => {
+            if (Date.now() - (self._bookPickerOpenedAt || 0) < 1200) {
+                if (e.preventDefault) e.preventDefault();
+                if (e.stopPropagation) e.stopPropagation();
+            }
+        });
+    }
+
+    // 选择器默认停在当前搜索框里的书卷 / 章；解析不出来就落在创世记
+    guessPickerBook() {
+        const q = this.quickSearchInput ? String(this.quickSearchInput.value || '').trim() : '';
+        for (const book of BIBLE_BOOKS) {
+            if (!q.startsWith(book.shortName)) continue;
+            const m = /^(\d{1,3})/.exec(q.slice(book.shortName.length));
+            const ch = m ? parseInt(m[1], 10) : 0;
+            return { book, chapter: (ch >= 1 && ch <= book.maxChapters) ? ch : 0 };
+        }
+        const wb = wholeBookRefOf(q);
+        if (wb) {
+            const book = BIBLE_BOOKS.find(b => b.id === wb.bookId);
+            if (book) return { book, chapter: 0 };
+        }
+        return { book: BIBLE_BOOKS[0], chapter: 0 };
+    }
+
+    // 「整卷」用解析层认得的唯一短拼（csj / tslnjhs …），才能触发一章一页的整卷投影
+    wholeBookQueryFor(book) {
+        const ab = BOOK_UNIQUE_ABBR[book.id];
+        if (ab && /^[A-Za-z]+$/.test(ab)) {
+            const wb = wholeBookRefOf(ab);
+            if (wb && wb.bookId === book.id) return ab;
+        }
+        return book.shortName + '1-' + book.maxChapters;
+    }
+
+    openBookPicker() {
+        if (this._closed || !this.overlay) return;
+        this.closeBookPicker();
+        const self = this;
+        this._bookPickerOpenedAt = Date.now();
+        if (this._projAbbr) this._projAbbr.close();
+        this.invalidateQuickSearch();
+
+        const mk = (tag, cls, text) => {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            if (text != null) el.textContent = text;
+            return el;
+        };
+        const picker = mk('div', 'bible-proj-book-picker');
+        picker.setAttribute('role', 'dialog');
+        picker.setAttribute('aria-label', '选择书卷与章数');
+        const head = mk('div', 'bible-proj-picker-head');
+        head.appendChild(mk('span', 'bible-proj-picker-title', '书卷 / 章数'));
+        head.appendChild(mk('span', 'bible-proj-picker-tip', '左：旧约　右：新约 · 选章即投影'));
+        const closeBtn = mk('button', 'bible-proj-picker-close', '✕');
+        closeBtn.type = 'button';
+        closeBtn.title = '关闭（Esc）';
+        closeBtn.addEventListener('click', (e) => {
+            if (e.stopPropagation) e.stopPropagation();
+            self.closeBookPicker();
+        });
+        head.appendChild(closeBtn);
+        picker.appendChild(head);
+
+        const body = mk('div', 'bible-proj-picker-body');
+        // 两个 pane 各自滚动；父级 body 不产生滚动条
+        const bookPane = mk('div', 'bible-proj-picker-pane bible-proj-picker-books');
+        const chapterPane = mk('div', 'bible-proj-picker-pane bible-proj-picker-chapters');
+        body.appendChild(bookPane);
+        body.appendChild(chapterPane);
+        picker.appendChild(body);
+        this.overlay.appendChild(picker);
+        this._bookPicker = picker;
+        this._bookPickerOpen = true;
+
+        const state = { bookId: 0, chapter: 0 };
+        this._bookPickerState = state;
+        const cols = mk('div', 'bible-proj-picker-cols');
+        bookPane.appendChild(cols);
+        const makeCol = (label, books) => {
+            const col = mk('div', 'bible-proj-picker-col');
+            col.appendChild(mk('div', 'bible-proj-picker-col-title', label));
+            const list = mk('div', 'bible-proj-picker-book-list');
+            for (const book of books) {
+                const btn = mk('button', 'bible-proj-picker-book', book.shortName);
+                btn.type = 'button';
+                btn.title = book.fullName;
+                btn.setAttribute('data-testament', book.testament);
+                btn.setAttribute('data-book-id', String(book.id));
+                btn.addEventListener('click', () => self.pickBook(book, state, chapterPane, bookPane, 0));
+                list.appendChild(btn);
+            }
+            col.appendChild(list);
+            cols.appendChild(col);
+        };
+        makeCol('旧约', BIBLE_BOOKS.filter(b => b.testament === 'old'));
+        makeCol('新约', BIBLE_BOOKS.filter(b => b.testament === 'new'));
+        const guess = this.guessPickerBook();
+        this.pickBook(guess.book, state, chapterPane, bookPane, guess.chapter);
+
+        // 点选择器 / 搜索框以外即收起；长按输入框本身随后的 click 必须放行，否则刚弹出就被关掉
+        this._bookPickerOutside = (e) => {
+            const t = e && e.target;
+            if (t && t.closest && (t.closest('.bible-proj-book-picker') || t.closest('.bible-proj-quick-search'))) return;
+            self.closeBookPicker();
+        };
+        document.addEventListener('click', this._bookPickerOutside, true);
+        // 选择器打开后不要再让输入框抢键盘焦点，方向键 / 数字键才不会打进搜索框
+        try { if (this.quickSearchInput) this.quickSearchInput.blur(); } catch (err) { /* 忽略 */ }
+    }
+
+    pickBook(book, state, chapterPane, bookPane, chapter) {
+        if (!book || !chapterPane) return;
+        state.bookId = book.id;
+        state.chapter = chapter || 0;
+        if (bookPane && bookPane.querySelectorAll) {
+            for (const btn of bookPane.querySelectorAll('.bible-proj-picker-book')) {
+                const on = Number(btn.getAttribute('data-book-id')) === book.id;
+                if (btn.classList && btn.classList.toggle) btn.classList.toggle('is-current', on);
+            }
+        }
+        while (chapterPane.firstChild) chapterPane.removeChild(chapterPane.firstChild);
+        const head = document.createElement('div');
+        head.className = 'bible-proj-picker-chapter-head';
+        const name = document.createElement('span');
+        name.className = 'bible-proj-picker-chapter-name';
+        name.textContent = book.fullName;
+        head.appendChild(name);
+        const wholeBtn = document.createElement('button');
+        wholeBtn.type = 'button';
+        wholeBtn.className = 'bible-proj-picker-whole';
+        wholeBtn.textContent = '整卷';
+        wholeBtn.title = '投影整卷书（并列模式下一章一页）';
+        wholeBtn.addEventListener('click', () => this.applyBookPickerSelection(book, null));
+        head.appendChild(wholeBtn);
+        chapterPane.appendChild(head);
+        const grid = document.createElement('div');
+        grid.className = 'bible-proj-picker-chapter-grid';
+        for (let c = 1; c <= book.maxChapters; c++) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'bible-proj-picker-chapter';
+            btn.textContent = String(c);
+            btn.title = book.fullName + ' 第 ' + c + ' 章';
+            btn.setAttribute('data-chapter', String(c));
+            if (c === state.chapter && btn.classList) btn.classList.add('is-current');
+            btn.addEventListener('click', () => this.applyBookPickerSelection(book, c));
+            grid.appendChild(btn);
+        }
+        chapterPane.appendChild(grid);
+        // 只重置章数区的滚动位置，书卷区留在用户刚滚到的位置
+        chapterPane.scrollTop = 0;
+    }
+
+    applyBookPickerSelection(book, chapter) {
+        const q = (chapter == null) ? this.wholeBookQueryFor(book) : (book.shortName + chapter);
+        if (this.quickSearchInput) this.quickSearchInput.value = q;
+        this.closeBookPicker();
+        this.invalidateQuickSearch();
+        if (this._projAbbr) this._projAbbr.close();
+        this._lastNoResultQuery = '';
+        // fromPicker：选择器里的书卷 / 章是明确导航目标，忽略侧边栏筛选并强制带上经文
+        this.projectQuery(q, { fromPicker: true });
+    }
+
+    closeBookPicker() {
+        if (this._bookPickerOutside && typeof document !== 'undefined') {
+            document.removeEventListener('click', this._bookPickerOutside, true);
+            this._bookPickerOutside = null;
+        }
+        const picker = this._bookPicker;
+        if (picker && picker.parentNode) picker.parentNode.removeChild(picker);
+        this._bookPicker = null;
+        this._bookPickerOpen = false;
+        this._bookPickerState = null;
+    }
+
     // 用顶部搜索框快速投影：走的是与侧边栏同一个 BibleSearchEngine，
     // 因此整章（太1）、章范围（太1-3）、拼音短拼（csj1:1）、注串出处、关键词等写法全部一致。
     // 检索种类 / 书卷范围 / 主版本沿用侧边栏当前设置；没有打开侧边栏时用「三类全选 + 全书卷」。
@@ -3354,9 +3741,14 @@ class BibleProjectionOverlay {
     // opts.seq：本次请求的序号，异步回来时若已被更新的输入作废就丢弃结果。
     async projectQuery(query, opts) {
         const realtime = !!(opts && opts.realtime);
+        const fromPicker = !!(opts && opts.fromPicker);
         const seq = (opts && typeof opts.seq === 'number') ? opts.seq : ++this._quickSearchSeq;
         const stale = () => realtime && seq !== this._quickSearchSeq;
-        const notify = (msg) => { if (!realtime) new Notice(msg); };
+        // 整屏投影会盖住 Obsidian 的系统 Notice，反馈同步写一份到投影内提示条
+        const notify = (msg) => {
+            this.showInlineNotice(msg, 3200);
+            if (!realtime) { try { new Notice(msg); } catch (err) { /* 忽略 */ } }
+        };
         const q = String(query == null ? '' : query).trim();
         if (!q) { notify('请输入经文出处或关键词'); return; }
         const plugin = this.plugin;
@@ -3402,10 +3794,50 @@ class BibleProjectionOverlay {
             if (typeof engine.setIncludeNotes === 'function') engine.setIncludeNotes(!!(plugin.settings && plugin.settings.showNotes && notesChecked));
             if (typeof engine.setNotesOnly === 'function') engine.setNotesOnly(false);
 
+            // 长按选择器选出来的书卷 / 章同样是「明确指定目标」：忽略侧边栏书卷筛选与范围，
+            // 并强制包含经文类型，否则只勾了主题 / 纲目时会选出一页空白。
+            if (fromPicker) {
+                if (!types.includes('verse')) types = types.concat(['verse']);
+                rangeValue = 'all';
+                bookIds = [];
+            }
+
+            // 单独一个书卷短拼＝整卷书：明确指定书卷时忽略侧边栏的书卷筛选，
+            // 并保证「经文」在检索种类里（否则只会带出主题 / 纲目，正文一节都没有）。
+            const parsedQ = (typeof engine.parseQuery === 'function') ? engine.parseQuery(q) : null;
+            const wholeBook = !!(parsedQ && parsedQ.refs && parsedQ.refs.some(r => r.wholeBook));
+            if (wholeBook) {
+                if (!types.includes('verse')) types = types.concat(['verse']);
+                rangeValue = 'all';
+                bookIds = [];
+            }
+
             const found = engine.search(q, types, rangeValue, bookIds, primaryKey) || [];
-            // 实时输入的中间态常会查不到东西：静默保留上一版画面，不闪空白也不弹通知
-            if (!found.length) { notify('没有找到匹配的内容：' + q); return; }
             if (stale()) return;
+            // 查无结果：无论投影里此前有没有内容，都清成「初次查无结果」的整屏空态。
+            // ⚠️ 绝不能保留上一版搜索结果、只弹一条小提示——用户会误以为旧画面就是新查询的结果。
+            // 显式确认时先把旧内容存进投影历史，按 Z 仍能退回；实时输入是中间态，不压历史。
+            if (!found.length) {
+                this._lastNoResultQuery = q;
+                this.hideInlineNotice();
+                if (!realtime && this.results && this.results.length && typeof this.pushProjectionHistory === 'function') {
+                    this.pushProjectionHistory();
+                }
+                this.results = [];
+                this.slides = [];
+                this.currentSlide = 0;
+                this.chapterPaged = false;
+                if (typeof this.renderSlide === 'function') this.renderSlide();
+                const pageEl = this.overlay && this.overlay.querySelector('.bible-proj-page-num');
+                if (pageEl) pageEl.textContent = '0/0页';
+                if (typeof this.updateBackBtn === 'function') this.updateBackBtn();
+                if (!realtime) {
+                    try { new Notice('没有找到匹配的内容：' + q); } catch (err) { /* 忽略 */ }
+                }
+                return;
+            }
+            this._lastNoResultQuery = '';
+            this.hideInlineNotice();
             const list = found.map((r, i) => {
                 const src = (r && r.item) || {};
                 let item = src;
@@ -3424,11 +3856,14 @@ class BibleProjectionOverlay {
             // 实时投影保持输入框焦点与补全下拉，让用户能接着打字 / 接着挑书卷；
             // 也不写历史栈（否则按 Z 会退回到一堆输入碎片）、不弹「已更新投影内容」。
             if (realtime) {
-                this.reloadResults(list, this.mode, { quiet: true, noHistory: true });
+                const ro = { quiet: true, noHistory: true };
+                if (wholeBook) ro.chapterPaged = true;
+                this.reloadResults(list, this.mode, ro);
                 return;
             }
             if (this._projAbbr) this._projAbbr.close();
-            this.reloadResults(list, this.mode);
+            // 普通查询沿用「不传 opts」的老契约，只有整卷书才额外带分页标记
+            this.reloadResults(list, this.mode, wholeBook ? { chapterPaged: true } : undefined);
             // 显式确认后把焦点交还投影容器，方向键 / QWE / 翻页立即恢复；想再搜按 / 或点顶部输入框
             try { if (this.quickSearchInput) this.quickSearchInput.blur(); } catch (err) { /* 忽略 */ }
             this.focusProjection(true);
@@ -3477,6 +3912,17 @@ class BibleProjectionOverlay {
                 if (!switchBack || inHymnsInput) return false;
                 this.switchBackFromHymns(hk);
                 return true;
+            }
+            // 长按弹出的书卷 / 章数选择器：Esc 只收起选择器，其余键一律不落到投影快捷键上
+            //（否则滚动章数区的方向键会顺手翻页 / 切主题）。
+            if (this._bookPickerOpen) {
+                if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229) {
+                    if (e.preventDefault) e.preventDefault();
+                    if (e.stopPropagation) e.stopPropagation();
+                    this.closeBookPicker();
+                    return true;
+                }
+                return false;
             }
             // 顶部常驻搜索框聚焦时，所有按键都归输入框与它自己的短拼补全：
             // 否则 csj / ss / mtfy 里的 s、q、w、e、c、r、t、z 会被当成投影快捷键，
@@ -3733,8 +4179,10 @@ class BibleProjectionOverlay {
             const emptyPageNum = this.overlay && this.overlay.querySelector('.bible-proj-page-num');
             if (emptyPageNum) emptyPageNum.textContent = '0/0页';
             const box = this.contentArea.createEl('div', { cls: 'bible-proj-empty' });
-            box.createEl('div', { cls: 'bible-proj-empty-title', text: '还没有投影内容' });
-            box.createEl('div', { cls: 'bible-proj-empty-hint', text: '在上方搜索框输入经文出处，内容会自动投影' });
+            box.createEl('div', { cls: 'bible-proj-empty-title', text: this._lastNoResultQuery ? '没有找到匹配的内容' : '还没有投影内容' });
+            box.createEl('div', { cls: 'bible-proj-empty-hint', text: this._lastNoResultQuery
+                ? '「' + this._lastNoResultQuery + '」没有查到结果，请检查书卷 / 章号或换个关键词'
+                : '在上方搜索框输入经文出处，内容会自动投影' });
             box.createEl('div', { cls: 'bible-proj-empty-eg', text: '例如：太1 · 太1-3 · csj1:1 · 恩典 · 创1:26注2' });
             return;
         }
@@ -3760,7 +4208,7 @@ class BibleProjectionOverlay {
                     const refDiv = wrapper.createEl('div', { cls: 'bible-proj-ref bible-proj-compare-ref', text: this.getItemRef(item) });
                     refDiv.style.marginBottom = '8px';
                     refDiv.style.fontSize = (this.fontSize * 0.5) + 'px';
-                    refDiv.style.color = this.isDark ? '#888' : '#999';
+                    refDiv.style.color = 'var(--bp-ref)';
 
                     const textDiv = wrapper.createEl('div', { cls: 'bible-proj-text bible-proj-compare-text', text: this.getItemContent(item) });
                     textDiv.style.lineHeight = '1.6';
@@ -3797,7 +4245,7 @@ class BibleProjectionOverlay {
                 for (const r of slide.items) {
                     const item = { ...r.item, ...r };
                     const itemEl = document.createElement('div');
-                    itemEl.style.cssText = 'margin-bottom:15px;padding:20px;background:rgba(255,255,255,0.05);border-radius:8px;';
+                    itemEl.style.cssText = 'margin-bottom:15px;padding:20px;background:var(--bp-panel-bg);border-radius:8px;';
                     
                     const refDiv = itemEl.createEl('div', { cls: 'bible-proj-ref bible-proj-mixed-ref', text: this.getItemRef(item) });
                     
@@ -3872,7 +4320,7 @@ class BibleProjectionOverlay {
             el.style.fontSize = (this.fontSize * 0.6) + 'px';
             // 主题/纲目引用的颜色由 CSS 控制（.bible-proj-focus-theme-ref / -outline-ref），不在此覆盖
             if (!el.classList.contains('bible-proj-focus-theme-ref') && !el.classList.contains('bible-proj-focus-outline-ref')) {
-                el.style.color = this.isDark ? '#a0a0a0' : '#666';
+                el.style.color = 'var(--bp-ref)';
             }
         });
         this.overlay.querySelectorAll('.bible-proj-parallel-text').forEach(el => { el.style.fontSize = (this.fontSize * 0.85 + (parseInt(el.dataset.projDelta || '0', 10))) + 'px'; });
@@ -3880,7 +4328,7 @@ class BibleProjectionOverlay {
             el.style.fontSize = (this.fontSize * 0.55) + 'px';
             // 主题/纲目引用（对照版）的颜色由 CSS 控制，不在此覆盖
             if (!el.classList.contains('bible-proj-parallel-theme-ref') && !el.classList.contains('bible-proj-parallel-outline-ref')) {
-                el.style.color = this.isDark ? '#a0a0a0' : '#666';
+                el.style.color = 'var(--bp-ref)';
             }
         });
         this.overlay.querySelectorAll('.bible-proj-focus-theme').forEach(el => { el.style.fontSize = (this.fontSize * 1.15) + 'px'; });
@@ -3898,7 +4346,7 @@ class BibleProjectionOverlay {
         });
         this.overlay.querySelectorAll('.bible-proj-mixed-ref').forEach(el => {
             el.style.fontSize = (this.fontSize * 0.6) + 'px';
-            el.style.color = this.isDark ? '#a0a0a0' : '#666';
+            el.style.color = 'var(--bp-ref)';
         });
         // 幻灯片宽度由 CSS 控制（min(900px, 92%)），分屏/全屏都能自适应，无需在此改写
     }
@@ -3910,23 +4358,65 @@ class BibleProjectionOverlay {
         this.renderSlide();
     }
 
+    // T 键：暗色 → 亮色 → 蓝黄 → 黄黑 → 暗色。
+    // 只切覆盖层类名，颜色全由 CSS 变量接管；设置里的默认是「下次打开投影」的初始主题，
+    // 按 T 切换不改变设置，免得随手按一下就把偏好写死。
     toggleTheme() {
-        this.isDark = !this.isDark;
-        const btn = this.overlay.querySelector('[data-action="toggle-theme"]');
+        this.applyTheme(nextProjectionTheme(this.themeId));
+    }
+
+    applyTheme(id, quiet) {
+        const t = PROJECTION_THEMES.find(x => x.id === id) || PROJECTION_THEMES[0];
+        this.themeId = t.id;
+        this.isDark = (t.id === 'dark');
+        const o = this.overlay;
+        if (!o) return;
+        o.classList.toggle('light-mode', t.id === 'light');
+        o.classList.toggle('bp-theme-blue', t.id === 'blue');
+        o.classList.toggle('bp-theme-yellow', t.id === 'yellow');
+        const btn = o.querySelector('[data-action="toggle-theme"]');
         if (btn) {
-            btn.empty();
-            setIcon(btn, this.isDark ? 'moon' : 'sun');
-            btn.title = this.isDark ? '切换到亮色' : '切换到暗色';
+            if (typeof btn.empty === 'function') btn.empty();
+            else if ('textContent' in btn) btn.textContent = '';
+            setIcon(btn, t.icon);
+            btn.title = '当前：' + t.label + '（按 T 切换下一套）';
         }
-        if (this.isDark) {
-            this.overlay.classList.remove('light-mode');
-            this.overlay.style.background = '#1a1a2e';
-            this.overlay.style.color = '#fff';
-        } else {
-            this.overlay.classList.add('light-mode');
-            this.overlay.style.background = '#f5f5f5';
-            this.overlay.style.color = '#333';
+        if (!quiet) this.showInlineNotice('主题：' + t.label, 2200);
+    }
+
+    // 投影整屏时覆盖层进入浏览器 top layer，Obsidian 的系统 Notice 会被盖住，
+    // 所以「主题 / 查无结果」这类反馈一律写在覆盖层内部的这行提示里。
+    showInlineNotice(message, duration) {
+        const o = this.overlay;
+        if (!o || this._closed || typeof document === 'undefined') return;
+        let box = o.querySelector('.bible-proj-inline-notice');
+        if (!box) {
+            box = document.createElement('div');
+            box.className = 'bible-proj-inline-notice';
+            o.appendChild(box);
         }
+        box.textContent = message;
+        box.classList.add('is-visible');
+        if (this._inlineNoticeTimer) {
+            try { clearTimeout(this._inlineNoticeTimer); } catch (err) { /* 忽略 */ }
+            this._inlineNoticeTimer = null;
+        }
+        if (duration !== 0) {
+            const self = this;
+            this._inlineNoticeTimer = setTimeout(() => {
+                self._inlineNoticeTimer = null;
+                self.hideInlineNotice();
+            }, Number(duration) || 3200);
+        }
+    }
+
+    hideInlineNotice() {
+        if (this._inlineNoticeTimer) {
+            try { clearTimeout(this._inlineNoticeTimer); } catch (err) { /* 忽略 */ }
+            this._inlineNoticeTimer = null;
+        }
+        const box = this.overlay && this.overlay.querySelector('.bible-proj-inline-notice');
+        if (box && box.classList) box.classList.remove('is-visible');
     }
 
     nextSlide() {
@@ -4199,6 +4689,8 @@ class BibleProjectionOverlay {
         LIVE_BIBLE_PROJECTIONS.delete(this);
         // 取消尚未触发的实时投影，并让进行中的异步检索作废，避免关掉投影后又刷新画面
         this.invalidateQuickSearch();
+        // 长按时挂在 document 上的「点外部关闭」监听必须单独摘掉
+        this.closeBookPicker();
         // 顶部搜索框的补全下拉挂在 body 上，不随 overlay 一起移除，必须单独销毁
         if (this._projAbbr && typeof this._projAbbr.destroy === 'function') {
             try { this._projAbbr.destroy(); } catch (e) { /* 忽略 */ }
@@ -4462,7 +4954,7 @@ class BibleProjectionOverlay {
     buildHintText(on) {
         const d = isMobileDeviceEnv() ? '' : ' · ' + (on ? 'D 退出全屏投影' : 'D 全屏投影');
         return '← → 翻页 · / 搜索 · Q 逐节 · W 并列 · E 混合 · S 检索' + d +
-            ' · C 居中 · R 重置 · +/- 字体 · T 主题 · Z 返回 · ESC 关闭';
+            ' · C 居中 · R 重置 · +/- 字体 · T 主题（4 套） · Z 返回 · ESC 关闭';
     }
 
     updateDesktopBtn() {
@@ -4585,7 +5077,7 @@ class BibleProjectionOverlay {
         if (this.overlay) {
             document.body.appendChild(this.overlay);
             this.overlay.classList.remove('bible-proj-in-tab');
-            this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:#1a1a2e;color:#fff;';
+            this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:var(--bp-bg);color:var(--bp-fg);';
         }
         this.focusProjection(true);
         setTimeout(() => this.focusProjection(true), 0);
@@ -4881,7 +5373,8 @@ class BibleProjectionOverlay {
             results: this.results,
             mode: this.mode,
             currentSlide: this.currentSlide,
-            showSource: this.showSource
+            showSource: this.showSource,
+            chapterPaged: this.chapterPaged
         });
         if (this._projHistory.length > 30) this._projHistory.shift();
         this.updateBackBtn();
@@ -4894,6 +5387,7 @@ class BibleProjectionOverlay {
         this.results = prev.results;
         this.mode = prev.mode;
         this.showSource = prev.showSource;
+        this.chapterPaged = !!prev.chapterPaged;
         this.slides = [];
         this.buildSlides();
         this.currentSlide = Math.min(Math.max(0, prev.currentSlide), Math.max(0, this.slides.length - 1));
@@ -4916,6 +5410,10 @@ class BibleProjectionOverlay {
         // 实时投影（noHistory）不存档，否则每敲一个字都会往「返回」栈里塞一版碎片。
         if (!(opts && opts.noHistory)) this.pushProjectionHistory();
         this.results = results.filter(r => r.selected).sort((a, b) => a.order - b.order);
+        // 整卷书查询（含侧边栏检索后直接投影）在并列模式下一章一页；
+        // 侧边栏路径没有 opts，靠结果上带的 wholeBook 标记识别。
+        this.chapterPaged = !!(opts && opts.chapterPaged) ||
+            this.results.some(r => r && (r.wholeBook || r._wholeBook));
         this.mode = mode;
         this.currentSlide = 0;
         this.slides = [];
@@ -7392,6 +7890,7 @@ class BibleSearchView extends ItemView {
         this._abbrDismissed = null;
         const cands = getBookAbbrSuggestions(tok.letters, 12);
         if (!cands.length) { this.closeAbbrSuggestion(); return; }
+        this._abbrLetters = String(tok.letters).toLowerCase();
         // 输全的唯一短拼也照常显示（mtfy → 马太福音、lq → 哥林多前书），作为确认提示
         this.renderAbbrSuggestion(cands, isExactAbbrHit(tok.letters, cands));
     }
@@ -7428,7 +7927,9 @@ class BibleSearchView extends ItemView {
             short.textContent = c.shortName;
             const code = doc.createElement('span');
             code.className = 'bible-abbr-code';
-            code.textContent = c.abbr;
+            // 右侧灰字显示「选中后实际补全成什么」：th 两行会分别显示 tslnjhs / tmths，
+            // 不再两行都写 th 让人分不清选了谁
+            code.textContent = c.fill || c.abbr;
             row.appendChild(name);
             row.appendChild(short);
             row.appendChild(code);
@@ -7504,8 +8005,12 @@ class BibleSearchView extends ItemView {
             return true;
         }
         if (key === 'Enter' || key === 'Tab') {
-            // 精确提示下补全不会改动文本，收起并放行，让 Enter 直接检索
-            if (st.exactHit) { this.closeAbbrSuggestion(); return false; }
+            // 精确提示下只有「高亮行就是这串唯一短拼」才收起并放行给检索；
+            // 用方向键选了别的书卷（如 lwj 里挑列王纪上）必须先补全，否则会误搜成利未记。
+            const active = st.cands[st.index];
+            if (st.exactHit && active && (active.fill || active.abbr) === this._abbrLetters) {
+                this.closeAbbrSuggestion(); return false;
+            }
             this.pickAbbrSuggestion(st.index);
             e.preventDefault(); e.stopPropagation();
             return true;
@@ -7662,11 +8167,19 @@ class BibleSearchView extends ItemView {
         const preParsed = this.plugin.searchEngine ? this.plugin.searchEngine.parseQuery(query) : null;
         const hasNoteRef = !!(preParsed && preParsed.noteRefs && preParsed.noteRefs.length > 0);
 
-        const rangeValue = this.getRangeValue();
+        let rangeValue = this.getRangeValue();
         let bookIds = [];
         if (rangeValue === 'multi') {
             bookIds = Array.from(this.selectedBookIds);
             if (bookIds.length === 0) { new Notice('请选择书卷'); return; }
+        }
+        // 单独书卷短拼＝整卷书：查询里已经点名书卷，就不该再被侧边栏的书卷筛选挡住
+        //（否则只勾了新约书卷时输入 csj 会一条都查不到）；同时保证「经文」在检索种类里。
+        const wholeBookQuery = !!(preParsed && preParsed.refs && preParsed.refs.some(r => r.wholeBook));
+        if (wholeBookQuery) {
+            if (!types.includes('verse')) types.push('verse');
+            rangeValue = 'all';
+            bookIds = [];
         }
 
         if (this.plugin.searchEngine === null || this.plugin.allItems.length === 0) {
@@ -7698,6 +8211,10 @@ class BibleSearchView extends ItemView {
         if (this.keepCandidates) this.freezeSelections('search');
 
         this.results = this.plugin.searchEngine.search(query, types, rangeValue, bookIds, primaryKey);
+        // 整卷书查询：标记随结果带到投影，并列投影据此改成一章一页
+        if (wholeBookQuery) {
+            for (const r of this.results) r.wholeBook = true;
+        }
         this.selectCounter = 0;
         this.compareSelections = {};  // 清空对照经文选中状态
         this.cmpOrder = [];
@@ -10410,7 +10927,9 @@ class BibleSearchPlugin extends Plugin {
             // 注解数据缺失提示是否被「不再提醒」关闭（安装成功后会复位为 false，便于日后更新仍提醒）
             dismissedNotesPrompt: false,
             // 安装 / 启用插件后自动在右侧边栏生成「圣经检索」面板
-            autoOpenSidebar: true
+            autoOpenSidebar: true,
+            // 经文投影默认主题：dark 暗色 / light 亮色 / blue 蓝黄 / yellow 黄黑（投影内按 T 循环切换）
+            projectionTheme: 'dark'
         };
         const loaded = await this.loadData() || {};
         this.settings = Object.assign({}, defaults, loaded);
