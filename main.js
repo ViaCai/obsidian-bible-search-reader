@@ -874,6 +874,21 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '5.2.0': `## [5.2.0] - 2026-11-14
+
+### 新增
+- **三处「本页全选」统一成一个按钮**：经文弹窗、检索页、阅读页都是单击只选本页主版本，长按约半秒连对照版一起选；本页主版本全选后按钮变「取消」，点一下清掉本页全部内容。勾选序号严格按画面上的行顺序排列（主版本 → 它的对照版 → 下一节），复制与投影的顺序和看到的一致。
+- **经文弹窗支持多版本对照**：每节经文下方直接列出其它已启用版本，不再标注版本名，配色与阅读页一致；对照版可以单独勾选、复制、投影。点经文出处跳阅读页，点经文内容才是选中这一节。
+- **「检查数据 / 注解更新」按真实文件判断**：改为比对本地数据文件的大小与 SHA-256，旧版数据、误删的文件都会被正确列出并可一键恢复；网络或清单读取失败单独提示，不再误报「已是最新」。
+- **u / i / y 全局可用**：在笔记里也能开关对照面板、专注模式、搜索 ↔ 阅读切换（输入框内不触发）。
+
+### 修复
+- **两个插件来回切投影不再串状态**：P 恒打开诗歌窗口投影、O 恒打开诗歌全屏投影；从诗歌全屏切到经文仍是全屏，从诗歌窗口切到经文仍是窗口，连续多次切换也稳定。修掉整屏图层交接时与浏览器全屏异步队列抢时序导致的「第二次变窗口」。
+- **经文弹窗全选逻辑对齐**：单击不会残留之前勾选的对照版，长按不会让旧勾选排在新序号前面，取消会一并清掉注解 / 串珠与对照版；节数很多时不再逐行重绘。
+- 投影内焦点、菜单文案、快捷键门禁与移动端安全区等细节一并加固。
+
+### 小提示
+- 与诗歌投影互切建议搭配 Hymns 2.6.0 或更新版，两个插件一起更新最省心。`,
     '5.1.0': `## [5.1.0] - 2026-11-13
 
 ### 新增
@@ -2716,10 +2731,53 @@ class BibleSearchEngine {
     }
 }
 
+/* ==================== 本页全选按钮：单击 / 长按 / 取消 三态 ====================
+   经文弹窗、检索页「本页操作·全选」、阅读页「本页操作·全选」共用同一套交互：
+   · 单击 → 只选本页主版本内容；
+   · 长按（约 500ms）→ 选本页主版本 + 全部对照版内容；
+   · 本页主版本已全选（或主版本与对照版都已全选）→ 按钮变「取消」，点击一键取消本页所有内容。
+   handlers = { getState, onSelect, onSelectWithCompare, onCancel, after }
+   getState() 返回 'cancel' | 'select'；长按不经过 getState，始终执行「主 + 对照全选」。 */
+const PAGE_SELECT_LONG_PRESS_MS = 500;
+function bindPageSelectToggle(btn, handlers) {
+    if (!btn || typeof btn.addEventListener !== 'function') return;
+    const h = handlers || {};
+    let timer = null;
+    let longFired = false;
+    const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const run = (fn) => { try { if (typeof fn === 'function') fn(); } catch (err) { console.error('[Bible] 本页全选操作失败:', err); } };
+    btn.addEventListener('pointerdown', (e) => {
+        if (e && typeof e.button === 'number' && e.button !== 0) return;
+        longFired = false;
+        clearTimer();
+        timer = setTimeout(() => {
+            timer = null;
+            longFired = true;
+            run(h.onSelectWithCompare);
+            run(h.after);
+        }, PAGE_SELECT_LONG_PRESS_MS);
+    }, { passive: true });
+    const onRelease = () => clearTimer();
+    btn.addEventListener('pointerup', onRelease, { passive: true });
+    btn.addEventListener('pointercancel', (e) => { clearTimer(); longFired = false; }, { passive: true });
+    // 触屏长按会弹系统菜单；按钮上直接屏蔽，避免「长按全选」被上下文菜单打断。
+    btn.addEventListener('contextmenu', (e) => { if (longFired) e.preventDefault(); });
+    btn.addEventListener('click', (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        clearTimer();
+        if (longFired) { longFired = false; return; }   // 长按已处理，吞掉收尾的 click
+        const state = typeof h.getState === 'function' ? h.getState() : 'select';
+        if (state === 'cancel') run(h.onCancel);
+        else run(h.onSelect);
+        run(h.after);
+    });
+    // 键盘触发（Enter / 空格）不会有 pointerdown，清掉上一次长按可能残留的吞点击标记。
+    btn.addEventListener('keydown', () => { longFired = false; });
+}
+
 // ==================== 移动端环境判定 ====================
-// Obsidian 移动端（iOS / Android）没有元素级 Fullscreen API，Hymns 也不提供「诗歌全屏」。
-// 投影里的「全屏投影」按钮、提示条中的 D 说明、模式菜单中的「诗歌全屏」都要按平台裁掉，
-// 免得摆一个点不动、按下去也没反应的入口；桌面端窗口再窄仍按桌面处理（全屏 API 可用）。
+// Obsidian 移动端（iOS / Android）没有元素级 Fullscreen API，D 全屏只桌面生效。
+// 投影里的「全屏投影」按钮、提示条中的 D 说明要按平台裁掉；桌面端窗口再窄仍按桌面处理。
 function isMobileDeviceEnv() {
     try {
         if (typeof Platform !== 'undefined' && Platform && Platform.isMobile) return true;
@@ -2731,21 +2789,103 @@ function isMobileDeviceEnv() {
     return false;
 }
 
+// 安卓状态栏兜底：Obsidian 会把真实状态栏高度注入 --safe-area-inset-top，
+// 但部分 WebView / 老宿主既不给这个变量，env(safe-area-inset-top) 又恒为 0，
+// 投影顶部就会被状态栏压住。CSS 已用 max() 优先读宿主变量；这里只在宿主确实
+// 没给时，往投影层写一个保守的状态栏高度（24dp），不会盖过真实 inset。
+function applyProjectionSafeAreaFallback(el, cssVar) {
+    if (!el || !el.style || typeof el.style.setProperty !== 'function') return;
+    const doc = el.ownerDocument || (typeof document !== 'undefined' ? document : null);
+    if (!doc) return;
+    let host = 0;
+    try {
+        const win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+        if (win && typeof win.getComputedStyle === 'function') {
+            const roots = [doc.documentElement, doc.body];
+            for (let i = 0; i < roots.length && !host; i++) {
+                if (!roots[i]) continue;
+                host = parseFloat(win.getComputedStyle(roots[i]).getPropertyValue('--safe-area-inset-top')) || 0;
+            }
+        }
+    } catch (err) { /* 忽略：取不到就走兜底 */ }
+    if (host > 0) return;                 // 宿主已给出真实 inset，CSS 的 max() 会取更大值
+    try {
+        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+        if (!/Android/i.test(ua)) return; // 只兜安卓；iOS 的 env() 本来就有效
+    } catch (err) { return; }
+    el.style.setProperty(cssVar, '24px');
+}
+
 // ==================== 与 Hymns 插件的投影联动 ====================
 // 两个插件互不引用、加载顺序也不确定，因此只靠「DOM 标记 + 自定义事件」协同：
 //   · Hymns 的投影层固定带 .hymns-proj 类；只要该图层还在 DOM 里，就认为诗歌投影在前台。
 //   · 诗歌投影前台时按 Q/W/E＝想切回经文投影：先派发 hymns:projection-close 请对方
 //     自己收起（它会退出浏览器整屏、移除图层、清理键盘监听），detail.done 用来确认是否被处理。
 //   · 对方是旧版、不认识该事件时走 DOM 兜底，避免画面永远卡在诗歌投影。
-// 反过来，本插件把 O/P 完全让给 Hymns（全屏投影改用 D），因此诗歌投影的打开/切换
-// 仍由 Hymns 自己的快捷键处理，本文件不注册任何 O/P 监听。
+// 反过来，本插件把 P / O 完全让给 Hymns（O=诗歌全屏，P=诗歌窗口），
+// 这两个键各自明确指定显示模式，不继承任何旧状态。
+// D＝经文投影全屏、O＝诗歌投影全屏；经文投影在前台时 D 归本插件。
 const HYMNS_PROJECTION_SELECTOR = '.hymns-proj';
 const HYMNS_REQUIRED_NOTICE = '请先安装并开启 Hymns 插件，才能使用诗歌投影';
 const HYMNS_REQUIRED_HINT = '需安装并开启 Hymns 插件';
 
+/* ===== 切换投影模式时的「整屏交接」=====
+   全屏（D）独立于投影模式：从诗歌投影切回经文投影、或反过来，都必须
+   「原来是整屏 → 切完还是整屏，原来非整屏 → 切完仍非整屏」。
+   浏览器把整屏绑在具体 DOM 元素上，旧投影层一被移除整屏就丢了，因此用一个
+   一次性的 window 标记把状态交给接管方。两个插件各自实现同名的读写函数，
+   靠同一个 key 协同、互不 import；3 秒过期，只服务于同一次按键 / 点击。 */
+const PROJECTION_FS_HANDOFF_KEY = '__obsidian_projection_fs_handoff';
+function markProjectionFullscreenHandoff(on) {
+    try {
+        if (typeof window === 'undefined') return;
+        window[PROJECTION_FS_HANDOFF_KEY] = { on: !!on, at: Date.now() };
+    } catch (err) { /* 忽略 */ }
+}
+function takeProjectionFullscreenHandoff() {
+    try {
+        if (typeof window === 'undefined') return false;
+        const v = window[PROJECTION_FS_HANDOFF_KEY];
+        if (!v) return false;
+        window[PROJECTION_FS_HANDOFF_KEY] = null;   // 一次性：谁先接管谁消费
+        if (Date.now() - (v.at || 0) > 3000) return false;
+        return !!v.on;
+    } catch (err) { return false; }
+}
+/* 只读不消费：按键手势内的主恢复路径用它，把标记留给 fullscreenchange 兜底再兜一次。
+   否则手势路径先把标记拿走，异步兜底就彻底失效了。 */
+function peekProjectionFullscreenHandoff() {
+    try {
+        if (typeof window === 'undefined') return false;
+        const v = window[PROJECTION_FS_HANDOFF_KEY];
+        if (!v) return false;
+        if (Date.now() - (v.at || 0) > 3000) return false;
+        return !!v.on;
+    } catch (err) { return false; }
+}
+
+/* ===== 「投影应处于整屏」的持久意图 =====
+   一次性交接标记会被两边的 fullscreenchange 抢先消费、且 3 秒过期，切模式时
+   时序一乱就出现「按 D 反而切到了另一种投影」「整屏切过去变窗口」。
+   不带过期、不被消费的持久意图由「用户明确指定显示状态」写：D / ⛶、O（全屏）、
+   P（窗口）。⚠️ Q/W/E 只切投影模式，一律以诗歌投影此刻真实的整屏状态为准交接，
+   绝不再用这个意图去覆盖真实状态（否则窗口态切模式会被残留的 true 带成全屏）。
+   两个插件用同一个 key 协同，互不 import。 */
+const PROJECTION_FS_INTENT_KEY = '__obsidian_projection_fs_intent';
+function setProjectionFsIntent(on) {
+    try {
+        if (typeof window !== 'undefined') window[PROJECTION_FS_INTENT_KEY] = !!on;
+    } catch (err) { /* 忽略 */ }
+}
+function getProjectionFsIntent() {
+    try {
+        return !!(typeof window !== 'undefined' && window[PROJECTION_FS_INTENT_KEY]);
+    } catch (err) { return false; }
+}
+
 // 投影在前台时，Obsidian 的 Notice 挂在 body 上，会被进入 top layer 的全屏投影整块盖住：
 // 用户点了置灰的诗歌项却什么提示也看不到。因此优先把提示渲染进投影覆盖层内部，
-// 只有找不到投影层（例如还没开投影就在笔记里按 O/P）才退回系统 Notice。
+// 只有找不到投影层（例如还没开投影就在笔记里按 P）才退回系统 Notice。
 let _hymnsNoticeTimer = null;
 function showHymnsRequiredNotice(fromEl, forceNotice) {
     try {
@@ -2801,7 +2941,7 @@ function isHymnsPluginReady(app) {
 }
 
 // 把「点菜单」变成「按一次快捷键」：合成 keydown 派发给 document，让 Q/W/E 走本插件
-// 既有的统一分派、O/P 走 Hymns 自己的全局监听，两边逻辑都不必重复实现一遍。
+// 既有的统一分派、P 走 Hymns 自己的全局监听，两边逻辑都不必重复实现一遍。
 // 派发前先把焦点从输入框移开，否则投影搜索框的打字门禁会把快捷键当普通字母吞掉。
 function dispatchProjectionHotkey(key) {
     const doc = (typeof document !== 'undefined') ? document : null;
@@ -2825,7 +2965,7 @@ function dispatchProjectionHotkey(key) {
                preventDefault() {}, stopPropagation() {} };
     }
     // 必须派发到 body，而不是 document：真实按键的 target 是页面元素，document 上的
-    // 捕获监听（投影层消费 Q/W/E、Hymns 消费 O/P）一旦 stopPropagation，冒泡阶段的
+    // 捕获监听（投影层消费 Q/W/E、Hymns 消费 P / D）一旦 stopPropagation，冒泡阶段的
     // 插件级监听就不会再执行；若直接派发到 document，两边都成了 at-target 的同节点监听，
     // stopPropagation 拦不住彼此，Q/W/E 会执行两遍（刚切完模式又被当成同键关闭）。
     // 测试环境没有 body.dispatchEvent 时退回 document，仍能把按键交给探针验证。
@@ -2837,25 +2977,69 @@ function isHymnsProjectionFront() {
     try {
         const doc = (typeof document !== 'undefined') ? document : null;
         if (!doc) return false;
-        if (typeof doc.querySelector === 'function' && doc.querySelector(HYMNS_PROJECTION_SELECTOR)) return true;
+        // 整屏交接期间旧诗歌层会短暂隐藏在 DOM 里等 fullscreenchange（不能立刻摘，否则会
+        // 触发自动退出整屏）。它已经不是前台投影，别让紧接着的 Q/W/E 误判成「还在诗歌投影」。
+        if (typeof doc.querySelectorAll === 'function') {
+            const hosts = doc.querySelectorAll(HYMNS_PROJECTION_SELECTOR);
+            for (let i = 0; i < hosts.length; i++) {
+                if (hosts[i].style && hosts[i].style.visibility === 'hidden') continue;
+                return true;
+            }
+        }
         const fs = doc.fullscreenElement || doc.webkitFullscreenElement;
         return !!(fs && fs.classList && typeof fs.classList.contains === 'function' &&
-            fs.classList.contains('hymns-proj'));
+            fs.classList.contains('hymns-proj') && !(fs.style && fs.style.visibility === 'hidden'));
     } catch (err) { return false; }
 }
 
+/* 「诗歌投影此刻是不是正占着整屏」：必须在请走它之前读，作为本次按键的直接依据。
+   一次性交接标记只留作 fullscreenchange 的兜底——那个回调会抢先把标记消费掉，
+   而它发生在按键手势之外，异步 requestFullscreen 常因失去用户手势授权而失败，
+   表现就是「整屏的诗歌投影按 Q/W/E 切过去变成窗口」。读 DOM 快照不依赖时序，
+   窗口态也能明确得到 false（不会把上一次残留的整屏意图误带过来）。 */
+function hymnsProjectionWantsFullscreen() {
+    try {
+        const doc = (typeof document !== 'undefined') ? document : null;
+        if (!doc) return false;
+        const fs = doc.fullscreenElement || doc.webkitFullscreenElement;
+        if (!fs) return false;
+        if (fs.classList && typeof fs.classList.contains === 'function' &&
+            fs.classList.contains('hymns-proj')) return true;
+        const hosts = (typeof doc.querySelectorAll === 'function')
+            ? doc.querySelectorAll(HYMNS_PROJECTION_SELECTOR) : [];
+        for (let i = 0; i < hosts.length; i++) {
+            const h = hosts[i];
+            if (h === fs || (h.contains && typeof h.contains === 'function' && h.contains(fs))) return true;
+        }
+    } catch (err) { /* 忽略 */ }
+    return false;
+}
+
+/* 返回「请走之前诗歌投影是否占着整屏」，供调用方在按键手势内直接恢复整屏。 */
 function requestHymnsProjectionClose() {
     const doc = (typeof document !== 'undefined') ? document : null;
-    if (!doc) return;
+    if (!doc) return false;
+    // ⚠️ DOM 快照必须在「请走诗歌层」之前读：close() 会摘掉图层，之后 fullscreenElement
+    // 随时可能变成 null。回执里的 _fullscreen 标志又可能还没被异步 fullscreenchange 更新，
+    // 两者取或才不会把「诗歌全屏」误判成窗口（用户反馈：诗歌全屏按 QWE 变经文窗口）。
+    const domFs = hymnsProjectionWantsFullscreen();
+    let wantFs = domFs;
     let handled = false;
     try {
         if (typeof doc.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
-            const detail = { reason: 'bible-projection', done: false };
+            const detail = { reason: 'bible-projection', done: false, wantFs: null };
             doc.dispatchEvent(new CustomEvent('hymns:projection-close', { detail }));
             handled = !!detail.done;
+            // 新版 Hymns 会自报「关闭前真实的整屏状态」：
+            // 诗歌全屏 → 经文全屏，诗歌窗口 → 经文窗口，严格按用户看到的画面交接。
+            if (handled && typeof detail.wantFs === 'boolean') wantFs = domFs || detail.wantFs;
         }
     } catch (err) { /* 忽略：环境不支持自定义事件 */ }
-    if (handled) return;
+    // 以诗歌投影当前真实状态为准，同步清掉可能残留的持久整屏意图。
+    // 旧逻辑在调用方用「intentFs || wantFs」，会让窗口态切模式被旧意图误带成全屏。
+    setProjectionFsIntent(wantFs);
+    markProjectionFullscreenHandoff(wantFs);
+    if (handled) return wantFs;
     // 兜底：对方没响应时直接摘掉图层并退出整屏，保证画面能回到经文投影
     try {
         const left = (typeof doc.querySelectorAll === 'function')
@@ -2867,6 +3051,9 @@ function requestHymnsProjectionClose() {
             }
         }
         const fs = doc.fullscreenElement || doc.webkitFullscreenElement;
+        // 旧版 Hymns 不认识自定义事件：强删图层会顺带退出整屏。窗口态也要写 false，
+        // 把上一次可能残留的整屏意图清掉，否则「窗口切模式」会被误带成整屏。
+        markProjectionFullscreenHandoff(wantFs);
         if (fs) {
             const fn = doc.exitFullscreen || doc.webkitExitFullscreen;
             if (typeof fn === 'function') {
@@ -2875,6 +3062,7 @@ function requestHymnsProjectionClose() {
             }
         }
     } catch (err) { /* 忽略 */ }
+    return wantFs;
 }
 
 // ==================== 投影覆盖层（支持多版本）====================
@@ -2962,7 +3150,7 @@ class BibleProjectionOverlay {
             text: this.getModeName(),
             attr: { type: 'button', title: isMobileDeviceEnv()
                 ? '点击选择投影模式（Q / W / E · P）'
-                : '点击选择投影模式（Q / W / E · O / P）' }
+                : '点击选择投影模式（Q / W / E / P 切换 · D 全屏）' }
         });
         // 左上角模式名本身就是入口：点开菜单选经文 / 诗歌投影模式，等价于按对应快捷键。
         // 菜单必须挂在本覆盖层内部——桌面全屏时覆盖层进入 top layer，挂到 body 的浮层会被盖住。
@@ -3043,6 +3231,8 @@ class BibleProjectionOverlay {
         this.overlay.appendChild(bottomBar);
 
         document.body.appendChild(this.overlay);
+        // 安卓状态栏兜底必须在挂载后调用（要读宿主的 computed 变量）
+        applyProjectionSafeAreaFallback(this.overlay, '--bible-android-inset-top');
         if (this.plugin) this.plugin.currentProjection = this;
         // 点击注解 / 串珠面板以外的任何区域即收起已展开的面板。
         // 上标（sup）自身的点击处理器里调了 stopPropagation，不会冒泡到这里，
@@ -3275,7 +3465,7 @@ class BibleProjectionOverlay {
             if (e.ctrlKey || e.metaKey || e.altKey) return false;
             const ae = document.activeElement;
             // 跨插件联动：Hymns 诗歌投影在前台时，键盘一律归对方（方向键、空格、Esc、
-            // O/P、搜索框打字等），只有 Q/W/E 用来「切回经文投影」。
+            // D / P、搜索框打字等），只有 Q/W/E 用来「切回经文投影」。
             // 不这么做的话，本投影虽被压在底下仍会吃掉按键去翻页 / 切模式 / 关投影，
             // 焦点守卫还会抢走诗歌投影搜索框的焦点，表现就是「按 QWE 切不回来」。
             if (isHymnsProjectionFront()) {
@@ -3420,7 +3610,8 @@ class BibleProjectionOverlay {
             else if (e.key === '-') { this.fontSize = Math.max(16, this.fontSize - 4); this.updateFontSize(); }
             else if (e.key === 't' || e.key === 'T') this.toggleTheme();
             else if (e.key === 's' || e.key === 'S') this.toggleSearchMode();
-            // 全屏投影改用 D；O / P 让行给 Hymns 插件的投影快捷键（见文件顶部的跨插件联动说明）
+            // D：两边共用的全屏 / 取消全屏（诗歌投影前台时上面已整体让行，归 Hymns 处理）；
+            // P 让行给 Hymns 插件，O 已彻底移除
             else if (e.key === 'd' || e.key === 'D') this.toggleDesktopFullscreen();
             else if (e.key === 'c' || e.key === 'C') this.toggleCentered();
             else if (e.key === 'r' || e.key === 'R') { this.fontSize = 48; this.updateFontSize(); }
@@ -3486,6 +3677,11 @@ class BibleProjectionOverlay {
             // 别的插件（Hymns）进出整屏也会触发 fullscreenchange：只有「本投影自己」刚退出
             // 全屏才记防抖时间，否则来回切投影后 ESC 会被 800ms 静默期整段吞掉。
             if (!own && this._ownFullscreenActive) this._lastFullscreenExitAt = Date.now();
+            // 整屏交接的「重新进入整屏」绝不在这里做：fullscreenchange 是异步 DOM 事件，
+            // 不在按键手势窗口内，任何 requestFullscreen 都会抛「API can only be initiated
+            // by a user gesture」（见控制台报错）。真正的恢复由接管方在手势内完成——
+            // 切到经文投影走 switchBackFromHymns 在手势内重新请求整屏，
+            // 切到诗歌投影走 Hymns.setFullscreen。这里只同步按钮高亮，绝不重新请求整屏。
             this._ownFullscreenActive = own;
             this.updateDesktopBtn();
         };
@@ -4012,7 +4208,9 @@ class BibleProjectionOverlay {
         this.unwatchSidebar();
         // 处于桌面全屏时先退出全屏（否则关闭投影后 Obsidian 会一直停在全屏状态）；
         // 只退本投影自己的整屏，别把 Hymns 诗歌投影的整屏顺手关掉
-        if (this.isOwnFullscreenElement && this.isOwnFullscreenElement()) this.exitDesktopFullscreen();
+        // 被 P 请走＝切换投影模式：整屏元素要由诗歌投影在按键手势内接管，
+        // 这里绝不 exitFullscreen()（它是全局的，会把对方刚请求的整屏一起退掉）。
+        if (!this._closingForHymns && this.isOwnFullscreenElement && this.isOwnFullscreenElement()) this.exitDesktopFullscreen();
         if (this._fsChangeHandler) {
             document.removeEventListener('fullscreenchange', this._fsChangeHandler);
             document.removeEventListener('webkitfullscreenchange', this._fsChangeHandler);
@@ -4029,7 +4227,46 @@ class BibleProjectionOverlay {
             } catch (e) { /* 忽略 */ }
         }
         if (this.overlay) {
-            try { this.overlay.remove(); } catch (e) { /* 忽略 */ }
+            const el = this.overlay;
+            // ⚠️ 切到诗歌投影（_closingForHymns）且本层还占着浏览器整屏时，绝不能立刻把
+            // fullscreenElement 从 DOM 摘掉：浏览器会「自动退出整屏」，和对方在按键手势内
+            // 发起的 requestFullscreen 抢同一个异步队列 —— 表现为诗歌全屏其实没进整屏，
+            // 再按 Q/W/E 切回来又变成窗口，而且时好时坏（用户反馈的第二次必现）。
+            // 先隐藏本层让对方露出来，等 fullscreenchange 确认整屏已交出去（或已退出）后再摘除。
+            let deferred = false;
+            if (this._closingForHymns && this.isOwnFullscreenElement()) {
+                deferred = true;
+                try { el.style.visibility = 'hidden'; el.style.pointerEvents = 'none'; } catch (e) { /* 忽略 */ }
+                let finished = false;
+                let timer = null;
+                const onChange = () => {
+                    const fs = document.fullscreenElement || document.webkitFullscreenElement;
+                    const stillMine = !!(fs && (fs === el ||
+                        (typeof el.contains === 'function' && el.contains(fs))));
+                    if (!stillMine) finish();
+                };
+                const finish = () => {
+                    if (finished) return;
+                    finished = true;
+                    try { document.removeEventListener('fullscreenchange', onChange); } catch (e) { /* 忽略 */ }
+                    try { if (timer !== null) clearTimeout(timer); } catch (e) { /* 忽略 */ }
+                    try {
+                        const fs = document.fullscreenElement || document.webkitFullscreenElement;
+                        if (fs && (fs === el || (typeof el.contains === 'function' && el.contains(fs)))) {
+                            // 对方没能接管整屏（窗口模式 / 请求失败）：明确退出，别残留全屏
+                            const fn = document.exitFullscreen || document.webkitExitFullscreen;
+                            if (typeof fn === 'function') {
+                                const q = fn.call(document);
+                                if (q && typeof q.catch === 'function') q.catch(() => { /* 忽略 */ });
+                            }
+                        }
+                    } catch (e) { /* 忽略 */ }
+                    try { if (el.parentNode) el.remove(); } catch (e) { /* 忽略 */ }
+                };
+                document.addEventListener('fullscreenchange', onChange);
+                timer = setTimeout(finish, 240);
+            }
+            if (!deferred) { try { el.remove(); } catch (e) { /* 忽略 */ } }
             this.overlay = null;
         }
         // 注意：removeEventListener 的 capture 必须与注册时一致，否则监听残留会导致关闭后快捷键仍生效
@@ -4062,7 +4299,23 @@ class BibleProjectionOverlay {
     switchBackFromHymns(key) {
         const map = { q: 'focus', w: 'parallel', e: 'mixed' };
         const next = map[key] || null;
-        requestHymnsProjectionClose();
+        // Q/W/E 只切投影模式：整屏状态严格以诗歌投影「此刻真实状态」为准
+        // （诗歌全屏→经文全屏、诗歌窗口→经文窗口）。
+        // ⚠️ 绝不再用「持久意图 || 当前状态」：意图可能残留 true，会把窗口态的诗歌投影
+        // 误带成全屏的经文投影。
+        // requestFullscreen() 到新元素会替换 fullscreenElement，不需要先 exitFullscreen()
+        // （后者是全局的，会把刚请求成功的整屏又退掉——这正是「整屏切过去变窗口」的旧根因）。
+        // 只做一次同步请求（在按键手势内）：rAF/setTimeout 重试不在手势内，必报
+        //「Permissions check failed」且无法真正进入全屏，已移除。
+        const wantFs = requestHymnsProjectionClose();
+        if (wantFs && !this.isOwnFullscreenElement()) {
+            this._lastFullscreenExitAt = 0;
+            this.requestDesktopFullscreen(true);
+        } else if (!wantFs && this.isOwnFullscreenElement()) {
+            // 从窗口诗歌投影切回来时，若经文层还残留着浏览器整屏，明确退回窗口
+            this.exitDesktopFullscreen();
+            this._lastFullscreenExitAt = 0;
+        }
         // 经文投影已切成标签页时，还要把那个标签调回前台：
         // 切去诗歌投影之前用户可能停在 Hymns / 笔记标签，只抢焦点仍看不到经文投影。
         if (this.projectionLeaf && this.plugin && typeof this.plugin.revealProjectionTab === 'function') {
@@ -4152,27 +4405,49 @@ class BibleProjectionOverlay {
             (typeof this.overlay.contains === 'function' && this.overlay.contains(fs));
     }
 
-    toggleDesktopFullscreen() {
-        // 按钮在移动端已隐藏；外接键盘按 D 时也别去调一个必然失败的 API，给一句明确说明。
-        if (isMobileDeviceEnv()) { new Notice('移动端不支持全屏投影'); return; }
+    // 只负责「进入整屏」：切换投影模式时用它把整屏状态带过去。
+    // silent=true 表示这次不是用户自己按了 D，不弹提示、也不改变「D 的开关语义」。
+    requestDesktopFullscreen(silent) {
+        if (isMobileDeviceEnv()) return;
         try {
-            if (this.isOwnFullscreenElement()) { this.exitDesktopFullscreen(); return; }
+            // 已在整屏：只同步意图与按钮（D 的开关语义由调用方通过 silent 决定）
+            if (this.isOwnFullscreenElement()) {
+                if (!silent) setProjectionFsIntent(true);
+                this.updateDesktopBtn();
+                if (!silent) new Notice('已进入全屏投影；再按 D 退出全屏投影');
+                return;
+            }
             const el = this.overlay || document.documentElement;
             const fn = el && (el.requestFullscreen || el.webkitRequestFullscreen);
-            if (!fn) { new Notice('当前环境不支持全屏投影'); return; }
+            if (!fn) { if (!silent) new Notice('当前环境不支持全屏投影'); return; }
             const p = fn.call(el);
-            if (p && typeof p.catch === 'function') {
-                p.catch(err => console.warn('[Bible] 进入全屏投影失败:', err));
+            // 只有「真正进入整屏」才记录「用户要整屏」。请求失败（如切模式时新图层尚未就绪、
+            // 已脱离用户手势）绝不能把持久整屏意图钉成 true，否则下次默认打开会变成全屏、
+            // 窗口态按 QWEP 也会被误判成要全屏。
+            if (p && typeof p.then === 'function') {
+                p.then(() => { setProjectionFsIntent(true); }).catch(err => {
+                    if (!silent) console.warn('[Bible] 进入全屏投影失败:', err);
+                });
+            } else {
+                setProjectionFsIntent(true);
             }
             this.updateDesktopBtn();
-            new Notice('已进入全屏投影；再按 D 退出全屏投影');
+            if (!silent) new Notice('已进入全屏投影；再按 D 退出全屏投影');
         } catch (e) {
             console.warn('[Bible] 全屏投影切换失败:', e);
-            new Notice('全屏投影切换失败，请确认是在桌面版 Obsidian 中使用');
+            if (!silent) new Notice('全屏投影切换失败，请确认是在桌面版 Obsidian 中使用');
         }
     }
 
+    toggleDesktopFullscreen() {
+        // 按钮在移动端已隐藏；外接键盘按 D 时也别去调一个必然失败的 API，给一句明确说明。
+        if (isMobileDeviceEnv()) { new Notice('移动端不支持全屏投影'); return; }
+        if (this.isOwnFullscreenElement()) { this.exitDesktopFullscreen(); return; }
+        this.requestDesktopFullscreen(false);
+    }
+
     exitDesktopFullscreen() {
+        setProjectionFsIntent(false);
         try {
             const fn = document.exitFullscreen || document.webkitExitFullscreen;
             if (!fn) return;
@@ -4500,7 +4775,7 @@ class BibleProjectionOverlay {
         this.close();
     }
 
-    // 左上角模式名 → 投影模式选择菜单。经文组（Q/W/E）与诗歌组（O/P）用分隔线 + 分组标题隔开；
+    // 左上角模式名 → 投影模式选择菜单。经文组（Q/W/E）与诗歌组（P）用分隔线 + 分组标题隔开；
     // Hymns 未安装 / 未开启时诗歌组置灰、分组下写明原因，点击给出投影内可见的提示。
     showModeMenu(anchorEl) {
         const overlay = this.overlay;
@@ -4559,7 +4834,7 @@ class BibleProjectionOverlay {
             hint.textContent = HYMNS_REQUIRED_HINT;
             menu.appendChild(hint);
         }
-        // 移动端没有全屏投影能力，Hymns 的「诗歌全屏」也用不了：只列出「诗歌窗口」
+        // 移动端没有整屏能力，Hymns 的「诗歌全屏」也用不了：只列出「诗歌窗口」
         if (!isMobileDeviceEnv()) addItem('诗歌全屏', 'o', { disabled: !ready });
         addItem('诗歌窗口', 'p', { disabled: !ready });
         anchorEl.appendChild(menu);
@@ -5888,9 +6163,8 @@ class BibleSearchView extends ItemView {
             const lower = typeof key === 'string' ? key.toLowerCase() : '';
             let handled = true;
             if (lower === 'x') self.keyboardSelectAllPage();
-            else if (lower === 'i') self.keyboardToggleFocusMode();
-            else if (lower === 'y') self.keyboardSwitchTab();
-            else if (lower === 'u') self.keyboardToggleCompare();
+            // 对照版(u) / 专注(i) / 搜索·阅读切换(y) 已提升到插件级全局监听（见 handleKey ⑥），
+            // 此处不再处理以免重复触发；全选本页(x)仍仅在本插件界面内生效。
             else if (gridMode) {
                 // 网格页：四个方向键在书卷 / 章号之间移动选框，空格 / 回车确定，
                 // ←/→ 不再翻页，B / C 也不触发「并」与清空，避免误改候选池。
@@ -6761,6 +7035,8 @@ class BibleSearchView extends ItemView {
     }
 
     updateKeepCandidatesUI() {
+        // 每次选中变化都同步「本页全选 / 取消」按钮文案（单击 / 长按 / 取消三态）
+        this.syncPageSelectButtons();
         if (!this.contentEl) return;
         const n = this.candidatePool.length;
         const counts = this.contentEl.querySelectorAll('.bible-keep-candidates-count');
@@ -7012,6 +7288,7 @@ class BibleSearchView extends ItemView {
         });
         const pageSelectAllBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '全选' });
         const pageCopyBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '复制' });
+        this.registerPageSelectButton(pageSelectAllBtn, 'search');
 
         this.paginationEl = fixedTop.createDiv({ cls: 'bible-pagination' });
 
@@ -7032,7 +7309,12 @@ class BibleSearchView extends ItemView {
         this.setupAbbrSuggestion();
         selectAllBtn.addEventListener('click', () => this.selectAll());
         deselectAllBtn.addEventListener('click', () => this.deselectAll());
-        pageSelectAllBtn.addEventListener('click', () => this.selectPageAll());
+        bindPageSelectToggle(pageSelectAllBtn, {
+            getState: () => this.getPageSelectState('search'),
+            onSelect: () => this.selectPageAllMode('search', false),
+            onSelectWithCompare: () => this.selectPageAllMode('search', true),
+            onCancel: () => this.deselectPageAll('search')
+        });
         copyAllBtn.addEventListener('click', () => this.copyAll());
         this.captureCopySelection(pageCopyBtn);
         pageCopyBtn.addEventListener('click', () => this.copyPageAll());
@@ -7684,6 +7966,7 @@ class BibleSearchView extends ItemView {
             }
         }
         this.applyKeyboardCursor();
+        this.syncPageSelectButtons();   // 翻页 / 勾选变化后同步「本页全选 / 取消」文案
     }
 
     toggleCompareSelection(parentIdx, cmp) {
@@ -7874,18 +8157,207 @@ class BibleSearchView extends ItemView {
         this.renderResults();
     }
 
-    selectPageAll() {
-        const paged = this.getPagedResults();
-        const startOffset = this.currentPage * this.pageSize;
-        for (let i = 0; i < paged.length; i++) {
-            const globalIdx = startOffset + i;
-            const result = this.results[globalIdx];
-            if (!result.selected) { this.selectCounter++; result.selected = true; result.order = this.selectCounter; }
+    /* ===== 本页全选（三处共用）：单击主版本 / 长按含对照版 / 已全选时一键取消 =====
+       「本页」＝检索页当前分页、阅读页当前章、经文弹窗当前列出的所有节。
+       主版本与对照版各自带 local/activate/deactivate，选中、取消、状态判断走同一份数据，
+       避免三处按钮各写一套而漏掉候选池 / 序号 / 对照版。 */
+    getPageSelectionItems(tab) {
+        const main = [], compare = [];
+        if (tab === 'reader') {
+            const pageItems = this.readerPageItems || [];
+            for (let mi = 0; mi < pageItems.length; mi++) {
+                const item = pageItems[mi];
+                main.push({
+                    item: item,
+                    isCompare: false,
+                    owner: mi,
+                    local: () => { const i = this.readerEntryIdx(item); return i !== -1 ? this.readerResults[i] : null; },
+                    // seq：全选时按「页面看到的行顺序」递增赋号，recalcReaderOrders 才能照视觉顺序编号
+                    activate: (seq) => {
+                        const ord = seq || 0;
+                        const i = this.readerEntryIdx(item);
+                        if (i === -1) this.readerResults.push({ item: item, selected: true, order: ord, sideBySide: false });
+                        else { const e = this.readerResults[i]; e.selected = true; e.sideBySide = false; e.order = ord; }
+                    },
+                    deactivate: () => {
+                        const i = this.readerEntryIdx(item);
+                        if (i !== -1) { const e = this.readerResults[i]; e.selected = false; e.sideBySide = false; e.order = 0; }
+                        this.poolSyncDeselect(item, false);
+                    }
+                });
+            }
+            if (this.hasCompareMode()) {
+                for (let mi = 0; mi < pageItems.length; mi++) {
+                    const item = pageItems[mi];
+                    if (item.type !== 'verse') continue;
+                    for (const cmp of this.findCompareItems(item.bookId, item.chapter, item.verse, item.type)) {
+                        const cmpKey = `rd-cmp-${item.lineIndex}-${cmp.versionKey}`;
+                        compare.push({
+                            item: cmp.item, isCompare: true, cmpKey: cmpKey, owner: mi,
+                            local: () => (this.readerResults || []).find(r => r._cmpKey === cmpKey) || null,
+                            activate: (seq) => {
+                                const ord = seq || 0;
+                                const i = this.readerResults.findIndex(r => r._cmpKey === cmpKey);
+                                if (i === -1) this.readerResults.push({
+                                    item: cmp.item, selected: true, order: ord, sideBySide: false,
+                                    _isCompare: true, _cmpKey: cmpKey, versionKey: cmp.versionKey
+                                });
+                                else { const e = this.readerResults[i]; e.selected = true; e.sideBySide = false; e.order = ord; }
+                            },
+                            deactivate: () => {
+                                const i = this.readerResults.findIndex(r => r._cmpKey === cmpKey);
+                                if (i !== -1) { const e = this.readerResults[i]; e.selected = false; e.sideBySide = false; e.order = 0; }
+                                this.poolSyncDeselect(cmp.item, true);
+                            }
+                        });
+                    }
+                }
+            }
+        } else {
+            const paged = this.getPagedResults();
+            const startOffset = this.currentPage * this.pageSize;
+            if (!this.compareSelections) this.compareSelections = {};
+            if (!this.cmpOrder) this.cmpOrder = [];
+            for (let i = 0; i < paged.length; i++) {
+                const result = this.results[startOffset + i];
+                if (!result) continue;
+                const owner = main.length;   // 对照版归属第几个主版本行，用于按视觉顺序交错激活
+                main.push({
+                    item: result.item, isCompare: false, owner: owner,
+                    local: () => result,
+                    activate: () => {
+                        if (!result.selected) { this.selectCounter++; result.selected = true; result.order = this.selectCounter; }
+                        result.sideBySide = false;
+                    },
+                    deactivate: () => {
+                        result.selected = false; result.sideBySide = false; result.order = 0;
+                        this.poolSyncDeselect(result.item, false);
+                    }
+                });
+                if (this.hasCompareMode() && result.item.type === 'verse') {
+                    for (const cmp of this.findCompareItems(result.item.bookId, result.item.chapter, result.item.verse, result.item.type)) {
+                        const cmpKey = `cmp-${startOffset + i}-${cmp.versionKey}`;
+                        compare.push({
+                            item: cmp.item, isCompare: true, cmpKey: cmpKey, owner: owner,
+                            local: () => this.compareSelections[cmpKey] || null,
+                            activate: () => {
+                                if (!this.compareSelections[cmpKey]) {
+                                    this.compareSelections[cmpKey] = { selected: true, sideBySide: false, order: this.selectCounter + 1 };
+                                    this.cmpOrder.push(cmpKey);
+                                    this.selectCounter++;
+                                } else { this.compareSelections[cmpKey].selected = true; }
+                            },
+                            deactivate: () => {
+                                delete this.compareSelections[cmpKey];
+                                const j = this.cmpOrder.indexOf(cmpKey);
+                                if (j !== -1) this.cmpOrder.splice(j, 1);
+                                this.poolSyncDeselect(cmp.item, true);
+                            }
+                        });
+                    }
+                }
+            }
         }
-        // 勾选「保留候选」时，本页选中的经文实时进入候选池
-        this.poolSyncCurrentView('search');
-        this.updateKeepCandidatesUI();
-        this.renderResults();
+        return { main, compare };
+    }
+
+    // 单项是否选中：候选池（保留候选）优先，其次本视图的局部选中，和卡片渲染用的是同一套判定
+    pageGroupSelected(g) {
+        const e = g.local ? g.local() : null;
+        return !!this.getSelectionState(g.item, !!g.isCompare, !!(e && e.selected),
+            e ? e.order : 0, e ? e.sideBySide : false).selected;
+    }
+
+    /* 本页主版本已全选 → 'cancel'（主版本与对照版都全选也必然落在这里）。
+       对照版是否全选不影响按钮文案：只主版本全选时按钮同样可以一键取消本页所有内容。 */
+    getPageSelectState(tab) {
+        const groups = this.getPageSelectionItems(tab);
+        if (!groups.main.length) return 'select';
+        return groups.main.every(g => this.pageGroupSelected(g)) ? 'cancel' : 'select';
+    }
+
+    /* ⚠️ 选中顺序必须等于页面上看到的行顺序：主版本1 → 它的对照版 → 主版本2 → …
+       旧实现先激活全部主版本、再激活全部对照版，序号变成「主版本全在前、对照版全在后」，
+       候选池 / 投影顺序因此和页面不一致。这里先清本页再按视觉顺序重新激活并连续编号。 */
+    selectPageAllMode(tab, withCompare) {
+        const groups = this.getPageSelectionItems(tab);
+        const byOwner = new Map();
+        for (const g of groups.compare) {
+            const k = (g.owner === undefined || g.owner === null) ? -1 : g.owner;
+            if (!byOwner.has(k)) byOwner.set(k, []);
+            byOwner.get(k).push(g);
+        }
+        // 先清本页：已选中的旧序号会打乱重排，长按/单击都要得到一份完整的视觉顺序
+        for (const g of groups.main) g.deactivate();
+        for (const g of groups.compare) g.deactivate();
+        let seq = 0;
+        if (tab === 'reader') {
+            // 阅读页靠 order 排序；接着「本页之外已选中项」的最大序号往后排，避免和它们撞号
+            for (const r of (this.readerResults || [])) {
+                if (r.selected) seq = Math.max(seq, Number(r.order) || 0);
+            }
+        }
+        for (let i = 0; i < groups.main.length; i++) {
+            groups.main[i].activate(++seq);
+            if (!withCompare) continue;
+            for (const c of (byOwner.get(i) || [])) c.activate(++seq);
+        }
+        // 没有归属主版本行的对照项（兼容旧数据）排在末尾，绝不插到主版本之前
+        if (withCompare) for (const c of (byOwner.get(-1) || [])) c.activate(++seq);
+        this.finishPageSelectionChange(tab);
+        new Notice(withCompare ? '已选中本页主版本与对照版内容' : '已选中本页主版本内容');
+    }
+
+    deselectPageAll(tab) {
+        const groups = this.getPageSelectionItems(tab);
+        for (const g of groups.main) g.deactivate();
+        for (const g of groups.compare) g.deactivate();
+        this.finishPageSelectionChange(tab);
+        new Notice('已取消本页全部选中');
+    }
+
+    finishPageSelectionChange(tab) {
+        if (tab === 'reader') {
+            this.recalcReaderOrders();
+            this.poolSyncCurrentView('reader');
+            this.updateKeepCandidatesUI();
+            this.refreshAllReaderCards();
+            this.refreshNotePanels();
+        } else {
+            this.recalcOrders();
+            this.poolSyncCurrentView('search');
+            this.updateKeepCandidatesUI();
+            this.renderResults();
+        }
+        this.syncPageSelectButtons();
+    }
+
+    // 登记本页全选按钮（检索页 / 阅读页各一个，重建后旧按钮自动剔除）
+    registerPageSelectButton(btn, tab) {
+        if (!btn) return;
+        try { btn.dataset.pageTab = tab; } catch (e) { btn._pageTab = tab; }
+        if (!this._pageSelectBtns) this._pageSelectBtns = [];
+        this._pageSelectBtns.push(btn);
+        this.syncPageSelectButtons();
+    }
+
+    syncPageSelectButtons() {
+        const all = this._pageSelectBtns || [];
+        this._pageSelectBtns = all.filter(b => b && b.isConnected !== false);
+        for (const btn of this._pageSelectBtns) {
+            const tab = (btn.dataset && btn.dataset.pageTab === 'reader') || btn._pageTab === 'reader' ? 'reader' : 'search';
+            const cancel = this.getPageSelectState(tab) === 'cancel';
+            btn.setText(cancel ? '取消' : '全选');
+            btn.title = cancel
+                ? '取消本页全部选中（含对照版）'
+                : '单击：全选本页主版本；长按：全选本页主版本 + 对照版';
+            if (btn.classList && typeof btn.classList.toggle === 'function') btn.classList.toggle('active', cancel);
+        }
+    }
+
+    // 兼容旧调用：X 快捷键之外的入口仍可用，语义＝单击（只选本页主版本）
+    selectPageAll() {
+        this.selectPageAllMode('search', false);
     }
 
     copySelected(results) {
@@ -8268,6 +8740,8 @@ class BibleSearchView extends ItemView {
 
         this.currentChapterItems = items;
         this.currentChapterThemeItems = themeItems;
+        // 本页全选（单击 / 长按 / 取消）共用的「本页主版本条目」：第一章额外含主题
+        this.readerPageItems = chapter === 1 ? [...themeItems, ...items] : [...items];
 
         // 本页操作区块（参照全局操作的可折叠布局）
         const pageActionSection = this.readerFixedTop.createDiv({ cls: 'bible-section' });
@@ -8303,6 +8777,7 @@ class BibleSearchView extends ItemView {
         const pageSelectAllBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '全选' });
         const pageCopyBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '复制' });
         const copyVersesBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '经文' });
+        this.registerPageSelectButton(pageSelectAllBtn, 'reader');
         const copyOutlinesBtn = pageActionBody.createEl('button', { cls: 'bible-action-btn', text: '纲目' });
 
         const contentEl = this.readerContent.createDiv({ cls: 'bible-reader-content-list' });
@@ -8389,26 +8864,8 @@ class BibleSearchView extends ItemView {
         };
 
         // ========== 本页操作函数 ==========
-        const doPageSelectAll = () => {
-            // 按顺序选中当前章的主版本内容；第一章额外选中主题
-            const pageItems = this.readerChapter === 1 ? [...themeItems, ...items] : [...items];
-            for (const item of pageItems) {
-                const existingIdx = this.readerEntryIdx(item);
-                if (existingIdx === -1) {
-                    this.readerResults.push({ item: item, selected: true, order: 0, sideBySide: false });
-                } else {
-                    this.readerResults[existingIdx].selected = true;
-                    this.readerResults[existingIdx].sideBySide = false;
-                    this.readerResults[existingIdx].order = 0;
-                }
-            }
-            this.recalcReaderOrders();
-            // 勾选「保留候选」时，本章选中的经文实时进入候选池
-            this.poolSyncCurrentView('reader');
-            this.updateKeepCandidatesUI();
-            this.refreshAllReaderCards();
-            new Notice('已将本章主版本内容选中');
-        };
+        // 与检索页 / 经文弹窗共用三态逻辑：单击主版本、长按含对照版、已全选时一键取消
+        const doPageSelectAll = () => this.selectPageAllMode('reader', false);
 
         const doPageCopy = () => {
             if (this.copyPendingSelectionIfAny()) return;
@@ -8464,7 +8921,12 @@ class BibleSearchView extends ItemView {
         parallelProjBtn.addEventListener('click', () => this.openReaderProjection('parallel'));
         mixedProjBtn.addEventListener('click', () => this.openReaderProjection('mixed'));
 
-        pageSelectAllBtn.addEventListener('click', doPageSelectAll);
+        bindPageSelectToggle(pageSelectAllBtn, {
+            getState: () => this.getPageSelectState('reader'),
+            onSelect: doPageSelectAll,
+            onSelectWithCompare: () => this.selectPageAllMode('reader', true),
+            onCancel: () => this.deselectPageAll('reader')
+        });
         this.captureCopySelection(pageCopyBtn);
         pageCopyBtn.addEventListener('click', doPageCopy);
 
@@ -9081,6 +9543,7 @@ class BibleSearchView extends ItemView {
 
     refreshAllReaderCards() {
         // 刷新当前章节所有可见经文卡片的选中状态
+        this.syncPageSelectButtons();   // 勾选变化后同步「本页全选 / 取消」文案
         if (!this.readerContent) return;
         const allItems = [...(this.currentChapterThemeItems || []), ...(this.currentChapterItems || [])];
         const cards = this.readerContent.querySelectorAll('.bible-reader-verse-card');
@@ -9463,17 +9926,26 @@ class BibleSearchPlugin extends Plugin {
             // 笔记正文编辑、输入法合成态、组合键，以及本插件检索框里的短拼输入仍一律让行。
             const qweKey = e.key === 'q' || e.key === 'Q' || e.key === 'w' || e.key === 'W' ||
                 e.key === 'e' || e.key === 'E';
+            const hymnsKey = e.key === 'o' || e.key === 'O' || e.key === 'p' || e.key === 'P';
             const projTabBehind = !!(this.currentProjection && this.currentProjection.projectionLeaf &&
                 !this.isProjectionTabActive(this.currentProjection));
             const inBibleInput = !!(ae && ae.closest && ae.closest(
                 '.bible-search-input, .bible-proj-quick-search, .bible-inline-tooltip, .bible-tooltip-menu'));
             const forceReveal = qweKey && projTabBehind && !inBibleInput;
-            if ((typingText && !forceReveal) || editingNote || composing) return;
+            // ⚠️ P/O 的门禁必须和 Hymns 的捕获监听用同一把尺子（e.target 是否输入框）。
+            // Hymns 在捕获阶段已经先打开了诗歌投影；若这里仍按 activeElement 的 typingText
+            // 把冒泡分支整个吞掉，本插件的经文投影层就不会被收起、浏览器整屏也退不掉，
+            // 表现就是「按 P 明明写着诗歌窗口，画面却还占满整个屏幕」。
+            const evtTarget = e.target;
+            const targetEditable = !!(evtTarget && evtTarget.closest &&
+                evtTarget.closest('input, textarea, select, [contenteditable="true"]'));
+            const hymnsWillHandle = hymnsKey && isHymnsPluginReady(this.app) && !targetEditable;
+            if ((typingText && !forceReveal && !hymnsWillHandle) ||
+                (editingNote && !hymnsWillHandle) || composing) return;
             if (e.ctrlKey || e.metaKey || e.altKey) return;
-            // O / P 归 Hymns：已安装并开启时完全让行（由 Hymns 自己的全局监听处理）；
-            // 未安装 / 未开启时给一次明确提示，免得用户以为按键失灵。上面的 typingText /
-            // editingNote / IME 门禁已保证输入框和笔记正文里打字绝不会弹提示。
-            const hymnsKey = e.key === 'o' || e.key === 'O' || e.key === 'p' || e.key === 'P';
+            // P / O 归 Hymns：已安装并开启时完全让行（由 Hymns 自己的全局监听处理）；
+            // 未安装 / 未开启时给一次明确提示（O=诗歌全屏，P=诗歌窗口）。
+            // 上面的 typingText / editingNote / IME 门禁保证打字时绝不会弹提示。
             if (hymnsKey) {
                 if (!isHymnsPluginReady(this.app)) {
                     const proj = this.currentProjection;
@@ -9486,8 +9958,29 @@ class BibleSearchPlugin extends Plugin {
                              this.isProjectionTabActive(proj)));
                     } catch (err) { projFront = false; }
                     showHymnsRequiredNotice(projFront ? proj.overlay : null, !projFront);
+                    return;
                 }
-                return;
+                // P＝窗口诗歌投影、O＝全屏诗歌投影：按键本身已经明确指定显示模式。
+                // ⚠️ Hymns 的监听是 document 捕获阶段、这里在冒泡阶段，所以诗歌层已经先打开了。
+                // P 时清掉残留的持久整屏意图（O 时绝不清：Hymns 刚请求成功的整屏会写回 true）。
+                // 先收掉本插件的经文投影层，避免两层共存（旧行为只让 Hymns 再盖一层，
+                // 退出整屏时下面那层经文投影露出来，看起来就像「按 D 切到了圣经投影」）。
+                const wantHymnsFs = (e.key === 'o' || e.key === 'O');
+                if (!wantHymnsFs) setProjectionFsIntent(false);
+                const ownProj = this.currentProjection;
+                if (ownProj && !ownProj._closed) {
+                    // P 明确要窗口：先退掉本层占着的浏览器整屏再关层。
+                    // O 保持整屏交接：不主动 exitFullscreen，否则会退掉诗歌层刚请求的整屏。
+                    if (!wantHymnsFs && typeof ownProj.isOwnFullscreenElement === 'function' &&
+                        ownProj.isOwnFullscreenElement()) {
+                        try { ownProj.exitDesktopFullscreen(); } catch (err) { /* 忽略 */ }
+                        ownProj._lastFullscreenExitAt = 0;
+                    }
+                    ownProj._closingForHymns = true;
+                    try { ownProj.close(); } catch (err) { /* 忽略 */ }
+                    this.currentProjection = null;
+                }
+                return;   // P / O 都交给 Hymns 自己的监听打开诗歌投影
             }
             // ⑤ 恢复本注解 / 串珠开关：裸字母 A（不按任何修饰键）即切换。
             //    与 Q/W/E 同理走插件自有监听 + 上下文门禁：焦点在输入框 / 笔记正文 / 输入法合成态时
@@ -9495,6 +9988,20 @@ class BibleSearchPlugin extends Plugin {
             //    只在「非输入场景」（阅读笔记、圣经检索 / 阅读页、经文弹窗等）触发，避免干扰打字。
             if ((e.key === 'a' || e.key === 'A') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
                 void this.toggleShowNotes();
+                return;
+            }
+            // ⑥ 对照版(u) / 专注(i) / 搜索·阅读切换(y)：与 A 键同理走插件级监听 + 上下文门禁，
+            // 让这三个动作不再局限于本插件视图内（焦点在笔记正文、经文弹窗、投影外等场景也能触发）。
+            // 委派给「当前可见的检索 / 阅读视图」；本插件界面完全没开时直接放行字母输入。
+            // 修饰键（含 Shift）一律让行：在输入框里打字不会误触，也不抢占系统组合键。
+            const hk = (e.key || '').toLowerCase();
+            if ((hk === 'u' || hk === 'i' || hk === 'y') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+                const v = this.getVisibleSearchView();
+                if (!v) return;
+                if (typeof v.hasBlockingOverlay === 'function' && v.hasBlockingOverlay()) return;
+                if (hk === 'u') v.keyboardToggleCompare();
+                else if (hk === 'i') v.keyboardToggleFocusMode();
+                else if (hk === 'y') v.keyboardSwitchTab();
                 return;
             }
             let mode = null;
@@ -9520,23 +10027,33 @@ class BibleSearchPlugin extends Plugin {
             // 已有本插件投影时通常由覆盖层的捕获监听先处理（switchBackFromHymns）并阻断传播；
             // 这里负责「圣经投影根本没开」的场景——收起诗歌投影后打开对应模式的空投影。
             if (isHymnsProjectionFront()) {
-                requestHymnsProjectionClose();
+                // 切模式不改整屏意图：先在按键手势内把整屏元素接管到经文投影层，
+                // 再请走诗歌投影（它不会 exitFullscreen，移除图层不影响已接管的整屏）。
+                // 整屏状态以诗歌投影此刻的真实状态为准，不再用可能残留的持久意图覆盖
                 const cur = this.currentProjection;
-                if (cur) {
-                    if (cur.mode !== mode) cur.setMode(mode);
-                    const refocus = () => {
-                        if (!cur.overlay) return;
-                        const ae = document.activeElement;
-                        if (ae && ae.closest && ae.closest('.bible-proj-quick-search, .bible-proj-search-box')) return;
-                        cur.focusProjection(true);
-                    };
-                    refocus();
-                    try { if (typeof requestAnimationFrame === 'function') requestAnimationFrame(refocus); } catch (err) { /* 忽略 */ }
-                    try { setTimeout(refocus, 150); } catch (err) { /* 忽略 */ }
-                } else {
-                    const emptyProj = new BibleProjectionOverlay(this.app, this, [], mode, true);
-                    emptyProj.open();
+                const target = cur || new BibleProjectionOverlay(this.app, this, [], mode, true);
+                if (!cur) target.open();
+                else if (target.mode !== mode) target.setMode(mode);
+                // ⚠️ 诗歌全屏→经文全屏、诗歌窗口→经文窗口：只按真实状态，不用持久意图兜底
+                const wantFs = requestHymnsProjectionClose();
+                // 只做一次同步请求（在按键手势内）：target.open() 时图层已挂载到 body，
+                // requestFullscreen 此刻能成功；rAF/setTimeout 重试不在手势内必失败，已移除。
+                if (wantFs && !target.isOwnFullscreenElement()) {
+                    target._lastFullscreenExitAt = 0;
+                    target.requestDesktopFullscreen(true);
+                } else if (!wantFs && target.isOwnFullscreenElement()) {
+                    target.exitDesktopFullscreen();
+                    target._lastFullscreenExitAt = 0;
                 }
+                const refocus = () => {
+                    if (!target.overlay) return;
+                    const ae = document.activeElement;
+                    if (ae && ae.closest && ae.closest('.bible-proj-quick-search, .bible-proj-search-box')) return;
+                    target.focusProjection(true);
+                };
+                refocus();
+                try { if (typeof requestAnimationFrame === 'function') requestAnimationFrame(refocus); } catch (err) { /* 忽略 */ }
+                try { setTimeout(refocus, 150); } catch (err) { /* 忽略 */ }
                 return;
             }
             // ① 经文弹窗打开时优先：等同点击弹窗里的「投影」按钮（会自动关闭弹窗）
@@ -9603,7 +10120,8 @@ class BibleSearchPlugin extends Plugin {
             name: '检查圣经数据更新',
             callback: guarded(async () => {
                 const pending = await this.checkBibleDataUpdate();
-                if (pending && pending.length) new DataUpdateModal(this.app, this, pending).open();
+                if (this._lastDataCheckError) new Notice('检查数据更新失败：' + this._lastDataCheckError);
+                else if (pending && pending.length) new DataUpdateModal(this.app, this, pending).open();
                 else new Notice('圣经数据已是最新版本');
             })
         });
@@ -11506,8 +12024,9 @@ class BibleSearchPlugin extends Plugin {
     // ==================== 圣经数据更新检测 ====================
     // 插件本体的自动更新只会下载 main.js / manifest.json / styles.css，不会带上
     // 十几 MB 的圣经数据文件。因此数据单独用一套版本机制：云端仓库根目录
-    // bible-data-manifest.json 记录 dataVersion / size / sha256 / changes，
-    // 本地 settings.dataVersions 记录已安装版本，启动时比对即可判断是否过期。
+    // bible-data-manifest.json 记录 dataVersion / size / sha256 / changes。
+    // 本地 settings.dataVersions 只作为兜底参考；手动检查以实际文件的大小 / sha256 为准，
+    // 并识别「曾安装过但文件被删」的情况，避免 data.json 写着最新版就误报已是最新。
     async fetchDataManifest() {
         const resp = await requestUrl({ url: DATA_MANIFEST_URL, method: 'GET', timeout: 15000 });
         if (resp.status !== 200) throw new Error('HTTP ' + resp.status);
@@ -11516,36 +12035,86 @@ class BibleSearchPlugin extends Plugin {
         return data;
     }
 
-    async getLocalDataSize(file) {
-        const p = this.resolveDataPath(file);
-        if (!(await this.app.vault.adapter.exists(p))) return null;
-        try {
-            const stat = await this.app.vault.adapter.stat(p);
-            return stat ? stat.size : null;
-        } catch (e) {
-            return null;
+    /** 这个文件是否「本该存在」：由启用 / 安装记录或历史版本记录推断。
+     *  只对缺失文件生效；文件存在时一律按实际内容校验。 */
+    isDataFileExpected(file) {
+        const s = this.settings || {};
+        const versions = s.dataVersions || {};
+        if (file === NOTES_FILE) {
+            return !!(s.notesInstalled || s.notesPath || versions[file]);
         }
+        const v = (s.versions || []).find(x => x && x.file === file);
+        if (v && (v.installed || v.enabled || v.isPrimary || v.path)) return true;
+        return !!versions[file];
     }
 
-    /** 返回需要更新的清单条目数组；出错一律返回空数组，绝不打断启动流程。 */
+    /** 读取本地文件的实际大小与 SHA-256；绝不使用 Node fs，只走 vault.adapter。 */
+    async getLocalDataFingerprint(file) {
+        const p = this.resolveDataPath(file);
+        const adapter = this.app && this.app.vault && this.app.vault.adapter;
+        if (!adapter) return null;
+        let exists = false;
+        try { exists = !!(await adapter.exists(p)); } catch (e) { return null; }
+        if (!exists) return null;
+        let bytes = null;
+        try {
+            if (typeof adapter.readBinary === 'function') {
+                const raw = await adapter.readBinary(p);
+                if (raw instanceof Uint8Array) bytes = raw;
+                else if (raw && raw.buffer) bytes = new Uint8Array(raw.buffer, raw.byteOffset || 0, raw.byteLength || raw.buffer.byteLength);
+                else if (raw) bytes = new Uint8Array(raw);
+            }
+        } catch (e) { bytes = null; }
+        let size = bytes ? bytes.byteLength : null;
+        if (size === null && typeof adapter.stat === 'function') {
+            try { const st = await adapter.stat(p); size = st ? st.size : null; } catch (e) { size = null; }
+        }
+        let sha256 = null;
+        if (bytes) {
+            try {
+                const root = (typeof globalThis !== 'undefined') ? globalThis : null;
+                const subtle = root && root.crypto && root.crypto.subtle;
+                if (subtle && typeof subtle.digest === 'function') {
+                    const digest = await subtle.digest('SHA-256', bytes);
+                    sha256 = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+                }
+            } catch (e) { sha256 = null; }
+        }
+        return { path: p, size, sha256, unreadable: !bytes };
+    }
+
+    async getLocalDataSize(file) {
+        const info = await this.getLocalDataFingerprint(file);
+        return info ? info.size : null;
+    }
+
+    /** 返回需要更新的清单条目数组；出错一律返回空数组并设置 _lastDataCheckError。 */
     async checkBibleDataUpdate() {
+        this._lastDataCheckError = null;
         try {
             const manifest = await this.fetchDataManifest();
             const pending = [];
             for (const f of manifest.files) {
-                const localSize = await this.getLocalDataSize(f.file);
-                if (localSize === null) continue;   // 没装就不打扰
-                const recorded = (this.settings.dataVersions || {})[f.file] || '';
-                if (recorded) {
-                    // 有版本记录：直接比版本号
-                    if (this.compareVersion(f.dataVersion, recorded) > 0) pending.push(f);
-                } else if (localSize !== f.size) {
-                    // 老用户升级上来没有记录：用文件大小兜底判断
-                    pending.push(f);
+                const info = await this.getLocalDataFingerprint(f.file);
+                if (!info) {
+                    // 曾安装 / 启用过却把文件删了：必须提示恢复，不能当成最新版
+                    if (this.isDataFileExpected(f.file)) pending.push(f);
+                    continue;
+                }
+                if (info.unreadable || info.size === null) { pending.push(f); continue; }
+                if (f.size && info.size !== f.size) { pending.push(f); continue; }
+                const want = String(f.sha256 || '').toLowerCase();
+                const got = String(info.sha256 || '').toLowerCase();
+                if (want && got && want !== got) { pending.push(f); continue; }
+                if (!want || !got) {
+                    const recordedMap = (this.settings && this.settings.dataVersions) || {};
+                    const recorded = recordedMap[f.file] || '';
+                    if (!recorded || this.compareVersion(f.dataVersion, recorded) > 0) pending.push(f);
                 }
             }
             return pending;
         } catch (e) {
+            this._lastDataCheckError = (e && e.message) ? e.message : String(e);
             console.error('[Bible] 检查圣经数据更新失败:', e);
             return [];
         }
@@ -11649,6 +12218,11 @@ class BibleSearchPlugin extends Plugin {
             if (!force && !persisted.length && now - (this.settings.lastDataCheckAt || 0) < 12 * 3600 * 1000) return;
             if (!force && inCooldown) return;
             const pending = await this.checkBibleDataUpdate();
+            if (this._lastDataCheckError) {
+                // 网络 / 清单异常不能伪装成「已是最新版本」
+                if (force) new Notice('检查数据更新失败：' + this._lastDataCheckError);
+                return;
+            }
             if (pending && pending.length) {
                 this.settings.lastDataCheckAt = now;
                 this.settings.pendingDataUpdates = pending.map(p => p.file);
@@ -13550,6 +14124,31 @@ class BibleSearchPlugin extends Plugin {
         this._tooltipPools = {};
     }
 
+    // ==================== 经文弹窗：多版本对照 ====================
+    // 弹窗在插件类里，拿不到检索视图的 findCompareItems()，所以按同样的规则直接
+    // 从 allItems 现查：不依赖检索页是否已打开，也不把对照版本塞进 verseIndex
+    //（那会把每个版本都当成独立一节，破坏逐节编号与候选框）。
+    getTooltipCompareVersions() {
+        const versions = (this.settings && this.settings.versions) || [];
+        const primary = this.getPrimaryVersionKey();
+        return versions.filter(v => v.enabled && v.installed && v.key !== primary);
+    }
+
+    getTooltipCompareItems(bookId, chapter, verse, type, part) {
+        const out = [];
+        const vers = this.getTooltipCompareVersions();
+        if (!vers.length) return out;
+        const items = this.allItems || [];
+        const t = type || 'verse';
+        const p = part || '';
+        for (const ver of vers) {
+            const found = items.find(i => i.versionKey === ver.key && i.bookId === bookId &&
+                i.chapter === chapter && i.verse === verse && i.type === t && (i.part || '') === p);
+            if (found) out.push({ item: found, versionName: ver.name, versionKey: ver.key });
+        }
+        return out;
+    }
+
     // 弹窗候选项按勾选顺序输出为统一的选中列表（保留「并」状态）
     tooltipPoolList() {
         return this.getTooltipPool().map((p, i) => ({
@@ -13652,7 +14251,7 @@ class BibleSearchPlugin extends Plugin {
         else if (first.endChapter) refText += `～${first.endChapter}`;   // 到某章整章：“创一～二”
         if (refs.length > 1) refText += ` 等${refs.length}处`;
 
-        // 标题行：经文出处（双击跳转）+ 保留候选 + 候选计数 + 清空
+        // 标题行：经文出处（点击跳阅读页）+ 保留候选 + 候选计数 + 清空
         const headerRow = tooltip.createDiv({ cls: 'bible-inline-tooltip-header' });
         // 返回上一层：只有从注解 / 串珠里的出处继续点开而产生的更深层级才出现
         const backBtn = headerRow.createEl('button', { cls: 'bible-inline-tooltip-btn bible-inline-tooltip-back', text: '‹ 返回' });
@@ -13664,8 +14263,9 @@ class BibleSearchPlugin extends Plugin {
             this.tooltipPopLevel(shell);
         });
         const refEl = headerRow.createDiv({ cls: 'bible-inline-tooltip-ref', text: refText });
-        refEl.title = '双击跳转到圣经阅读视图';
-        refEl.addEventListener('dblclick', (e) => {
+        // 与「经文搜索」一致：点击经文出处＝跳到阅读页看上下文（原来只有双击才跳）
+        refEl.title = '点击跳转到圣经阅读视图的该处经文';
+        refEl.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             this.removeCurrentTooltip();
@@ -13770,7 +14370,7 @@ class BibleSearchPlugin extends Plugin {
         fontMinusBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyFontSize((this.settings.tooltipFontSize || 14) - 1); });
         fontPlusBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyFontSize((this.settings.tooltipFontSize || 14) + 1); });
 
-        // 每处经文：候选框 + 出处（双击跳转）+ 内容
+        // 每处经文：候选框 + 出处（点击跳阅读页）+ 内容（点击选中）
         const rows = [];
         // 注解 / 串珠的候选框上下文：与弹窗里的经文共用同一套序号 / 复制 / 投影
         const noteCtx = {
@@ -13808,8 +14408,9 @@ class BibleSearchPlugin extends Plugin {
                 cls: 'bible-inline-tooltip-verse-num',
                 text: v.chapter + ':' + v.verse + (v.item.part || '')
             });
-            numEl.title = '双击跳转到圣经阅读视图的该节经文';
-            numEl.addEventListener('dblclick', (e) => {
+            // 点击「经文出处」＝跳到阅读页看上下文；点击经文内容仍是选中（见下方 row.click）
+            numEl.title = '点击跳转到圣经阅读视图的该节经文';
+            numEl.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 this.removeCurrentTooltip();
@@ -13861,6 +14462,39 @@ class BibleSearchPlugin extends Plugin {
             sideTag.title = '与前一节并列显示（混合投影时合并到同一页）';
             const r = { row: row, box: box, sideTag: sideTag, verse: v, selected: false, sideBySide: false };
             rows.push(r);
+            // 多版本对照：与检索页 / 阅读页一致，主版本下面按版本顺序显示其它已启用版本。
+            // 对照行也有自己的候选框，点内容即可选中，复制 / 投影会一并带上。
+            try {
+                const cmpList = this.getTooltipCompareItems(match.bookId, v.chapter, v.verse, v.item.type, v.item.part);
+                for (const cmp of cmpList) {
+                    const cmpRow = contentEl.createDiv({ cls: 'bible-inline-tooltip-verse bible-inline-tooltip-compare-row' });
+                    const cmpBox = cmpRow.createDiv({ cls: 'bible-inline-tooltip-checkbox' });
+                    cmpBox.title = '点击选中 / 取消此对照版本';
+                    // 与主版本行保持同一左结构（候选框 + 与「章:节」等宽的隐形占位），
+                    // 让对照经文首字与主版本经文首字左对齐；不再显示版本名，直接呈现对照经文内容。
+                    const cmpNumSpacer = cmpRow.createEl('span', { cls: 'bible-inline-tooltip-num-spacer', text: numEl.textContent || '' });
+                    cmpNumSpacer.setAttribute('aria-hidden', 'true');
+                    cmpRow.createEl('span', { cls: 'bible-inline-tooltip-verse-text bible-inline-tooltip-compare-text', text: cmp.item.content });
+                    const cmpSide = cmpRow.createDiv({ cls: 'bible-inline-tooltip-side-tag' });
+                    cmpSide.title = '与前一节并列显示（混合投影时合并到同一页）';
+                    const cr = {
+                        row: cmpRow, box: cmpBox, sideTag: cmpSide,
+                        verse: { chapter: v.chapter, verse: v.verse, item: cmp.item },
+                        selected: false, sideBySide: false, isCompare: true
+                    };
+                    rows.push(cr);
+                    // 「保留候选」开启时对照版可能只留在候选池里（重开弹窗后 tooltipPool 没记录），
+                    // 两个来源都查，避免行显示未选中、池里却仍留着，导致全选 / 取消状态不一致。
+                    const cmpInPool = view ? view.poolIndexOf(cmp.item, false) !== -1 : false;
+                    if (cmpInPool || this.tooltipPoolIndexOf(cmp.item) !== -1) cr.selected = true;
+                    cmpBox.addEventListener('click', (e) => { e.stopPropagation(); setRowChecked(cr, !cr.selected); });
+                    cmpSide.addEventListener('click', (e) => { e.stopPropagation(); toggleRowSideBySide(cr); });
+                    cmpRow.addEventListener('click', (e) => {
+                        if (e.target === cmpBox || e.target === cmpSide) return;
+                        setRowChecked(cr, !cr.selected);
+                    });
+                }
+            } catch (err) { /* 忽略：对照数据缺失不影响主版本显示 */ }
             // 重新打开弹窗时恢复勾选：候选项可能在候选池中（已勾选「保留候选」），
             // 也可能只保存在弹窗自己的候选库中（未勾选「保留候选」时依然保留）
             const inPool = view ? view.poolIndexOf(v.item, false) !== -1 : false;
@@ -13876,29 +14510,42 @@ class BibleSearchPlugin extends Plugin {
             // 点击整行切换选中（点击候选框 / 并标签由上面各自处理）
             row.addEventListener('click', (e) => {
                 if (e.target === box || e.target === sideTag) return;
+                // 出处已有自己的 click（跳阅读页），别再冒泡成「选中这一节」
+                if (e.target === numEl || (e.target && e.target.closest && e.target.closest('.bible-inline-tooltip-verse-num'))) return;
                 setRowChecked(r, !r.selected);
             });
         }
         if (verses.length > MAX_TOOLTIP_ROWS) {
             const moreEl = contentEl.createDiv({ cls: 'bible-inline-tooltip-more' });
-            moreEl.setText(`…以下另有 ${verses.length - MAX_TOOLTIP_ROWS} 节未列出（共 ${verses.length} 节）。范围较长，建议双击上方经文出处跳转到圣经阅读视图查看。`);
+            moreEl.setText(`…以下另有 ${verses.length - MAX_TOOLTIP_ROWS} 节未列出（共 ${verses.length} 节）。范围较长，建议点击上方经文出处跳转到圣经阅读视图查看。`);
         }
 
         // ---- 选中 / 取消：始终记入弹窗自己的候选库；勾选「保留候选」时再同步进候选池 ----
-        const setRowChecked = (r, checked) => {
-            r.selected = !!checked;
-            if (r.selected) {
-                this.tooltipPoolAdd(r.verse.item, r.sideBySide);
-                if (view && view.keepCandidates) view.poolSyncSelect(r.verse.item, false, r.sideBySide, 'tooltip', sessionKey);
-            } else {
-                r.sideBySide = false;
-                this.tooltipPoolRemove(r.verse.item);
-                if (view) view.poolSyncDeselect(r.verse.item, false);
-            }
+        // 静默原语：只改行状态与候选，不逐行刷新 DOM。手动单行勾选与「本页全选」共用，
+        // 全选时先清本页再按视觉顺序重新写入，旧勾选的序号才不会插在新序号前面。
+        const clearRowSilently = (r) => {
+            const wasSelected = !!r.selected;
+            r.selected = false;
+            r.sideBySide = false;
+            this.tooltipPoolRemove(r.verse.item);
+            // 「保留候选」开启时候选池全局共享，本页重排要连池里同键的旧记录一起清；
+            // 关闭时只清本行确实选中过的记录，避免误删检索页 / 阅读页的同一节经文。
+            if (view && (wasSelected || view.keepCandidates)) view.poolSyncDeselect(r.verse.item, false);
+        };
+        const markRowSilently = (r) => {
+            r.selected = true;
+            this.tooltipPoolAdd(r.verse.item, r.sideBySide);
+            if (view) view.poolSyncSelect(r.verse.item, false, r.sideBySide, 'tooltip', sessionKey);
+        };
+        const refreshTooltipSelection = () => {
             if (view) view.updateKeepCandidatesUI();
             refreshOrders();
             refreshTooltipNotePanels();        // 经文勾选变化时同步刷新注解/串珠候选框的选中序号
             updateSelToggleBtn();
+        };
+        const setRowChecked = (r, checked) => {
+            if (checked) markRowSilently(r); else clearRowSilently(r);
+            refreshTooltipSelection();
         };
 
         // ---- 切换「并」（与前一节并列）：与圣经搜索 / 圣经阅读的「并」标签一致 ----
@@ -13961,38 +14608,65 @@ class BibleSearchPlugin extends Plugin {
             }
         };
 
-        // ---- 全选 / 取消（同一按钮自动切换文案，与「全局全选」一样重置并列）----
-        const isAllChecked = () => rows.length > 0 && rows.every(r => r.selected);
+        // ---- 本页全选（三态）：与检索页 / 阅读页同一套语义 ----
+        //   单击：先清本页，再只选主版本；
+        //   长按：先清本页，再按 rows 的渲染顺序（主1 → 它的对照 → 主2 → …）选主版本 + 全部对照版；
+        //   主版本已全选 → 按钮变「取消」，一键清掉本页全部内容（含注/串）。
+        // ⚠️ 必须先清本页再按视觉顺序重写候选：旧做法直接在已有勾选后面追加，
+        //   手动选过的节会排在全选序号之前，勾选顺序与弹窗里看到的顺序对不上；
+        //   单击也不会清掉之前选中的对照版，与检索页 / 阅读页的「只选主版本」不一致。
+        const mainRows = rows.filter(r => !r.isCompare);
+        const isAllChecked = () => mainRows.length > 0 && mainRows.every(r => r.selected);
         const updateSelToggleBtn = () => {
             const all = isAllChecked();
             selToggleBtn.setText(all ? '取消' : '全选');
-            selToggleBtn.title = all ? '取消本弹窗的全部勾选' : '勾选本弹窗的全部经文';
+            selToggleBtn.title = all
+                ? '取消本页全部选中（含对照版）'
+                : '单击：全选本页主版本；长按：全选本页主版本 + 对照版';
         };
-        selToggleBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const next = !isAllChecked();
-            for (const r of rows) {
-                if (next) { r.sideBySide = false; setRowChecked(r, true); }
-                else setRowChecked(r, false);
-            }
-            // 「取消」要同时清掉本弹窗里选中的注解 / 串珠——它们与经文共用同一候选库，
-            // 否则点「取消」后经文被取消、注/串却仍残留勾选与序号
-            if (!next) {
-                for (const p of this.getTooltipPool().slice()) {
-                    if (p.item && (p.item.type === 'note' || p.item.type === 'chain')) {
-                        this.tooltipPoolRemove(p.item);
-                        if (view) view.poolSyncDeselect(p.item, false);
-                    }
+        // 「取消」要同时清掉本弹窗里选中的注解 / 串珠——它们与经文共用同一候选库，
+        // 否则点「取消」后经文被取消、注/串却仍残留勾选与序号；对照版在候选池里按
+        // isCompare=true 记，单独再清一次，避免「保留候选」开启时残留。
+        const clearTooltipNotesAndCompares = () => {
+            for (const p of this.getTooltipPool().slice()) {
+                if (p.item && (p.item.type === 'note' || p.item.type === 'chain')) {
+                    this.tooltipPoolRemove(p.item);
+                    if (view) view.poolSyncDeselect(p.item, false);
                 }
-                if (view) view.updateKeepCandidatesUI();
             }
-            // 上面清掉注/串后必须重算标题栏计数：setRowChecked 内部的 refreshOrders 跑在清注/串之前，
-            // 若不清掉这步，「保留候选 (1)」会残留在已取消的状态上（重新打开弹窗才复位），因此需补一次
-            refreshOrders();
-            refreshTooltipNotePanels();
-            updateSelToggleBtn();
+            if (view) {
+                for (const r of rows) {
+                    if (r.isCompare) view.poolSyncDeselect(r.verse.item, true);
+                }
+                view.updateKeepCandidatesUI();
+            }
+        };
+        const selectTooltipPageAll = (withCompare) => {
+            for (const r of rows) clearRowSilently(r);   // 清本页主版本 + 对照版，旧序号不参与重排
+            for (const r of rows) {
+                if (r.isCompare && !withCompare) continue;
+                r.sideBySide = false;
+                markRowSilently(r);
+            }
+            new Notice(withCompare ? '已选中本页主版本与对照版内容' : '已选中本页主版本内容');
+        };
+        const deselectTooltipPageAll = () => {
+            for (const r of rows) clearRowSilently(r);
+            clearTooltipNotesAndCompares();
+            new Notice('已取消本页全部选中');
+        };
+        bindPageSelectToggle(selToggleBtn, {
+            getState: () => isAllChecked() ? 'cancel' : 'select',
+            onSelect: () => selectTooltipPageAll(false),
+            onSelectWithCompare: () => selectTooltipPageAll(true),
+            onCancel: deselectTooltipPageAll,
+            after: () => {
+                // 清掉注/串后统一重算计数、序号与按钮文案；整页只刷新这一次，
+                // 不再像旧做法那样每选一行就全量刷新一遍候选框 / 注解面板。
+                refreshTooltipSelection();
+            }
         });
+        updateSelToggleBtn();
 
         // ---- 「保留候选」开关：与其它页面共用同一状态 ----
         keepCb.addEventListener('change', async () => {

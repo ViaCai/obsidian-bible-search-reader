@@ -2472,6 +2472,40 @@
     font-size: 0.85em;
 }
 
+/* 经文弹窗：多版本对照行——直接呈现对照经文内容（不再显示版本名），
+   候选框 / 经文与主版本行左对齐（复用同一「候选框 + 章:节等宽占位」的左结构） */
+.bible-inline-tooltip-compare-row {
+    padding: 2px 0;
+    margin-top: 6px;            /* 版本间明显垂直间距 */
+    gap: 6px;                   /* 与主版本行 .bible-inline-tooltip-verse 对齐 */
+}
+/* 对照行的候选框与主版本同一尺寸（20px），左边缘对齐；不再像旧版缩到 14px 并整行缩进 */
+.bible-inline-tooltip-compare-row .bible-inline-tooltip-checkbox {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    border-width: 2px;
+    margin-top: 0;
+}
+/* 与主版本「章:节」等宽的隐形占位：让对照经文首字与主版本经文首字左对齐 */
+.bible-inline-tooltip-num-spacer {
+    font-size: 0.85em;
+    visibility: hidden;
+    pointer-events: none;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.bible-inline-tooltip-compare-text {
+    color: var(--text-muted);
+    font-size: 13px;            /* 固定像素，与 .bible-compare-text 一致 */
+    line-height: 1.7;
+    white-space: normal;
+    word-wrap: break-word;
+}
+/* 经文出处可点击（内容仍是选中，出处跳阅读页） */
+.bible-inline-tooltip-ref,
+.bible-inline-tooltip-verse-num { cursor: pointer; }
+
 /* 经文弹窗：工具条（字体调节 / 全选·取消 / 复制 / 投影 / 保留候选） */
 .bible-inline-tooltip-toolbar {
     display: flex;
@@ -3330,84 +3364,120 @@ body .bible-projection-fullscreen .bible-proj-quick-search-go:focus {
 }
 .bible-proj-mode-btn:hover { background: rgba(255,255,255,0.12); }
 .bible-projection-fullscreen.light-mode .bible-proj-mode-btn:hover { background: rgba(0,0,0,0.08); }
+/* ===== 模式菜单：与 Hymns 诗歌投影菜单同款 =====
+   容器 / 分组标题 / 条目 / 键位徽章 / 当前项高亮的规格全部对齐 Hymns 2.5.0：
+   深色 #211d38 面板、10px 圆角、右侧带边框的键位小片、当前项整行紫色高亮。
+   菜单项顺序仍由 main.js 决定（经文 Q/W/E → 分隔线 → 诗歌 O/P），这里不动结构。
+   投影另有亮色模式：下列 light-mode 规则是同一套形状的浅色等价稿。 */
 .bible-proj-mode-menu {
     position: absolute;
-    top: calc(100% + 6px);
+    top: calc(100% + 8px);
     left: 0;
-    min-width: 184px;
+    min-width: 220px;
+    max-width: calc(100vw - 32px);
+    box-sizing: border-box;
     padding: 6px;
-    background: #232340;
-    border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
-    color: #f2f2f7;
-    z-index: 20;
+    background: #211d38;
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 10px;
+    box-shadow: 0 18px 46px rgba(0,0,0,0.55);
+    color: #f2f0ff;
+    z-index: 40;
     -webkit-app-region: no-drag;
 }
 .bible-projection-fullscreen.light-mode .bible-proj-mode-menu {
     background: #ffffff;
     border-color: rgba(0,0,0,0.14);
     color: #232340;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    box-shadow: 0 18px 46px rgba(0,0,0,0.18);
 }
 .bible-proj-mode-menu-title {
-    padding: 4px 8px 2px;
+    padding: 8px 10px 4px;
     font-size: 11px;
-    opacity: 0.55;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.12em;
+    color: #aaa4c9;
 }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-title { color: #7a7495; }
 .bible-proj-mode-menu-divider {
     height: 1px;
     margin: 6px 4px;
-    background: rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.14);
 }
 .bible-projection-fullscreen.light-mode .bible-proj-mode-menu-divider { background: rgba(0,0,0,0.12); }
 .bible-proj-mode-menu-item {
+    -webkit-app-region: no-drag;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    padding: 7px 8px;
-    border-radius: 5px;
+    padding: 9px 10px;
+    border-radius: 7px;
     font-size: 13px;
     cursor: pointer;
     white-space: nowrap;
 }
-.bible-proj-mode-menu-item:hover { background: rgba(255,255,255,0.1); }
+.bible-proj-mode-menu-item:hover { background: rgba(255,255,255,0.10); }
 .bible-projection-fullscreen.light-mode .bible-proj-mode-menu-item:hover { background: rgba(0,0,0,0.06); }
-.bible-proj-mode-menu-item.is-current .bible-proj-mode-menu-label { font-weight: 700; }
-.bible-proj-mode-menu-key { font-size: 11px; opacity: 0.55; }
-.bible-proj-mode-menu-item.is-disabled,
-.bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-key,
-.bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-label {
-    color: #8a8a99;
-    opacity: 0.55;
-    cursor: not-allowed;
+/* 当前模式：整行紫色高亮（Hymns 同款）；点击仍为「无操作」由 JS 保证 */
+.bible-proj-mode-menu-item.is-current { background: rgba(126,110,220,0.30); color: #fff; }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-item.is-current {
+    background: rgba(126,110,220,0.16);
+    color: #3a2f6b;
 }
-.bible-proj-mode-menu-item.is-disabled:hover { background: transparent; }
+/* 键位徽章：带边框的圆角小片，不再是纯文字 */
+.bible-proj-mode-menu-key {
+    flex: 0 0 auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 4px;
+    font-size: 11px;
+    text-align: center;
+    color: #b7b0d6;
+}
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-key {
+    border-color: rgba(0,0,0,0.18);
+    color: #6b6591;
+}
+.bible-proj-mode-menu-item.is-disabled { color: #7d7897; cursor: default; }
+.bible-proj-mode-menu-item.is-disabled:hover { background: rgba(255,255,255,0.05); }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-item.is-disabled { color: #8a8a99; }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-item.is-disabled:hover { background: rgba(0,0,0,0.04); }
+.bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-key {
+    color: #7d7897;
+    border-color: rgba(255,255,255,0.10);
+}
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-item.is-disabled .bible-proj-mode-menu-key {
+    color: #9a9aab;
+    border-color: rgba(0,0,0,0.10);
+}
 
 /* ===== 移动端安全区：避开状态栏 / 灵动岛 / home indicator =====
    覆盖层是 fixed top:0 且内联 width/height 100vw/100vh，只有把安全区算进
-   padding（并改成 border-box）才能把顶栏推到状态栏下方；标签页模式不适用。 */
+   padding（并改成 border-box）才能把顶栏推到状态栏下方；标签页模式不适用。
+   ⚠️ 安卓 WebView 里 env(safe-area-inset-*) 常返回 0（宿主没有 viewport-fit=cover），
+   但 Obsidian 会把真实状态栏高度注入 --safe-area-inset-*：两者取大者才能不被遮挡。
+   老版本连变量都不给时，main.js 会写 --bible-android-inset-top 作为最后兜底。 */
 .bible-projection-fullscreen:not(.bible-proj-in-tab) {
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-right: env(safe-area-inset-right, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    padding-left: env(safe-area-inset-left, 0px);
+    padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px), var(--bible-android-inset-top, 0px));
+    padding-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+    padding-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
     box-sizing: border-box;
     max-height: 100dvh;
 }
 
-/* ===== 模式菜单：诗歌投影不可用说明 ===== */
+/* ===== 模式菜单：诗歌投影不可用说明（与 Hymns 同款） ===== */
 .bible-proj-mode-menu-hint {
-    padding: 0 8px 5px;
+    padding: 2px 10px 8px;
     font-size: 11px;
-    line-height: 1.45;
-    color: #a9a9bb;
+    line-height: 1.5;
+    color: #cba9ff;
+    transition: color 0.2s;
     white-space: normal;
 }
-.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-hint { color: #6b6b7b; }
-.bible-proj-mode-menu-hint.is-alert { color: #ffcf70; }
+.bible-projection-fullscreen.light-mode .bible-proj-mode-menu-hint { color: #7b4fb8; }
+.bible-proj-mode-menu-hint.is-alert { color: #ffd18a; }
 .bible-projection-fullscreen.light-mode .bible-proj-mode-menu-hint.is-alert { color: #a45c00; }
 
 /* 投影内提示条：全屏投影进入 top layer 后，body 上的 Notice 会被整块盖住，
