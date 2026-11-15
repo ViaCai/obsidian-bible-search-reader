@@ -68,11 +68,11 @@
 - **多版本对照阅读**：检索和阅读时可选开启对照模式，在主版本经文下方显示其他版本
 - **版本选择引导**：首次安装或数据缺失时自动弹出引导窗口，帮助用户选择并下载所需的圣经版本
 - **版本管理设置**：全新的版本管理界面，支持启用/禁用版本、设置主版本、删除版本、下载新版本
-- **圣经搜索**：支持主题、纲目、经文、注解四种检索类型；可按全部圣经或自定义书卷范围搜索
+- **圣经搜索**：支持主题、纲目、经文、注解四种检索类型；可按全部圣经或自定义书卷范围搜索；检索整章、章范围、整卷（含书卷简拼）时，结果最前会自动带出该书卷简介，排在纲目与经文之前
 - **智能检索语法**：支持经文出处（`太1:1`、`路一1～3`）、按注/串出处（`1:26注2`、`创1:26串1`）、关键词（多词组合匹配）、以及混合检索
-- **阅读模式**：书卷/章节网格浏览，点击顶部书卷名 / 章数快速跳转，字体调节，主题与纲目同屏显示
+- **阅读模式**：书卷/章节网格浏览，点击顶部书卷名 / 章数快速跳转，字体调节；每卷第一章开头显示该书卷简介（著者 / 著时 / 著地 / 涵盖时段 / 主题等）与书卷主题，二者都排在纲目前面，第二章起不再重复显示；书卷简介与主题同纲目、经文一样可选中、复制、投影
 - **恢复本注解与串珠**：恢复本（CRV）配套的注解与串珠数据，经文中以 ¹ ᵃ 上标内嵌，点击即在该节下方展开注文或串珠经文；注解/串珠可点击选中、复制、投影；支持「恢复本注解 / 串珠」开关，在阅读笔记、圣经检索 / 阅读页、经文弹窗等场景下按 **A** 一键开关（在输入框或笔记正文中打字时不会误触），数据首次用到时按需下载
-- **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影；投影正文的注解（蓝）/串珠（琥珀）按段落分段渲染，可点选复制
+- **投影模式**：选中内容后可逐节、并列或混合投影，支持键盘/滚轮/触屏操作；投影内可直接打开检索窗口检索新内容并更新投影，检索整章 / 章范围 / 整卷时同样会在第一页（并列整卷时是第一章页首）带出书卷简介，排在主题与纲目前；投影正文的注解（蓝）/串珠（琥珀）按段落分段渲染，可点选复制
 - **保留候选**：勾选「保留候选」后，选中的经文会实时进入候选池并即时更新数量，可跨检索/跨书卷/跨标签页保留已选经文（经文弹窗中勾选的经文也可入池），按顺序累计投影；取消勾选后，经文弹窗 / 圣经搜索 / 圣经阅读各自保留自己的候选，各窗口分别投影
 - **文章内圣经引用自动识别**：阅读笔记时，自动识别文中所出现的圣经引用，点击可查看经文内容，双击可查看经文上下文
 - **自动更新**：支持启动时自动检测新版本，一键下载并安装更新
@@ -165,6 +165,7 @@
 5. 开启多版本对照后，搜索结果下方会显示其他版本的对照经文
 6. 点击结果卡片选中（可排序、标记并列），对照版本也有独立的候选框可选中
 7. 点击「逐节/并列/混合投影」进行投影
+8. 检索整章（`创1`）、章范围（`太1-3`）或整卷（`csj`）时，只要勾选了「主题」或「纲目」，结果最前会自动出现该书卷简介卡片（著者 / 著时 / 著地 / 涵盖时段等），排在纲目与经文之前；简介卡片同样可点选、复制、投影，点出处会跳到该书卷第一章。单节引用与纯关键词检索不附带简介，避免把「著者：摩西」这类内容混进结果
 
 ### 阅读
 
@@ -173,7 +174,8 @@
 3. 「本页操作」标题右侧有两个极小的上一章 / 下一章符号按钮，点击直接切章并回到章首；首章 / 末章自动置灰
 4. 开启多版本对照后，每节经文下方会显示其他版本对照
 5. 恢复本（CRV）经文中带 ¹ ᵃ 上标，点击即在该节下方展开注解或串珠（注解/串珠可点击选中、复制、投影）；把主版本切到恢复本会**自动开启**注解，在阅读 / 检索等场景下按 **A** 即可一键开 / 关（在输入框或笔记正文中打字时不会误触；该快捷键由插件直接处理，故不出现在「设置 → 快捷键」里，但命令面板仍可搜索并触发）
-6. 「全局操作」标题右侧的字体按钮可调节阅读字号；点击卡片或对照版本的候选框选中内容，可进行复制或投影
+6. 打开每卷**第一章**时，章首会先显示该书卷简介卡片与书卷主题，然后才是该章的纲目与经文；第二章起只显示本章内容，不再重复书卷简介与主题。简介卡片与经文卡片一样可点选、复制、投影
+7. 「全局操作」标题右侧的字体按钮可调节阅读字号；点击卡片或对照版本的候选框选中内容，可进行复制或投影
 
 ### 翻页与键盘导航
 
@@ -211,7 +213,7 @@
 
 焦点在输入框、笔记正文或经文弹窗 / 投影打开时全部让行（焦点停在工具栏按钮上时 `X / I / Y / U` 仍可用）；输入法合成态、带修饰键的按键不拦截，插件原有的全局 A / Q / W / E 快捷键不受影响——它们与面板内的裸字母键互不冲突。`X` 全选逐条沿用手动点选的序号与「保留候选」规则，整页只重绘一次；书卷列表与章目录没有「选中」概念，`X` 在那里不生效。
 
-以上四组能力可在 **设置 → 检索与阅读** 分别开关（默认全部开启）：「左右滑动翻页」「移动端右滑翻上一页」「鼠标拖拽与触控板横滑翻页」「键盘导航」。上下滚动、点击、长按选字、多指缩放、可横向滚动的容器、书卷列表与章目录列表都不会误触翻页手势。
+以上四组能力可在 **设置 → 检索与阅读** 分别开关（默认全部开启）：「左右滑动翻页」「移动端右滑翻上一页」「鼠标拖拽与触控板横滑翻页」「键盘导航」。上下滚动、点击、长按选字、多指缩放、可横向滚动的容器、书卷列表与章目录列表都不会误触翻页手势。同一设置页还有「经文投影默认主题」与「桌面端 / 移动端投影默认字号」：前者决定新投影的初始配色（`T` 切换不改设置），后者按设备分别决定新投影的初始字号（投影内 `+` / `−` 调整不改设置，`R` 重置回本设备默认值）。
 
 **移动端按钮**：顶部「对照」「专注」始终显示为实心高对比色块——在搜索框打字、展开检索范围、阅读经文或内容重绘时也不会变透明或被遮挡；「对照」激活时只换底色与内描边，文字固定为「对照」不变，进入专注模式后按钮显示「取消」。「全局操作」标题右侧的字体按钮、以及「本页操作」里的上一章 / 下一章按钮统一为 28px 触控目标，带边框与底色，两种主题下都能看清、点得中；搜索页「全局操作」标题左侧统一为折叠箭头，不再出现闪电符号。
 
@@ -227,13 +229,13 @@
 
 **全局操作**（作用于整个书卷或所有已选中内容）：
 - **保留候选**（标题右侧复选框）：两个标签页与经文弹窗共用同一个开关。勾选后，选中的经文会**实时**进入候选池——每选中一处就立即按序加入，右侧的候选数量与经文序号即时刷新，重新搜索、切换书卷/章节、切换标签页、开关弹窗都不会丢失（主版本与对照版本均保留）；取消勾选某处经文也会立即从候选池移除。经文弹窗的「保留候选」开关默认不勾选，勾选后弹窗内勾选的经文同样进入候选池。刚勾选开关时已有的选中项会立即纳入候选池。默认关闭时保持原有行为（切换书卷会清空旧书卷选中项）。点击「清空」可一键清空保留的候选（「取消全选」也会一并清空）。取消勾选时会把已保留的候选按来源归还到检索页 / 阅读页，两个视图都从 1 重新开始编号
-- **全局全选**：按顺序选中当前书卷所有章节的主版本内容（含主题）
+- **全局全选**：按顺序选中当前书卷所有章节的主版本内容（含书卷简介与主题，二者排在最前）
 - **全局取消**：取消所有已选中的内容（跨所有章节）
 - **全局复制**：复制所有已选中的内容
 - **逐节/并列/混合投影**：投影所有已选中的内容
 
 **本页操作**（仅作用于当前章节，与「全局操作」一样为可折叠区块）：
-- **全选**：选中当前章的主版本内容（第一章额外包含主题）
+- **全选**：选中当前章的主版本内容（第一章额外包含书卷简介与主题）
 - **复制**：仅复制当前章已选中的内容
 - **经文**：复制当前章主版本的全部经文
 - **纲目**：复制当前章主版本的纲目
@@ -243,20 +245,29 @@
 左上角点一下「逐节模式 ▾」可展开模式菜单，直接切换逐节 / 并列 / 混合，或跳到 Hymns 的诗歌全屏 / 窗口投影（没装 Hymns 时诗歌项会置灰说明）。插件启用后侧边栏会自动出现检索面板，可在设置里关掉。
 
 - `←/→` 或 `空格`：翻页
+- **点右上角页码**：弹出快速跳页面板，可直接点页码格或输入页码后按 `Enter` 跳到任意一页（页数多时也可输入）；`ESC` 或点面板外收起
 - `+/-`：调整字体大小
 - `Q` / `W` / `E`：投影已打开时在逐节 / 并列 / 混合三种模式间即时切换并重绘（无需翻页）；在投影标签里再按同键即关闭，从别的标签按则先切回投影标签
 - `D`：经文投影全屏 / 退出全屏（移动端不支持）
 - `O` / `P`：交给 Hymns 插件，分别是诗歌全屏投影 / 诗歌窗口投影（同键可关闭）
 - 从诗歌投影按 `Q` / `W` / `E` 切回经文时，原本是全屏就仍是全屏、原本是窗口就仍是窗口，来回切换不会串状态
-- `T`：在暗色（深底白字）/ 亮色（浅底深字）/ 蓝黄（蓝底黄字）/ 黄黑（黄底黑字）四套主题间依次循环；默认主题可在「设置 → 经文投影默认主题」里改，按 `T` 只切当前投影、不改默认值
-- 搜索框输入单独一个书卷简拼（如 `csj`）＝显示整卷创世记；并列模式下整卷按「一章一页」分页，**书卷主题放在第一章那一页的开头**，不单独占一页。简拼撞车时（如 `th` 对应帖撒罗尼迦后书 / 提摩太后书）在下拉里选定后会补成可唯一定位的完整短拼（`tslnjhs` / `tmths`）
+- `T`：按「深色主题 → 亮色主题 → 翠绿主题 → 浅黄主题 → 宝石蓝主题 → 混合蓝主题」依次循环切换六套投影主题；点底部工具栏的主题图标则弹出六套主题的选项列表，直接点名称切换（当前主题带勾，每项有配色小图例）。默认主题在「设置 → 经文投影默认主题」里改，`T` 与点选都只切当前投影、不改默认值。
+  - **深色主题**：深底白字；**亮色主题**：浅底深字。
+  - **翠绿主题**（原翠黑配色）：整屏浅翠绿 `#e5f2e5`、每段内容方框 `#dce8dc`、经文纯黑 `#000000`、纲目深绿 `#2f5c2f`；滚动条滑块与「当前选中项」高亮改用实色深绿，浅底上也清晰可见。
+  - **浅黄主题**：保留原来的米黄底黑字配色，深褐出处与纲目、暗红主题标题。
+  - **宝石蓝主题**（上一版蓝黄，保留）：整屏 `#003399` 蓝底 + `#ffe600` 亮黄经文，书卷主题白、注解串珠红。
+  - **混合蓝主题**（当前蓝黄）：整屏深藏青 `#001a52` + 每段内容方框 `#003399` + 亮黄经文 `#ffff66`；书卷主题白，注解 / 串珠（注串条目、注解面板、徽标、经文上标、串珠被引经文）统一红色系，对照经文与书卷简介标题保持黄色出处色。
+  - 六套主题的顶栏、按钮、菜单、输入框、滚动条都跟着底色走；改名只换显示名，设置里已保存的默认值不会失效（内部标识仍是 `dark / light / yellow / cream / sapphire / blue`）。
+- **默认投影字号按设备分开设置**：「设置 → 桌面端投影默认字号」与「移动端投影默认字号」各自独立（默认均 48px，可选 16–96px），只决定新打开投影的初始字号；投影里按 `+` / `−` 调整不会改写设置，按 `R` 或工具栏重置回的是当前设备设定的默认值
+- 搜索框输入单独一个书卷简拼（如 `csj`）＝显示整卷创世记；并列模式下整卷按「一章一页」分页，**书卷简介与书卷主题放在第一章那一页的开头（简介在主题之前）**，不单独占一页；整章 / 章范围 / 长按选择器选出的内容同样会在最前面带出该书卷简介。简拼撞车时（如 `th` 对应帖撒罗尼迦后书 / 提摩太后书）在下拉里选定后会补成可唯一定位的完整短拼（`tslnjhs` / `tmths`）
+- **投影完整章节时一章一页**：并列模式下输入 `太1-4`、`mtfy1-4`、`太1-4，8`、`mtfy1-4，8`、`mtfy1-4，mjs1` 等「只含整章 / 章范围 / 整卷」的查询，都会按一章一页分页；每卷的简介与主题只出现在该卷第一章页首。逗号后面跟的裸数字在章级查询里按**章号**解释（`太1-4，8` ＝ 1～4 章加第 8 章），而 `太1:1，3` 这类节号查询仍按节延续、不分页
 - 查不到结果时（无论此前是否已经投影过别的内容）都会清空旧内容，整屏显示「没有找到匹配的内容」与具体查询词；显式确认时按 `Z` 可退回上一版投影内容
-- **长按顶部搜索框**（约 0.5 秒）弹出书卷 / 章数选择器：书卷区左侧旧约、右侧新约，章数区按所选书卷列出全部章；两区各有独立滚动条，互不影响。点章数即把该章投影出来，点「整卷」则投影整卷（并列模式一章一页）；`ESC` 或点选区外关闭，默认停在当前查询所在的书卷 / 章
+- **长按顶部搜索框**（约 0.5 秒）弹出书卷 / 章数选择器：书卷区左侧旧约、右侧新约，章数区按所选书卷列出全部章；两区各有独立滚动条，互不影响。点章数即把该章投影出来，点「整卷」则投影整卷（并列模式一章一页）；`ESC`、点选区外、滚动投影内容、把焦点移到别处或切走窗口都会自动收起，默认停在当前查询所在的书卷 / 章
 - 底部工具栏（符号 / 图标按钮，窄窗口下中间按钮自动换行，左右翻页始终固定在两端）：
   - `−` / `+`：缩小 / 放大字体，中间显示当前字号
-  - 旋转箭头：重置字体大小
+  - 旋转箭头：重置字体大小（回到当前设备设置的默认字号，不是固定 48px）
   - 对齐图标：切换居中（开启时高亮为蓝色）
-  - 主题图标（月亮 / 太阳 / 调色板 / 对比度）：与 `T` 同效，依次切换四套主题
+  - 主题图标：点开六套主题的选项列表（当前主题带勾，每项有配色图例），点名称即切换；`ESC`、点列表外、滚动或切走窗口都会收起。`T` 键仍直接切下一套主题
   - 放大镜图标（检索）：在不关闭投影的情况下，把投影区宽度收窄、右侧空出侧边栏显示圣经检索；检索并选中新经文后点击「逐节/并列/混合投影」，投影内容会**原地更新**（尺寸不变），拖动侧边栏宽度时投影区自动跟随
   - 全屏图标（同一按钮切换）：把投影恢复为满屏
   - `✕`：关闭投影
@@ -388,7 +399,9 @@
 - **Recovery Version notes & chains inline**: ¹ ᵃ superscripts in the text expand notes / chains in place — selectable, copyable, projectable, no need to leave Obsidian.
 - **Chinese-aware search**: verse refs (`太1:1`), note/chain refs (`1:26注2`), keyword combos, and Bible references auto-detected inside your notes with one-click jump.
 - **Side-by-side comparison**: open comparison in reading or search to show multiple Chinese versions under each verse; selected content can be copied or projected in one click.
-- **Projection mode**: verse-by-verse / side-by-side / mixed fullscreen projection for group study; search new content right inside the projection and update the slide in place.
+- **Projection mode**: verse-by-verse / side-by-side / mixed fullscreen projection for group study; search new content right inside the projection and update the slide in place. Click the page counter in the top-right corner to jump to any page, and set separate default font sizes for desktop and mobile in the settings.
+- **One chapter per slide**: whole-chapter queries such as `太1-4`, `mtfy1-4`, `太1-4，8` or `mtfy1-4，mjs1` are paged one chapter per slide in side-by-side mode; a bare number after a chapter range is read as another chapter (not a verse).
+- **Book introductions**: 66 structured book intros (author, date, place, coverage, theme) shown at the head of each book's first chapter and at the top of whole-chapter / chapter-range / whole-book search results, both in the sidebar and in projection, always before outlines; the book theme appears there too instead of repeating on every chapter. In projection the intro title is styled as a prominent chapter heading.
 
 ## Overview
 
@@ -426,7 +439,7 @@ The plugin works on desktop and mobile. Data files are stored inside the vault a
 - **Search syntax**: verse references like `太1:1`, `路一1～3`, `加1:1-2:5`, note/chain references like `1:26注2` / `创1:26串1`, plus keyword matching. Space/`、` = AND, `，`/`,` = ordered AND, `；`/`;` = ordered OR, `。`/`.` = unordered OR.
 - **Comparison reading**: click the "对照" button to enable side-by-side versions. The top version is the primary one; drag to reorder. Each version's verses have independent checkboxes for copying and projection.
 - **Reader view**: switch to the "圣经阅读" tab, pick a book and chapter, then read. The current book is highlighted in the book dropdown, and two tiny prev/next-chapter buttons sit at the right of the "本页操作" header for quick chapter jumps (first/last chapter greyed out). Recovery Version verses carry ¹ ᵃ superscripts — click to expand the note or chain (selectable, copyable, projectable); switching the primary version to CRV auto-enables notes, and the **Ctrl/Cmd + Shift + A** shortcut toggles them. A font button next to "全局操作" resizes the reader. Selected verses can be copied or projected.
-- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `Q`/`W`/`E` to switch between verse-by-verse / side-by-side / mixed modes live (no page turn needed), `T` to toggle theme, `ESC` to exit. The bottom bar uses icon buttons (`−`/`+` font size, reset, center, moon/sun theme, search); the prev/next buttons stay pinned to both ends while the middle buttons wrap onto a second line in narrow windows. The search icon shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and the maximize icon restores full screen. Notes (blue) and chains (amber) render as segmented paragraphs and are selectable for copy.
+- **Projection**: select verses, then choose "逐节 / 并列 / 混合投影". Controls: `←/→`/`Space` to navigate, `+/-` for font size, `Q`/`W`/`E` to switch between verse-by-verse / side-by-side / mixed modes live (no page turn needed), `T` to cycle straight to the next theme (clicking the theme icon opens a six-theme picker instead; the current theme is ticked and every row carries a colour swatch), `ESC` to exit. Click the page counter in the top-right corner to open a page grid / page-number input and jump straight to any slide; `R` and the reset button return to the default font size configured for the current device (desktop and mobile defaults are separate settings). The bottom bar uses icon buttons (`−`/`+` font size, reset, center, theme picker, search); the prev/next buttons stay pinned to both ends while the middle buttons wrap onto a second line in narrow windows. The search icon shrinks the projection horizontally and reveals the Bible search panel in the right sidebar; re-projecting updates the slide in place, and the maximize icon restores full screen. Notes (blue) and chains (amber) render as segmented paragraphs and are selectable for copy; in the two blue themes only, notes / chains switch to a red palette and book themes turn white. Six themes are available: Dark, Light, Jade/Green (screen `#e5f2e5`, per-item card `#dce8dc`, verse text `#000000`, outlines `#2f5c2f`, plus a high-contrast scrollbar and selected-item highlight), Light Yellow (the original yellow/black palette, kept as a separate theme), Sapphire Blue (the previous blue/yellow palette: screen `#003399`, verse text `#ffe600`), and Mixed Blue (screen `#001a52`, per-item card `#003399`, verse text `#ffff66`). `T` cycles Dark → Light → Jade/Green → Light Yellow → Sapphire Blue → Mixed Blue, while the picker switches directly. Only display labels changed; internal ids `dark / light / yellow / cream / sapphire / blue` stay stable, so saved default-theme settings remain valid. Long-press the top search box to open the book / chapter picker; it closes on `ESC`, on an outside click, on scroll, or when focus moves away.
 - **Projection search**: the search icon in the projection bottom bar opens the search window without closing the projection; re-select verses and project to update.
 - **Keep candidates**: the 「保留候选」 checkbox beside "全局操作" is shared by both tabs. Once ticked, every verse you select is added to the candidate pool **in real time** — the counter and verse numbers update immediately, and nothing is lost on re-search, book/chapter switch or tab switch. Unticking a verse removes it from the pool at once. A 「清空」 button clears the pool. Unticking the checkbox releases kept candidates back to the search/reader view and restarts numbering from 1.
 - **Reference highlighting**: while reading notes, Bible references in the text are automatically highlighted. References that omit the book name inherit the last book mentioned earlier in the same note (works across lines and paragraphs), and a bare verse number continues from the end chapter of the previous range. Single-click a reference to open the verse popup (font +/-, a combined 全选/取消 toggle, 复制 and 投影, per-verse checkboxes that show the selection-order number once selected (same box style as the search / reader tabs), a 「并」 tag behind each selected verse for side-by-side projection, and remembered font size). The popup keeps its own candidates: with 「保留候选」 unticked, the popup, the search tab and the reader tab each keep their own selections, and projecting from one of them only projects that window's content (each reference's popup numbers its own verses from 1, and the selections survive closing the popup). Its header shows 保留候选 + count + a 清空 button; the count follows the same rule as the search / reader tabs (shared pool total when ticked, the popup's own count when unticked), and 清空 clears every window's candidates at once (popup + search + reader). With 「保留候选」 ticked, popup verses join the shared pool so everything is projected together; 复制 then offers 本页复制 / 全局复制, and 投影 offers 逐节 / 并列 / 混合. Double-click a reference (or a `章:节` inside the popup) to jump to the reader view.
