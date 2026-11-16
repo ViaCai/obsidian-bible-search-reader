@@ -551,11 +551,12 @@ function applyBookAbbrSuggestion(value, caret, suggestion) {
 // ===== 经文投影主题 =====
 // T 键按此顺序循环；当前主题随时写进 settings.projectionTheme，下次打开投影沿用上次那一套。
 // 颜色一律写在 CSS 变量里（见 styles.css 末尾的「投影主题」段），JS 只切类名，
-// 六套主题共用同一套 DOM，不用为每套主题复制一遍配色规则。
+// 七套主题共用同一套 DOM，不用为每套主题复制一遍配色规则。
 // 兼容约定：dark / light / yellow / blue 四个 id 是已发布版本里会写进 data.json 的值，
 // 绝不能改名或挪作别用，否则用户保存的主题会被 normalizeProjectionTheme() 打回暗色。
 // yellow「翠绿主题」（浅绿底黑字），cream「浅黄主题」（米黄底黑字），
-// sapphire「宝石蓝主题」（#3a5fcd 蓝底白字 + #ffff36 黄纲目），blue「混合蓝主题」（深蓝底＋蓝方框＋亮黄字）。
+// sapphire「宝石蓝主题」（#3a5fcd 蓝底白字 + #ffff36 黄纲目），
+// crystal「蓝晶主题」（宝石蓝换位：#4e6fd2 亮蓝底 + #3a5fcd 深蓝经文框），blue「混合蓝主题」（深蓝底＋蓝方框＋亮黄字）。
 // 两套「同族」主题用「基类 + 变体类」实现（见 applyTheme），这样 CSS 里所有成对写在
 // .bp-theme-blue / .bp-theme-yellow 下的覆盖规则对变体也生效，不必逐条补选择器。
 const PROJECTION_THEMES = [
@@ -564,6 +565,7 @@ const PROJECTION_THEMES = [
     { id: 'yellow',   label: '翠绿主题',   icon: 'leaf' },
     { id: 'cream',    label: '浅黄主题',   icon: 'contrast' },
     { id: 'sapphire', label: '宝石蓝主题', icon: 'gem' },
+    { id: 'crystal',  label: '蓝晶主题',   icon: 'diamond' },
     { id: 'blue',     label: '混合蓝主题', icon: 'layers' }
 ];
 function normalizeProjectionTheme(id) {
@@ -1044,6 +1046,14 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.0.3': `## [6.0.3] - 2026-11-16
+
+### 新增
+- **投影主题「蓝晶」**：宝石蓝的整屏底色与内容方框互换——整屏换成原来方框那一层亮蓝 #4e6fd2，经文 / 简介 / 主题 / 纲目框换成原来的整屏蓝 #3a5fcd。其余与宝石蓝一致：白色经文、#ffff36 亮黄纲目与书卷简介、深蓝顶栏与菜单，注 / 串上标只留红字。主题菜单里排在宝石蓝之后，T 键循环变为七套主题。
+- **两处播放语速调节**：三旧一新播放器与圣经音频播放器各加一个「1×」按钮，档位 0.75 / 1 / 1.25 / 1.5 / 2 倍，播放中切换立即生效。两处各自记住上次选择，重新播放或换章都不会被复位成 1×。
+
+### 修复
+- **缺 MP3 提醒补上文件名诊断**：拿不到自定义提示框时，原来只显示下载说明、会丢掉「文件名应为 MMDD.mp3 / 书卷拼音 + 章号」这一行，现在一并显示。`,
     '6.0.2': `## [6.0.2] - 2026-11-16
 
 ### 修复
@@ -3618,7 +3628,10 @@ async function copyTextToClipboard(text, plugin) {
 
 function showMp3DownloadNotice(plugin, onCancel, detail) {
     let notice = null;
-    try { notice = new Notice(MP3_DOWNLOAD_NOTICE, 0); } catch (e) { return null; }
+    // 退化路径（拿不到 noticeEl 时）没有第二行小字可放，把诊断信息直接接在正文后面，
+    // 至少还知道缺的是哪个文件；能重绘的情况下会被 empty() 清掉，不影响正常排版。
+    const plain = detail ? (MP3_DOWNLOAD_NOTICE + '\n' + String(detail)) : MP3_DOWNLOAD_NOTICE;
+    try { notice = new Notice(plain, 0); } catch (e) { return null; }
     try {
         const el = notice && notice.noticeEl;
         if (!el || typeof el.appendChild !== 'function' ||
@@ -3827,7 +3840,7 @@ class BibleProjectionOverlay {
             : projSettings.projectionFontSizeDesktop;
         this.defaultFontSize = normalizeProjectionFontSize(projFontRaw);
         this.fontSize = this.defaultFontSize;
-        // 主题取设置项里记住的「上次使用」；T 键在六套主题间循环并回写设置。
+        // 主题取设置项里记住的「上次使用」；T 键在七套主题间循环并回写设置。
         // isDark 保留给仍按明暗取色的旧代码读，新代码一律读 CSS 变量，不再自己判断明暗。
         this.themeId = normalizeProjectionTheme(plugin && plugin.settings ? plugin.settings.projectionTheme : null);
         this.isDark = (this.themeId === 'dark');
@@ -5257,7 +5270,7 @@ class BibleProjectionOverlay {
         this.renderSlide();
     }
 
-    // T 键：深色 → 亮色 → 翠绿 → 浅黄 → 宝石蓝 → 混合蓝 → 深色。
+    // T 键：深色 → 亮色 → 翠绿 → 浅黄 → 宝石蓝 → 蓝晶 → 混合蓝 → 深色。
     // 只切覆盖层类名，颜色全由 CSS 变量接管；切完写回设置，下次打开沿用这一套。
     // 工具栏按钮点击走 showThemeMenu() 直接挑，T 键仍是「一键切下一套」。
     toggleTheme() {
@@ -5278,14 +5291,15 @@ class BibleProjectionOverlay {
         }
         const o = this.overlay;
         if (!o) return;
-        // 两套变体沿用同族基类：CSS 里 190 多处 .bp-theme-blue / .bp-theme-yellow
+        // 三套变体沿用同族基类：CSS 里 190 多处 .bp-theme-blue / .bp-theme-yellow
         // 覆盖规则才能一并生效，变体类只负责覆盖 CSS 变量。
-        const blueFamily = (t.id === 'blue' || t.id === 'sapphire');
+        const blueFamily = (t.id === 'blue' || t.id === 'sapphire' || t.id === 'crystal');
         const yellowFamily = (t.id === 'yellow' || t.id === 'cream');
         o.classList.toggle('light-mode', t.id === 'light');
         o.classList.toggle('bp-theme-blue', blueFamily);
         o.classList.toggle('bp-theme-yellow', yellowFamily);
         o.classList.toggle('bp-theme-sapphire', t.id === 'sapphire');
+        o.classList.toggle('bp-theme-crystal', t.id === 'crystal');
         o.classList.toggle('bp-theme-cream', t.id === 'cream');
         const btn = o.querySelector('[data-action="toggle-theme"]');
         if (btn) {
@@ -5299,7 +5313,7 @@ class BibleProjectionOverlay {
         if (!quiet) this.showInlineNotice('主题：' + t.label, 2200);
     }
 
-    // 工具栏主题按钮：弹出六套主题选项，点某一项直接切换（T 键仍是直接循环切下一套）。
+    // 工具栏主题按钮：弹出七套主题选项，点某一项直接切换（T 键仍是直接循环切下一套）。
     // 菜单必须挂在投影层内部——按 D 进入浏览器 top layer 后，挂在 body 上的浮层会被盖住。
     showThemeMenu(anchorEl) {
         const overlay = this.overlay;
@@ -12304,6 +12318,26 @@ function dailyFontSizeOf(settings) {
     return Math.max(DAILY_FONT_MIN, Math.min(DAILY_FONT_MAX, Math.round(v)));
 }
 
+// 播放语速：三旧一新与圣经音频共用同一组档位，但各自记住上次选择
+//（settings.dailyAudioRate / settings.bibleAudioRate），互不影响。
+const AUDIO_RATES = [0.75, 1, 1.25, 1.5, 2];
+const AUDIO_RATE_DEFAULT = 1;
+function audioRateOf(value) {
+    const v = Number(value);
+    if (!Number.isFinite(v) || v <= 0) return AUDIO_RATE_DEFAULT;
+    // 只接受档位表里的值：手改 data.json 写成 1.37 也归到最近的档
+    let best = AUDIO_RATE_DEFAULT;
+    let diff = Infinity;
+    for (const r of AUDIO_RATES) {
+        const d = Math.abs(r - v);
+        if (d < diff) { diff = d; best = r; }
+    }
+    return best;
+}
+function audioRateLabel(value) {
+    return String(audioRateOf(value)) + '×';
+}
+
 // 对照版背景框：默认开启（没写过这个设置的老用户也当开）。
 // 关掉后对照经文不再套一层底色 + 左侧竖线，直接接在主版本正文下面、左边缘对齐。
 function dailyCompareBoxOn(settings) {
@@ -12699,9 +12733,17 @@ class BibleDailyView extends ItemView {
         });
         this.progressEl.addEventListener('input', () => this.seekFromSlider());
         this.timeEl = this.playerEl.createEl('span', { cls: 'bible-daily-time', text: '0:00 / --:--' });
+        // 播放速度：药丸最右端一个小按钮，点开浮层选档位（与「字」浮层同一套开关手感）
+        this.rateBtn = this.playerEl.createEl('button', {
+            cls: 'bible-daily-btn bible-daily-rate',
+            attr: { type: 'button', title: '播放速度', 'aria-label': '播放速度' },
+            text: audioRateLabel(this.rate())
+        });
+        this.rateBtn.addEventListener('click', () => this.toggleRatePopover(this.rateBtn));
 
         this.updatePlayButton();
         this.syncProgress();
+        this.applyRate();
     }
 
     // ========== 字号（写回设置，下次打开沿用） ==========
@@ -13258,6 +13300,47 @@ class BibleDailyView extends ItemView {
         if (this._popover) this.fillCalendar(this._popover);
     }
 
+    // ========== 播放速度（写回设置，下次打开沿用） ==========
+    rate() {
+        return audioRateOf(this.plugin && this.plugin.settings && this.plugin.settings.dailyAudioRate);
+    }
+
+    applyRate() {
+        const r = this.rate();
+        if (this._audio) { try { this._audio.playbackRate = r; } catch (e) { /* 忽略 */ } }
+        if (this.rateBtn) {
+            try {
+                this.rateBtn.setText(audioRateLabel(r));
+                this.rateBtn.setAttribute('title', '播放速度：' + audioRateLabel(r) + '（点击选择）');
+            } catch (e) { /* 忽略 */ }
+        }
+    }
+
+    setRate(value) {
+        const r = audioRateOf(value);
+        if (this.plugin && this.plugin.settings) {
+            this.plugin.settings.dailyAudioRate = r;
+            try { void this.plugin.saveSettings(); } catch (e) { /* 忽略 */ }
+        }
+        this.applyRate();
+    }
+
+    toggleRatePopover(anchor) {
+        if (this._popover && this._popoverAnchor === anchor) { this.closePopover(); return; }
+        this.openPopover(anchor, (box) => {
+            box.createDiv({ cls: 'bible-daily-pop-title', text: '播放速度' });
+            const cur = this.rate();
+            for (const r of AUDIO_RATES) {
+                const item = box.createEl('button', {
+                    cls: 'bible-daily-pop-item' + (r === cur ? ' is-current' : ''),
+                    attr: { type: 'button' },
+                    text: audioRateLabel(r)
+                });
+                item.addEventListener('click', () => { this.setRate(r); this.closePopover(); });
+            }
+        });
+    }
+
     // ========== 播放（当天的 MMDD.mp3） ==========
     ensureAudio() {
         if (this._audio) return this._audio;
@@ -13302,6 +13385,8 @@ class BibleDailyView extends ItemView {
             audio.src = src;
             try { audio.load(); } catch (e) { /* 忽略 */ }
         }
+        // load() 之后个别浏览器会把 playbackRate 复位，每次播放前统一再设一次
+        this.applyRate();
         if (audio.paused) {
             try { await audio.play(); }
             catch (e) { new Notice('播放失败：' + ((e && e.message) || '未知错误')); }
@@ -13393,6 +13478,7 @@ class BibleAudioPlayer {
         this._path = '';
         this._outsideHandler = null;
         this._outsideToken = 0;
+        this._rateMenu = null;
     }
 
     // ---------- 小工具 ----------
@@ -13486,6 +13572,8 @@ class BibleAudioPlayer {
                 } catch (e) { /* 忽略 */ }
             }
         }
+        // 换源 / load() 之后统一再设一次语速，避免个别环境把它复位成 1×
+        this.applyRate();
         this.render();
     }
 
@@ -13614,6 +13702,56 @@ class BibleAudioPlayer {
         this.render();
     }
 
+    // ---------- 播放速度 ----------
+    rate() {
+        return audioRateOf(this.plugin && this.plugin.settings && this.plugin.settings.bibleAudioRate);
+    }
+
+    applyRate() {
+        const r = this.rate();
+        if (this._audio) { try { this._audio.playbackRate = r; } catch (e) { /* 忽略 */ } }
+    }
+
+    setRate(value) {
+        const r = audioRateOf(value);
+        if (this.plugin && this.plugin.settings) {
+            this.plugin.settings.bibleAudioRate = r;
+            try { void this.plugin.saveSettings(); } catch (e) { /* 忽略 */ }
+        }
+        this.applyRate();
+        this.render();
+    }
+
+    // 档位菜单：贴在面板右下角、控制区上方；点外面由面板自身的 outside 逻辑处理，
+    // 菜单在面板内部，所以点菜单项不会把整个播放窗关掉。
+    closeRateMenu() {
+        if (this._rateMenu && this._rateMenu.parentNode) {
+            try { this._rateMenu.parentNode.removeChild(this._rateMenu); } catch (e) { /* 忽略 */ }
+        }
+        this._rateMenu = null;
+    }
+
+    toggleRateMenu() {
+        if (this._rateMenu) { this.closeRateMenu(); return; }
+        const panel = this.panel;
+        if (!panel) return;
+        let menu = null;
+        try { menu = document.createElement('div'); } catch (e) { menu = null; }
+        if (!menu) return;
+        menu.className = 'bible-audio-rate-menu';
+        const cur = this.rate();
+        for (const r of AUDIO_RATES) {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'bible-audio-rate-item' + (r === cur ? ' is-current' : '');
+            item.textContent = audioRateLabel(r);
+            item.addEventListener('click', () => { this.setRate(r); this.closeRateMenu(); });
+            menu.appendChild(item);
+        }
+        panel.appendChild(menu);
+        this._rateMenu = menu;
+    }
+
     // ---------- 阅读页「转播」 ----------
     readerTarget() {
         const view = this.plugin && this.plugin.getSearchView ? this.plugin.getSearchView() : null;
@@ -13686,6 +13824,17 @@ class BibleAudioPlayer {
         el.listBtn = this.iconBtn(controls, 'list-music', '≡♪', '播放列表', 'bible-audio-btn bible-audio-list');
         el.listBtn.addEventListener('click', () => this.openPlaylist());
 
+        // 播放速度：按钮直接显示「1×」，点开档位菜单（菜单挂在面板内部，点菜单不算点外面）
+        el.rate = controls.createEl('button', {
+            cls: 'bible-audio-btn bible-audio-rate',
+            attr: { type: 'button', title: '播放速度', 'aria-label': '播放速度' },
+            text: audioRateLabel(this.rate())
+        });
+        el.rate.addEventListener('click', (e) => {
+            try { if (e && e.stopPropagation) e.stopPropagation(); } catch (err) { /* 忽略 */ }
+            this.toggleRateMenu();
+        });
+
         const prog = root.createDiv({ cls: 'bible-audio-progress' });
         el.cur = prog.createEl('span', { cls: 'bible-audio-time', text: '00:00' });
         el.bar = prog.createEl('input', {
@@ -13719,6 +13868,11 @@ class BibleAudioPlayer {
         }
         if (el.listBtn) {
             el.listBtn.setAttribute('title', '播放列表' + (this.playlist.length ? '（' + this.playlist.length + ' 章）' : ''));
+        }
+        if (el.rate) {
+            const rateLabel = audioRateLabel(this.rate());
+            el.rate.setText(rateLabel);
+            el.rate.setAttribute('title', '播放速度：' + rateLabel + '（点击选择）');
         }
         if (el.hint) {
             let text = '';
@@ -13847,6 +14001,7 @@ class BibleAudioPlayer {
 
     close() {
         if (this.panel) { try { this.panel.addClass('is-hidden'); } catch (e) { /* 忽略 */ } }
+        this.closeRateMenu();
         this.unbindOutside();
         if (this.plugin && typeof this.plugin.syncAudioButton === 'function') this.plugin.syncAudioButton();
     }
@@ -13919,6 +14074,7 @@ class BibleAudioPlayer {
 
     destroy() {
         this.unbindOutside();
+        this.closeRateMenu();
         // 插件卸载时如果还开着选择 / 列表弹窗，一并关掉——它挂在 document.body 上，
         // Obsidian 不会替我们收拾。
         if (this._dialog) {
@@ -14755,7 +14911,7 @@ class BibleSearchPlugin extends Plugin {
             dismissedNotesPrompt: false,
             // 安装 / 启用插件后自动在右侧边栏生成「圣经检索」面板
             autoOpenSidebar: true,
-            // 经文投影「上次使用的主题」：dark 深色 / light 亮色 / yellow 翠绿 / cream 浅黄 / sapphire 宝石蓝 / blue 混合蓝。
+            // 经文投影「上次使用的主题」：dark 深色 / light 亮色 / yellow 翠绿 / cream 浅黄 / sapphire 宝石蓝 / crystal 蓝晶 / blue 混合蓝。
             // 首次安装默认 dark；之后按 T / 主题菜单切换会写回这里，下次打开沿用。
             projectionTheme: 'dark',
             // 经文投影默认字号：桌面端与移动端分开设置，只决定「新打开投影」时的初始字号。
@@ -14768,9 +14924,13 @@ class BibleSearchPlugin extends Plugin {
             dailyCompareBox: true,
             // 三旧一新 MP3 所在文件夹（留空 = 扫描整个仓库）；文件名按 MMDD.mp3
             dailyMp3Folder: '',
+            // 三旧一新播放语速（播放器上的「1×」按钮可现场调，调完写回这里）
+            dailyAudioRate: AUDIO_RATE_DEFAULT,
             // 圣经音频（整章 MP3）：目录留空 = 全库；播放模式默认列表顺序
             bibleMp3Folder: '',
             bibleAudioMode: 'list',
+            // 圣经音频播放语速（与三旧一新各自记忆）
+            bibleAudioRate: AUDIO_RATE_DEFAULT,
             // 首次安装时两类 MP3 都没识别到，右上角下载提醒是否已被「取消」（点过就不再弹）
             mp3DownloadNoticeDismissed: false,
             // 投影历史：默认 50 条，只存书卷章节 / 搜索词 + 首次打开时间，重启后仍保留

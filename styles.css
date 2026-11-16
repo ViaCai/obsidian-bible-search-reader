@@ -966,7 +966,7 @@
 }
 /* Obsidian 为浅色模式时，宿主的 input 规则（含 -webkit-text-fill-color）优先级更高，
    会把页码文字改成深色，在深色 / 蓝系投影的深底上几乎看不见。
-   用 body 前缀提高优先级，把六套主题的文字、占位符、光标与选中态统一拉回 --bp-* 变量。 */
+   用 body 前缀提高优先级，把七套主题的文字、占位符、光标与选中态统一拉回 --bp-* 变量。 */
 body .bible-projection-fullscreen .bible-proj-page-jump-input,
 body .bible-projection-fullscreen.light-mode .bible-proj-page-jump-input,
 body .bible-projection-fullscreen.bp-theme-blue .bible-proj-page-jump-input,
@@ -3712,8 +3712,8 @@ body .bible-projection-fullscreen .bible-proj-quick-search-clear:focus {
     border-color: rgba(0,0,0,0.10);
 }
 
-/* ===== 主题选择菜单：点工具栏主题按钮弹出，六套主题各一行 =====
-   形状沿用模式菜单，配色全部走 --bp-*，六套主题自动换肤；菜单挂在投影层内部，
+/* ===== 主题选择菜单：点工具栏主题按钮弹出，七套主题各一行 =====
+   形状沿用模式菜单，配色全部走 --bp-*，七套主题自动换肤；菜单挂在投影层内部，
    fixed 定位，避免工具栏容器的 overflow / flex 把它裁掉。
    小色块是「主题预览图例」，用固定色标出各主题的底色 + 经文字色，
    属于静态图例而不参与投影配色，所以这里直接写色值。 */
@@ -3787,13 +3787,14 @@ body .bible-projection-fullscreen .bible-proj-theme-menu-item.is-current {
 .bible-proj-theme-swatch[data-theme-swatch="yellow"]   { background: linear-gradient(135deg, #e5f2e5 0 62%, #000000 62% 100%); }
 .bible-proj-theme-swatch[data-theme-swatch="cream"]    { background: linear-gradient(135deg, #fff0c2 0 62%, #1a1a1a 62% 100%); }
 .bible-proj-theme-swatch[data-theme-swatch="sapphire"] { background: linear-gradient(135deg, #3a5fcd 0 55%, #ffffff 55% 82%, #ffff36 82% 100%); }
+.bible-proj-theme-swatch[data-theme-swatch="crystal"]  { background: linear-gradient(135deg, #4e6fd2 0 55%, #3a5fcd 55% 82%, #ffff36 82% 100%); }
 .bible-proj-theme-swatch[data-theme-swatch="blue"]     { background: linear-gradient(135deg, #001a52 0 40%, #003399 40% 72%, #ffff66 72% 100%); }
 @media (max-width: 600px) {
     body .bible-projection-fullscreen .bible-proj-theme-menu-item { padding: 11px 10px; font-size: 14px; }
 }
 
 /* ===== 投影历史列表：底栏「历史」按钮弹出，最近 → 最早 =====
-   挂在投影覆盖层内部（全屏 top layer 才看得见），配色统一走 --bp-* 六套主题自动换肤。
+   挂在投影覆盖层内部（全屏 top layer 才看得见），配色统一走 --bp-* 七套主题自动换肤。
    列表只显示查询串与首次打开时间，点一条直接投影且不改列表顺序。 */
 .bible-projection-fullscreen .bible-proj-history-menu {
     position: absolute;
@@ -3939,12 +3940,12 @@ body.is-mobile .bible-proj-tool-btn[data-action="toggle-desktop-full"] {
     display: none;
 }
 
-/* ===== 经文投影主题（深色 / 亮色 / 翠绿 / 浅黄 / 宝石蓝 / 混合蓝）=====
+/* ===== 经文投影主题（深色 / 亮色 / 翠绿 / 浅黄 / 宝石蓝 / 蓝晶 / 混合蓝）=====
    T 键 / 工具栏菜单切换后写回设置项 projectionTheme，下次打开沿用上次那一套。
    颜色集中放在 CSS 变量里：main.js 的内联样式只写 var(...)，切主题只换覆盖层类名，
-   六套主题共用同一套 DOM 与规则，不必为每个颜色复制一份选择器。
+   七套主题共用同一套 DOM 与规则，不必为每个颜色复制一份选择器。
    暗色沿用上面的原始底稿；亮色沿用上面所有 .light-mode 规则；
-   蓝系 / 黄系四套主题用下面的高优先级覆盖块把固定配色换成变量。 */
+   蓝系 / 黄系五套主题用下面的高优先级覆盖块把固定配色换成变量。 */
 .bible-projection-fullscreen {
     --bp-bg: #1a1a2e;
     --bp-fg: #ffffff;
@@ -4115,7 +4116,7 @@ body.is-mobile .bible-proj-tool-btn[data-action="toggle-desktop-full"] {
     --bp-scroll-track: rgba(47,92,47,0.22);
 }
 
-/* ---- 两套「保留版」主题：沿用同族基类，只覆盖变量 ----
+/* ---- 三套「变体」主题（宝石蓝 / 蓝晶 / 浅黄）：沿用同族基类，只覆盖变量 ----
    applyTheme() 会同时挂上基类与变体类，所以上方所有写成
    .bp-theme-blue / .bp-theme-yellow 的覆盖规则对它们一样生效，
    这里不需要重复任何选择器。变体类特异性更高，稳稳压过基类变量。 */
@@ -4174,6 +4175,62 @@ body.is-mobile .bible-proj-tool-btn[data-action="toggle-desktop-full"] {
     --bp-note-border: rgba(255,190,190,0.55);
     --bp-note-mark-bg: rgba(120,0,0,0.45);
 }
+/* 蓝晶主题＝宝石蓝的「整屏底色 ↔ 经文框」互换：底色换成原来方框那一层亮蓝
+   （#3a5fcd 叠 10% 白的等效实色 #4e6fd2），经文 / 简介 / 主题 / 纲目框换成原来的整屏蓝 #3a5fcd。
+   除这一对颜色外，其余变量与宝石蓝逐项一致（顶栏 / 按钮 / 菜单 / 输入框仍是深蓝系，
+   注 / 串上标仍只留红字，书卷简介仍是 #ffff36）。整套照抄一遍而没法只写两个变量——
+   没覆盖到的变量会落回混合蓝基类的深藏青，配色会串。 */
+.bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal {
+    --bp-bg: #4e6fd2;
+    --bp-box-bg: #3a5fcd;
+    --bp-fg: #ffffff;
+    --bp-ref: #cfe0ff;
+    --bp-accent: #ffffff;
+    --bp-accent-soft: #dbe7ff;
+    --bp-outline: #ffff36;
+    --bp-outline-ref: #e8e878;
+    --bp-bar-bg: #2b4bac;
+    --bp-bar-border: rgba(255,255,255,0.35);
+    --bp-btn-bg: rgba(255,255,255,0.14);
+    --bp-btn-border: rgba(255,255,255,0.62);
+    --bp-btn-fg: #ffffff;
+    --bp-btn-hover-bg: rgba(255,255,255,0.28);
+    --bp-btn-hover-border: rgba(255,255,255,0.9);
+    --bp-nav-bg: #24419e;
+    --bp-nav-fg: #ffffff;
+    --bp-nav-hover: #1c3584;
+    --bp-panel-bg: rgba(255,255,255,0.10);
+    --bp-panel-border: rgba(255,255,255,0.30);
+    --bp-input-bg: #2a4bb0;
+    --bp-input-fg: #ffffff;
+    --bp-input-border: rgba(255,255,255,0.55);
+    --bp-placeholder: rgba(255,255,255,0.68);
+    --bp-go-bg: #ffffff;
+    --bp-go-fg: #24419e;
+    --bp-go-hover: #e8f0ff;
+    --bp-menu-bg: #24419e;
+    --bp-menu-fg: #ffffff;
+    --bp-menu-border: rgba(255,255,255,0.32);
+    --bp-menu-title: #cfe0ff;
+    --bp-menu-hover: rgba(255,255,255,0.14);
+    --bp-menu-current: rgba(255,255,255,0.24);
+    --bp-menu-hint: #ffffff;
+    --bp-menu-hint-alert: #ffff36;
+    --bp-sugg-active-bg: #ffffff;
+    --bp-sugg-active-fg: #24419e;
+    --bp-scroll-thumb: rgba(255,255,255,0.78);
+    --bp-scroll-thumb-hover: #ffffff;
+    --bp-scroll-track: rgba(255,255,255,0.16);
+    /* 注 / 串在深蓝经文框里显示，红色档位与宝石蓝保持一致 */
+    --bp-theme-fg: #ffffff;
+    --bp-theme-ref-fg: rgba(255,255,255,0.86);
+    --bp-note-fg: #ffd0d0;
+    --bp-note-strong: #ff9b9b;
+    --bp-note-soft: #ffdede;
+    --bp-note-bg: rgba(120,0,0,0.32);
+    --bp-note-border: rgba(255,190,190,0.55);
+    --bp-note-mark-bg: rgba(120,0,0,0.45);
+}
 /* 浅黄主题＝保留的旧米黄黑字配色：米黄底、黑字、深褐出处与纲目、暗红主题标题。
    与翠绿同为黄系，但配色互不影响；滚动条 / 选中项沿用这一套褐黄值。 */
 .bible-projection-fullscreen.bp-theme-yellow.bp-theme-cream {
@@ -4220,7 +4277,7 @@ body.is-mobile .bible-proj-tool-btn[data-action="toggle-desktop-full"] {
     --bp-scroll-track: rgba(120,90,20,0.16);
 }
 
-/* ---- 投影滚动条：六套主题通用，滑块与轨道都跟主题走 ---- */
+/* ---- 投影滚动条：七套主题通用，滑块与轨道都跟主题走 ---- */
 .bible-projection-fullscreen .bible-proj-content::-webkit-scrollbar,
 .bible-projection-fullscreen .bible-proj-slide-wrapper::-webkit-scrollbar,
 .bible-projection-fullscreen .bible-proj-mode-menu::-webkit-scrollbar,
@@ -4671,6 +4728,17 @@ body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-te
 body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-note-ref-text sup.bible-note-mark:hover {
     color: var(--bp-note-fg);
 }
+/* 蓝晶主题同样只留红字、不画底框（深蓝经文框里再多一层红块会糊） */
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-text sup.bible-note-mark,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-note-ref-text sup.bible-note-mark,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-text sup.bible-note-mark:hover,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-note-ref-text sup.bible-note-mark:hover {
+    background-color: transparent;
+}
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-text sup.bible-note-mark:hover,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-note-ref-text sup.bible-note-mark:hover {
+    color: var(--bp-note-fg);
+}
 /* 书卷简介：标题 / 标签 / 正文 / 可点出处全部 #ffff36（聚焦、对照、并列各模式同一口径） */
 body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-intro-box,
 body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-intro-box *,
@@ -4682,6 +4750,19 @@ body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-fo
 body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-parallel-intro,
 body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-parallel-intro-text,
 body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-parallel-intro-ref {
+    color: #ffff36;
+}
+/* 蓝晶与宝石蓝同口径：书卷简介整块亮黄，其余一律沿用宝石蓝那套白 / 淡蓝 */
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-intro-box,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-intro-box *,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-intro-title,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-intro-text,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-intro-text *,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-focus-intro,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-focus-intro-ref,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-parallel-intro,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-parallel-intro-text,
+body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-parallel-intro-ref {
     color: #ffff36;
 }
 
@@ -4910,9 +4991,9 @@ body .bible-projection-fullscreen.bp-theme-blue.bp-theme-sapphire .bible-proj-pa
     word-break: break-word;
 }
 
-/* ===== 投影：书卷简介（六套主题统一走 --bp-* 变量） ===== */
+/* ===== 投影：书卷简介（七套主题统一走 --bp-* 变量） ===== */
 /* 简介标题是「章节招牌」：字号接近正文、主题强调色、左侧色条 + 底部分隔线，
-   与普通经文出处行（约 0.55 倍灰色小字）拉开明显层级，六套主题都走变量。 */
+   与普通经文出处行（约 0.55 倍灰色小字）拉开明显层级，七套主题都走变量。 */
 .bible-proj-ref.bible-proj-intro-title {
     display: block;
     box-sizing: border-box;
@@ -5237,6 +5318,22 @@ body.theme-light .bible-daily-view {
     font-variant-numeric: tabular-nums;
     text-align: right;
     white-space: nowrap;
+}
+/* 播放语速：药丸最右端的小文字按钮（「1×」），宽度只占 30px，不跟播放键抢视线 */
+.bible-daily-player .bible-daily-rate {
+    flex: 0 0 auto;
+    min-width: 30px;
+    height: 22px;
+    padding: 0 4px;
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.bible-daily-player .bible-daily-rate:hover {
+    color: var(--bible-accent);
+    background: var(--background-modifier-hover);
 }
 /* 进度条：4px 细轨 + 圆滑块，已播部分用强调色填充（--daily-progress 由 JS 写入） */
 .bible-daily-progress {
@@ -5600,6 +5697,12 @@ body.theme-light .bible-daily-view {
 .bible-daily-pop-item:hover {
     background: var(--background-modifier-hover);
 }
+/* 当前档位（播放速度）高亮：字色走强调色 + 淡底，一眼看出正在用哪一档 */
+.bible-daily-pop-item.is-current {
+    color: var(--bible-accent);
+    background: var(--background-modifier-hover);
+    font-weight: 600;
+}
 .bible-daily-cal {
     width: 246px;
 }
@@ -5833,6 +5936,51 @@ body.theme-light .bible-daily-view {
 .bible-audio-btn .svg-icon {
     width: 18px;
     height: 18px;
+}
+/* 播放语速按钮：缩写到「1×」，比图标按钮窄一点，夹在控制区最右 */
+.bible-audio-rate {
+    min-width: 38px;
+    padding: 0 5px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.bible-audio-rate:hover {
+    color: var(--text-normal);
+}
+/* 档位菜单：贴在面板控制区下方，横向一排；面板是 fixed，这里 absolute 相对面板定位 */
+.bible-audio-rate-menu {
+    position: absolute;
+    right: 12px;
+    top: 104px;
+    z-index: 2;
+    display: flex;
+    gap: 4px;
+    padding: 5px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background: var(--background-primary);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+}
+.bible-audio-rate-item {
+    min-width: 40px;
+    padding: 5px 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    cursor: pointer;
+}
+.bible-audio-rate-item:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-audio-rate-item.is-current {
+    color: var(--bible-accent);
+    background: var(--background-modifier-hover);
+    font-weight: 600;
 }
 .bible-audio-transport {
     display: flex;
