@@ -549,12 +549,13 @@ function applyBookAbbrSuggestion(value, caret, suggestion) {
 }
 
 // ===== 经文投影主题 =====
-// T 键按此顺序循环；默认主题由设置项 projectionTheme 决定（设置页可改）。
+// T 键按此顺序循环；当前主题随时写进 settings.projectionTheme，下次打开投影沿用上次那一套。
 // 颜色一律写在 CSS 变量里（见 styles.css 末尾的「投影主题」段），JS 只切类名，
 // 六套主题共用同一套 DOM，不用为每套主题复制一遍配色规则。
 // 兼容约定：dark / light / yellow / blue 四个 id 是已发布版本里会写进 data.json 的值，
-// 绝不能改名或挪作别用，否则用户保存的默认主题会被 normalizeProjectionTheme() 打回暗色。
-// yellow 现在显示成「翠绿主题」，blue 显示成「混合蓝主题」；浅黄、宝石蓝是两个新增 id。
+// 绝不能改名或挪作别用，否则用户保存的主题会被 normalizeProjectionTheme() 打回暗色。
+// yellow「翠绿主题」（浅绿底黑字），cream「浅黄主题」（米黄底黑字），
+// sapphire「宝石蓝主题」（#3a5fcd 蓝底白字 + #ffff36 黄纲目），blue「混合蓝主题」（深蓝底＋蓝方框＋亮黄字）。
 // 两套「同族」主题用「基类 + 变体类」实现（见 applyTheme），这样 CSS 里所有成对写在
 // .bp-theme-blue / .bp-theme-yellow 下的覆盖规则对变体也生效，不必逐条补选择器。
 const PROJECTION_THEMES = [
@@ -1043,6 +1044,17 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.0.1': `## [6.0.1] - 2026-11-16
+
+### 新增
+- **MP3 音频包下载指引**：设置页最上方常驻说明与「复制群号」按钮（QQ 群 1128049033）。首次安装时若全库都识别不到三旧一新 MP3 与圣经 MP3，右上角弹出同一说明，带「复制群号 / 取消」；点三旧一新或圣经的播放而当前缺 MP3 时，也会弹同一提醒并附文件名格式诊断。点「取消」后不再重复打扰。
+
+### 改进
+- **投影主题记住上次使用的那一套**：设置页移除「经文投影默认主题」下拉；按 T 或在主题菜单点选会立即写回设置，下次打开投影沿用上次那套。
+- **宝石蓝主题配色**：整屏 #3a5fcd 蓝底、白色经文、#ffff36 亮黄纲目；书卷简介的标题 / 标签 / 正文 / 可点出处全部亮黄；经文里的注 / 串上标只保留红字，去掉背景框。
+
+### 小提示
+- 三旧一新与圣经音频的 MP3 压缩包在 QQ 群 1128049033 下载，解压到 Obsidian 仓库任意位置即可；插件重启后自动扫描全库，文件夹留空就是全库。`,
     '6.0.0': `## [6.0.0] - 2026-11-16
 
 ### 新增
@@ -2189,6 +2201,19 @@ class BibleSettingTab extends PluginSettingTab {
         containerEl.empty();
         containerEl.createEl('h2', { text: '圣经检索与阅读设置' });
 
+        // 开头常驻说明：音频包体积大，统一加群下载；复制按钮就在说明旁边
+        new Setting(containerEl)
+            .setName('📥 音频文件下载（三旧一新 / 圣经）')
+            .setDesc(MP3_DOWNLOAD_NOTICE)
+            .addButton(button => button
+                .setButtonText('复制群号')
+                .onClick(async () => {
+                    try {
+                        await this.plugin.copyToClipboard(MP3_QQ_GROUP);
+                        new Notice('已复制群号 ' + MP3_QQ_GROUP);
+                    } catch (e) { new Notice('复制失败：' + ((e && e.message) || '未知错误')); }
+                }));
+
         // ===== 板块 A：圣经版本管理 =====
         containerEl.createEl('h3', { text: '圣经版本管理', cls: 'setting-item-name' });
         containerEl.createEl('div', { cls: 'setting-item-description', text: '管理已安装的圣经数据。数据文件（bible-{缩写}-data.json）与注解文件（bible-crv-notes.json）可放在 vault 任意位置，开机自动识别；若存在多份同名文件，会自动把最新的一份集中到插件目录作为唯一生效位置，其余副本可在下方清理。点击「刷新识别」重新扫描。' });
@@ -2392,20 +2417,8 @@ class BibleSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // ===== 经文投影默认主题 =====
-        // 只决定「新打开投影」时的初始配色；投影里按 T 循环切换不改变此设置。
-        new Setting(containerEl)
-            .setName('经文投影默认主题')
-            .setDesc('深色（深底白字）/ 亮色（浅底深字）/ 翠绿（浅绿底黑字）/ 浅黄（米黄底黑字）/ 宝石蓝（蓝底黄字）/ 混合蓝（深蓝底＋蓝方框＋亮黄字）。投影中按 T 依次循环切换这六套主题，点工具栏主题按钮可直接挑选；切换结果不会改写这里的默认值。')
-            .addDropdown(dropdown => {
-                for (const t of PROJECTION_THEMES) dropdown.addOption(t.id, t.label);
-                dropdown
-                    .setValue(normalizeProjectionTheme(this.plugin.settings.projectionTheme))
-                    .onChange(async (value) => {
-                        this.plugin.settings.projectionTheme = normalizeProjectionTheme(value);
-                        await this.plugin.saveSettings();
-                    });
-            });
+        // 投影主题不在这里单列设置：它属于「上次用了什么」的状态，按 T / 主题菜单切换即记住，
+        // 下次打开投影直接用那一套。设置项 projectionTheme 仍保留在 data.json 里作持久化载体。
 
         // ===== 经文投影默认字号：桌面端 / 移动端分开 =====
         // 只决定「新打开投影」时的初始字号；投影里的 + / − / R 都不改写设置。
@@ -3561,6 +3574,69 @@ function showHymnsRequiredNotice(fromEl, forceNotice) {
     try { new Notice(HYMNS_REQUIRED_NOTICE); } catch (err) { /* 忽略 */ }
 }
 
+// ===== MP3 音频包下载提醒（右上角 Notice：说明 + 复制群号 / 取消）=====
+// 设置页、首次安装扫描、两处播放缺文件共用同一段文案；detail 只补一行诊断信息（文件名格式等），
+// 不会替换掉下载说明本身。Notice 挂在 body 上，正好是 Obsidian 的右上角通知位。
+const MP3_QQ_GROUP = '1128049033';
+const MP3_DOWNLOAD_NOTICE = '本插件的播放功能需要三旧一新MP3和圣经MP3。由于文件较大，请加QQ群1128049033下载压缩包，下载好后请解压至Obsidian仓库中的任意位置，插件重启后会自动扫描全库。';
+
+function showMp3DownloadNotice(plugin, onCancel, detail) {
+    let notice = null;
+    try { notice = new Notice(MP3_DOWNLOAD_NOTICE, 0); } catch (e) { return null; }
+    try {
+        const el = notice && notice.noticeEl;
+        if (!el || typeof el.appendChild !== 'function' ||
+            typeof document === 'undefined' || !document.createElement) return notice;
+        if (typeof el.empty === 'function') el.empty();
+        else el.textContent = '';
+        const box = document.createElement('div');
+        box.className = 'bible-mp3-notice';
+        if (detail) {
+            const extra = document.createElement('div');
+            extra.className = 'bible-mp3-notice-extra';
+            extra.textContent = String(detail);
+            box.appendChild(extra);
+        }
+        const text = document.createElement('div');
+        text.className = 'bible-mp3-notice-text';
+        text.textContent = MP3_DOWNLOAD_NOTICE;
+        box.appendChild(text);
+        const actions = document.createElement('div');
+        actions.className = 'bible-mp3-notice-actions';
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'bible-mp3-notice-btn';
+        copyBtn.textContent = '复制群号';
+        copyBtn.addEventListener('click', (ev) => {
+            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+            const done = () => {
+                copyBtn.textContent = '已复制';
+                setTimeout(() => { try { notice.hide(); } catch (e) { /* 忽略 */ } }, 700);
+            };
+            const fail = () => { copyBtn.textContent = '复制失败'; };
+            try {
+                let p = null;
+                if (plugin && typeof plugin.copyToClipboard === 'function') p = plugin.copyToClipboard(MP3_QQ_GROUP);
+                else if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') p = navigator.clipboard.writeText(MP3_QQ_GROUP);
+                if (p && typeof p.then === 'function') p.then(done).catch(fail);
+                else fail();
+            } catch (e) { fail(); }
+        });
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'bible-mp3-notice-btn is-secondary';
+        cancelBtn.textContent = '取消';
+        cancelBtn.addEventListener('click', (ev) => {
+            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+            try { if (typeof onCancel === 'function') Promise.resolve(onCancel()).catch(() => {}); } catch (e) { /* 忽略 */ }
+            try { notice.hide(); } catch (e) { /* 忽略 */ }
+        });
+        actions.appendChild(copyBtn);
+        actions.appendChild(cancelBtn);
+        box.appendChild(actions);
+        el.appendChild(box);
+    } catch (e) { /* Notice 结构不可改时保留纯文本提醒（文案里已有群号） */ }
+    return notice;
+}
+
 // Hymns 是否已安装并启用：只读 Obsidian 插件管理器的状态，不 import 对方代码。
 // 诗歌投影层已经在 DOM 里时也直接算可用（覆盖插件实例尚未注入的极端情况）。
 function isHymnsPluginReady(app) {
@@ -3720,8 +3796,8 @@ class BibleProjectionOverlay {
             : projSettings.projectionFontSizeDesktop;
         this.defaultFontSize = normalizeProjectionFontSize(projFontRaw);
         this.fontSize = this.defaultFontSize;
-        // 主题默认取设置项；T 键在六套主题间循环。isDark 保留给仍按明暗取色的旧代码读，
-        // 新代码一律读 CSS 变量，不再自己判断明暗。
+        // 主题取设置项里记住的「上次使用」；T 键在六套主题间循环并回写设置。
+        // isDark 保留给仍按明暗取色的旧代码读，新代码一律读 CSS 变量，不再自己判断明暗。
         this.themeId = normalizeProjectionTheme(plugin && plugin.settings ? plugin.settings.projectionTheme : null);
         this.isDark = (this.themeId === 'dark');
         // 整卷书查询在并列模式下按「一章一页」分页（普通选中仍是全部并列在一页）
@@ -3967,7 +4043,7 @@ class BibleProjectionOverlay {
         this.overlay.appendChild(bottomBar);
 
         document.body.appendChild(this.overlay);
-        // 挂载后立刻套用默认主题：类名决定 CSS 变量，内联样式里的 var(...) 随之解析
+        // 挂载后立刻套用上次记住的主题：类名决定 CSS 变量，内联样式里的 var(...) 随之解析
         this.applyTheme(this.themeId, true);
         // 安卓状态栏兜底必须在挂载后调用（要读宿主的 computed 变量）
         applyProjectionSafeAreaFallback(this.overlay, '--bible-android-inset-top');
@@ -5151,9 +5227,8 @@ class BibleProjectionOverlay {
     }
 
     // T 键：深色 → 亮色 → 翠绿 → 浅黄 → 宝石蓝 → 混合蓝 → 深色。
-    // 只切覆盖层类名，颜色全由 CSS 变量接管；设置里的默认是「下次打开投影」的初始主题，
-    // 按 T 切换不改变设置，免得随手按一下就把偏好写死。工具栏按钮点击走 showThemeMenu()，
-    // 由用户直接挑主题，T 键仍是「一键切下一套」。
+    // 只切覆盖层类名，颜色全由 CSS 变量接管；切完写回设置，下次打开沿用这一套。
+    // 工具栏按钮点击走 showThemeMenu() 直接挑，T 键仍是「一键切下一套」。
     toggleTheme() {
         this.applyTheme(nextProjectionTheme(this.themeId));
     }
@@ -5162,6 +5237,14 @@ class BibleProjectionOverlay {
         const t = PROJECTION_THEMES.find(x => x.id === id) || PROJECTION_THEMES[0];
         this.themeId = t.id;
         this.isDark = (t.id === 'dark');
+        // 主题即偏好：用户按 T / 点主题菜单切换后写回设置；挂载时的 quiet 调用不算切换，不写盘。
+        if (!quiet && this.plugin && this.plugin.settings) {
+            this.plugin.settings.projectionTheme = t.id;
+            try {
+                const save = this.plugin.saveSettings();
+                if (save && typeof save.catch === 'function') save.catch(() => { /* 存不下不影响本次切换 */ });
+            } catch (e) { /* 存不下不影响本次切换 */ }
+        }
         const o = this.overlay;
         if (!o) return;
         // 两套变体沿用同族基类：CSS 里 190 多处 .bp-theme-blue / .bp-theme-yellow
@@ -13173,8 +13256,10 @@ class BibleDailyView extends ItemView {
         const file = this.audioFile();
         if (!file) {
             const folder = this.plugin.dailyMp3Folder ? this.plugin.dailyMp3Folder() : '';
-            new Notice('没有找到这一天的三旧一新 MP3（文件名应为 ' + dailyMp3Name(this.viewDate) + '）' +
-                (folder ? '，当前只扫「' + folder + '」目录' : '') + '。可在插件设置的「三旧一新」里指定 MP3 文件夹。');
+            const detail = '没有找到这一天的三旧一新 MP3（文件名应为 ' + dailyMp3Name(this.viewDate) + '）' +
+                (folder ? '，当前只扫「' + folder + '」目录' : '') + '。可在插件设置的「三旧一新」里指定 MP3 文件夹。';
+            try { showMp3DownloadNotice(this.plugin, null, detail); }
+            catch (e) { new Notice(detail); }
             return;
         }
         const audio = this.ensureAudio();
@@ -13376,8 +13461,10 @@ class BibleAudioPlayer {
     startAt(bookId, chapter) {
         const list = this.playlistOf(bookId);
         if (!list.length) {
-            new Notice('这一卷没有找到圣经 MP3（文件名应为「书卷拼音 + 章号」，如 chuangshiji01.mp3）。' +
-                '可在插件设置的「圣经音频」里指定 MP3 文件夹。');
+            const detail = '这一卷没有找到圣经 MP3（文件名应为「书卷拼音 + 章号」，如 chuangshiji01.mp3）。' +
+                '可在插件设置的「圣经音频」里指定 MP3 文件夹。';
+            try { showMp3DownloadNotice(this.plugin, null, detail); }
+            catch (e) { new Notice(detail); }
             return false;
         }
         this.playlist = list;
@@ -14370,6 +14457,8 @@ class BibleSearchPlugin extends Plugin {
             // 启动即维持「注解模式」与主版本一致的不变式：CRV 主版本→开注解，其它主版本→关注解
             try { await this.reconcileNotesWithPrimary(); } catch (e) { console.error('[Bible] 同步注解模式失败:', e); }
             try { await this.ensureNotesHotkey(); } catch (e) { console.error('[Bible] 分配注解快捷键失败:', e); }
+            // 首次安装 / 首次启用这套提醒时，全库都找不到任一 MP3 就右上角引导加群下载
+            try { this.maybeShowMp3DownloadNotice(); } catch (e) { /* 提示失败不影响启动 */ }
             const hasInstalledVersion = this.settings.versions.some(v => v.installed);
             if (!this.settings.hasSetup || !hasInstalledVersion) {
                 new FirstRunModal(this.app, this).open();
@@ -14635,7 +14724,8 @@ class BibleSearchPlugin extends Plugin {
             dismissedNotesPrompt: false,
             // 安装 / 启用插件后自动在右侧边栏生成「圣经检索」面板
             autoOpenSidebar: true,
-            // 经文投影默认主题：dark 深色 / light 亮色 / yellow 翠绿 / cream 浅黄 / sapphire 宝石蓝 / blue 混合蓝（投影内按 T 循环切换）
+            // 经文投影「上次使用的主题」：dark 深色 / light 亮色 / yellow 翠绿 / cream 浅黄 / sapphire 宝石蓝 / blue 混合蓝。
+            // 首次安装默认 dark；之后按 T / 主题菜单切换会写回这里，下次打开沿用。
             projectionTheme: 'dark',
             // 经文投影默认字号：桌面端与移动端分开设置，只决定「新打开投影」时的初始字号。
             // 投影里按 +/- 调整、按 R 重置都不改写这里；重置回的是当前设备的默认值。
@@ -14650,6 +14740,8 @@ class BibleSearchPlugin extends Plugin {
             // 圣经音频（整章 MP3）：目录留空 = 全库；播放模式默认列表顺序
             bibleMp3Folder: '',
             bibleAudioMode: 'list',
+            // 首次安装时两类 MP3 都没识别到，右上角下载提醒是否已被「取消」（点过就不再弹）
+            mp3DownloadNoticeDismissed: false,
             // 投影历史：默认 50 条，只存书卷章节 / 搜索词 + 首次打开时间，重启后仍保留
             projectionHistoryLimit: 50,
             projectionHistory: []
@@ -16681,6 +16773,24 @@ class BibleSearchPlugin extends Plugin {
             total: total,
             missing: missing
         };
+    }
+
+    // 首次安装（或用户还没点过「取消」）且全库两类 MP3 都识别不到时，弹一次下载提醒。
+    // 只扫全库，不受设置页里可能填窄的目录影响；点「取消」才写盘，复制群号不写盘。
+    maybeShowMp3DownloadNotice() {
+        try {
+            if (this.settings && this.settings.mp3DownloadNoticeDismissed) return null;
+            const daily = this.scanDailyMp3('').files;
+            const bible = this.scanBibleMp3('').files;
+            if (daily > 0 || bible > 0) return null;
+            return showMp3DownloadNotice(this, () => {
+                try {
+                    this.settings.mp3DownloadNoticeDismissed = true;
+                    const p = this.saveSettings();
+                    if (p && typeof p.catch === 'function') p.catch(() => {});
+                } catch (e) { /* 忽略 */ }
+            });
+        } catch (e) { return null; }
     }
 
     // 自动检测：按命中数聚合目录，推荐覆盖 ≥90% 里最深的一层（与三旧一新同一套算法）
