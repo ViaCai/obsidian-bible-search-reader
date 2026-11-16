@@ -393,6 +393,60 @@ function normalizeProjectionFontSize(value, fallback) {
     return Math.min(120, Math.max(16, Math.round(n)));
 }
 
+// 投影历史保留条数：默认 50，0 = 不记录；硬上限 500，避免 data.json 无限膨胀。
+function normalizeProjectionHistoryLimit(value) {
+    if (value === '' || value == null) return 50;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return 50;
+    return Math.min(500, Math.floor(n));
+}
+
+// 历史只存「太1」「csj」这类书卷章节 / 搜索词 + 时间，绝不存整段经文。
+// 按最近使用时间倒序；同一条查询去重但保留它第一次打开的时间。
+function normalizeProjectionHistoryList(list, limit) {
+    if (!Array.isArray(list)) return [];
+    const cap = Math.max(0, normalizeProjectionHistoryLimit(limit));
+    const out = [];
+    const seen = new Set();
+    for (const entry of list) {
+        if (!entry || typeof entry.q !== 'string') continue;
+        const q = entry.q.trim();
+        if (!q || seen.has(q)) continue;
+        seen.add(q);
+        const firstRaw = Number(entry.firstAt);
+        const lastRaw = Number(entry.lastAt);
+        const firstAt = Number.isFinite(firstRaw) && firstRaw > 0 ? firstRaw : Date.now();
+        out.push({ q, firstAt, lastAt: Number.isFinite(lastRaw) && lastRaw > 0 ? lastRaw : firstAt });
+    }
+    out.sort((a, b) => b.lastAt - a.lastAt);
+    return cap ? out.slice(0, cap) : [];
+}
+
+// 把升序节号压成「1-3」「5」这样的分段，供历史记录写出处使用
+function compressVerseRanges(verses) {
+    const out = [];
+    let start = null, prev = null;
+    for (const v of (verses || [])) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) continue;
+        if (start == null) { start = n; prev = n; continue; }
+        if (n === prev + 1) { prev = n; continue; }
+        out.push(start === prev ? String(start) : start + '-' + prev);
+        start = n; prev = n;
+    }
+    if (start != null) out.push(start === prev ? String(start) : start + '-' + prev);
+    return out;
+}
+
+function formatProjectionHistoryTime(ts) {
+    try {
+        const d = new Date(Number(ts) || Date.now());
+        const p = (n) => String(n).padStart(2, '0');
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+            ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    } catch (err) { return ''; }
+}
+
 // ===== 搜索框书卷短拼自动补全 =====
 // 与 BOOK_PINYIN_ABBR 的区别：这里保留「全部」短拼条目（包括因多卷撞车而没有注册进解析层的），
 // 只用于「前缀 → 书卷」的候选提示。输入 c 时靠 csj / caj / cds … 反查出创世记、出埃及记、
@@ -989,6 +1043,30 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.0.0': `## [6.0.0] - 2026-11-16
+
+### 新增
+- **三旧一新（每日读经进度）**：按 \`F\` 或点侧边栏日历按钮打开，一天一页，先新约后旧约；顶部导航为「前一天 ◉ 后一天 纲目 日期 投影 字 播放器」，日期点开是日历，纲目可直接跳新约 / 旧约。范围取自「读经一年一遍」366 天原文，跨章范围（如雅 1:13～27）也按节显示。
+- **经文与纲目穿插**：每章按原文行序把纲目插到它所领起的经节之前，不再「纲目一块、经文一块」；范围从半章开始时，领起范围外经节的纲目会自动裁掉。卷首附书卷简介与主题（只在第 1 章且从第 1 节开始时出现）。
+- **三旧一新可投影**：导航上的投影按钮把当天内容按一章一页投影，简介 / 主题 / 纲目 / 经文与正文同序，投影历史记的是范围（如 \`太1:1-25，创1:1-2:25\`）。
+- **圣经音频播放器**：侧边栏耳机按钮打开播放窗，按「书卷拼音 + 章号」自动识别仓库里任意位置的整章 MP3（\`chuangshiji01.mp3\`、\`shipian150.mp3\`）；点「圣经」选卷选章，整卷入列表并从所选这一章开播；五种播放模式（单曲循环 / 列表顺序 / 列表循环 / 全书顺序 / 全书循环）；阅读页与播放章不同时右上角提示「转播」，一键从阅读所在章开播；面板收起不暂停。
+- **设置页两个新小节**：「三旧一新（每日读经进度）」可调正文字号（12–30，默认 17）与 MP3 文件夹；「圣经音频（MP3）」可选文件夹、一键自动检测，并显示识别统计与缺章明细。
+
+### 改进
+- **三旧一新铺满窗口**：正文随窗口宽窄自适应，不再固定 900px 居中。
+- **字号全联动**：节号、范围说明、新旧约徽章、书卷名、简介、纲目、对照版、注解 / 串珠面板全部随正文字号缩放。
+- **阅读更省眼**：章标题吸顶、正文两端对齐、行距 1.95；经文之间加分割线，浅色主题下线条加深；悬停高亮只在有鼠标的设备生效。
+- **对照版背景框可关**：导航「字」浮层新增开关，关掉后对照经文不套框、与主版本左对齐。
+- **标签栏右侧四个符号按钮**（三旧一新 / 圣经音频 / 对照 / 专注）与「搜索 / 阅读」标签同一套配色：未选中透明底、选中实心主色；四边等宽等高，移动端不再一高一低。
+
+### 修复
+- **注解开关实时生效**：开着三旧一新时按 \`A\` 直接在原位更新，滚动位置不跳。
+- **主 / 对照版本变更立刻生效**：首次选版本、勾选或拖动排序、删除版本、更新圣经数据后，三旧一新当场重画并保住滚动位置。
+- **播放窗不再被弹窗压住**：从播放面板打开「圣经」或「播放列表」时面板让位，关窗原样回来；连点按钮只开一个窗。
+- **纲目与经文严格对齐**：纲目行左缩进与经文正文对齐、斜体显示，其中的经文出处可点击弹出经文。
+
+### 小提示
+- MP3 文件夹留空表示扫描整个仓库；三旧一新的 MP3 命名是 \`MMDD.mp3\`（如 \`0101.mp3\`），圣经整章音频是「书卷拼音 + 章号」，两者互不干扰。`,
     '5.4.0': `## [5.4.0] - 2026-11-15
 
 ### 新增
@@ -1814,6 +1892,8 @@ class FirstRunModal extends Modal {
         await this.plugin.loadBibleData();
         // 首次确认版本选择后，按主版本同步注解模式（CRV 主版本→开注解，其它→关）
         await this.plugin.reconcileNotesWithPrimary();
+        // 已经打开的三旧一新页要按新选的主版本 / 对照版本重画
+        await this.plugin.refreshDailyContent();
         this.plugin.activateSearchView();
         this.close();
     }
@@ -2230,6 +2310,8 @@ class BibleSettingTab extends PluginSettingTab {
                         await this.plugin.loadBibleData();
                         // 删除版本后主版本可能改变，同步注解模式
                         await this.plugin.reconcileNotesWithPrimary();
+                        // 三旧一新页里可能正显示被删掉的版本，立刻重画
+                        await this.plugin.refreshDailyContent();
                         this.display();
                     }
                 });
@@ -2350,6 +2432,29 @@ class BibleSettingTab extends PluginSettingTab {
             '手机 / 平板上打开经文投影时的初始字体大小（默认 48px）。与桌面端各自独立，可按屏幕大小分别设定；按 R 重置回的是本项设定的默认值。',
             'projectionFontSizeMobile');
 
+        // ===== 投影历史保留条数 =====
+        new Setting(containerEl)
+            .setName('投影历史保留条数')
+            .setDesc('投影底栏的「历史」按钮里保留多少条记录（默认 50，填 0 关闭）。只保存「太1」「csj」这类书卷章节 / 搜索词与首次打开时间，不保存整段经文；重启 Obsidian 后仍然保留。')
+            .addText(text => text
+                .setPlaceholder('50')
+                .setValue(String(this.plugin.projectionHistoryLimit()))
+                .onChange(async (value) => {
+                    const n = normalizeProjectionHistoryLimit(value);
+                    this.plugin.settings.projectionHistoryLimit = n;
+                    this.plugin.settings.projectionHistory = normalizeProjectionHistoryList(
+                        this.plugin.settings.projectionHistory, n);
+                    await this.plugin.saveSettings();
+                }));
+
+        // ===== 三旧一新：每日读经进度（正文字号 + MP3 识别） =====
+        containerEl.createEl('h3', { text: '三旧一新（每日读经进度）', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
+        this.renderDailySettings(containerEl);
+
+        // ===== 圣经音频：整章 MP3（侧边栏耳机按钮的播放器） =====
+        containerEl.createEl('h3', { text: '圣经音频（MP3）', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
+        this.renderBibleAudioSettings(containerEl);
+
         // ===== 板块 B：插件更新 =====
         containerEl.createEl('h3', { text: '插件更新', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
         new Setting(containerEl)
@@ -2391,6 +2496,259 @@ class BibleSettingTab extends PluginSettingTab {
                 .onClick(() => this.plugin.showChangelogHistory()));
 
     
+    }
+
+    /* ===== 三旧一新：正文字号 + MP3 识别设置 =====
+       和 Hymns 的音频设置一个路子：手填 + 浏览… + 自动检测 + 清空，
+       下面再跟一行「识别到多少个」的实时提示，改完立刻知道覆盖了多少天。 */
+    renderDailySettings(containerEl) {
+        const plugin = this.plugin;
+
+        // 正文字号：与三旧一新页顶部「字」按钮是同一份设置（dailyFontSize）
+        new Setting(containerEl)
+            .setName('正文字号')
+            .setDesc('三旧一新正文的默认字号（' + DAILY_FONT_MIN + '–' + DAILY_FONT_MAX + '，默认 ' + DAILY_FONT_DEFAULT +
+                '）。页顶导航的「字」按钮调的是同一份设置，改哪边都即时生效；节号、书卷名、范围说明、纲目都会跟着缩放。')
+            .addSlider(slider => slider
+                .setLimits(DAILY_FONT_MIN, DAILY_FONT_MAX, 1)
+                .setValue(dailyFontSizeOf(plugin.settings))
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    plugin.settings.dailyFontSize = dailyFontSizeOf({ dailyFontSize: value });
+                    await plugin.saveSettings();
+                    plugin.refreshDailyFontViews();
+                }));
+
+        new Setting(containerEl)
+            .setName('MP3 文件夹')
+            .setDesc('三旧一新读经音频所在目录，文件名按 MMDD.mp3（0101.mp3 = 1 月 1 日，1225.mp3 = 12 月 25 日）。' +
+                '留空 = 扫描整个仓库；填了目录就只在这个目录及其子目录里找。同一天有多份时优先「三旧一新」目录、其次路径更浅的。')
+            .addText(text => text
+                .setPlaceholder('留空 = 扫描整个仓库')
+                .setValue(plugin.settings.dailyMp3Folder || '')
+                .onChange(async (value) => {
+                    plugin.settings.dailyMp3Folder = String(value || '').trim().replace(/^\/+|\/+$/g, '');
+                    plugin._dailyAudioIndex = null;
+                    await plugin.saveSettings();
+                    // 目录变了，正在播的可能已经不是同一天那个文件：停掉并重画播放区
+                    plugin.refreshDailyAudioViews();
+                    hint.update();
+                }))
+            .addButton(button => button
+                .setButtonText('浏览…')
+                .setTooltip('从仓库里的文件夹列表中点选，不用手打路径')
+                .onClick(() => this.browseDailyMp3Folder()))
+            .addButton(button => button
+                .setButtonText('自动检测')
+                .setTooltip('扫描整个仓库，列出三旧一新 MP3 最多的文件夹')
+                .onClick(() => this.pickDailyMp3Folder()))
+            .addButton(button => button
+                .setButtonText('清空')
+                .setTooltip('清空 = 不限定范围，扫描整个仓库')
+                .onClick(async () => { await this.applyDailyMp3Folder(''); }));
+
+        const hint = this.makeDailyMp3Hint(containerEl);
+    }
+
+    /* MP3 设置下方的实时提示：✓ 共多少 / 覆盖多少天 / 多少个月；✗ 一个都没找到 */
+    makeDailyMp3Hint(containerEl) {
+        const plugin = this.plugin;
+        const el = containerEl.createDiv({ cls: 'bible-daily-mp3-hint' });
+        const update = () => {
+            const root = plugin.dailyMp3Folder();
+            const st = plugin.scanDailyMp3(root);
+            el.empty();
+            el.removeClass('is-error');
+            if (!st.files) {
+                el.addClass('is-error');
+                el.setText('✗ ' + (root ? '「' + root + '」及其子文件夹里' : '整个仓库里') +
+                    '没有找到三旧一新 MP3（文件名需为 MMDD.mp3，如 0101.mp3 = 1 月 1 日）');
+                return;
+            }
+            const months = Array.from(st.byMonth.keys()).sort((a, b) => a - b).length;
+            el.setText('✓ ' + (root ? '「' + root + '」及子文件夹' : '整个仓库') + '共 ' + st.files +
+                ' 个三旧一新 MP3，覆盖 ' + st.days + ' 天（' + months + ' 个月）');
+            if (root && st.files < plugin.scanDailyMp3('').files) {
+                el.createDiv({ cls: 'bible-daily-mp3-note', text: '提示：全库其实有更多，当前路径可能只覆盖了一部分（比如填到了某个月的子目录里）。' });
+            }
+        };
+        update();
+        return { el: el, update: update };
+    }
+
+    /* 浏览…：列出仓库里所有文件夹（由文件路径反推，只含真有内容的目录） */
+    browseDailyMp3Folder() {
+        const folders = this.plugin.allVaultFolders();
+        if (!folders.length) { new Notice('仓库里还没有任何文件夹'); return; }
+        new BibleFolderPickModal(this.app, folders, '输入关键词过滤文件夹…', (p) => { void this.applyDailyMp3Folder(p); }).open();
+    }
+
+    /* 自动检测：按「含全部子目录」聚合命中数，推荐覆盖 ≥90% 里最深的一层 */
+    pickDailyMp3Folder() {
+        const d = this.plugin.detectDailyMp3Folder();
+        if (!d.total) { new Notice('整个仓库都没有找到 MMDD.mp3 形式的三旧一新音频'); return; }
+        const map = new Map();
+        const texts = d.counts.slice(0, 12).map((c) => {
+            const t = c.path + '（' + c.total + ' 个）';
+            map.set(t, c.path);
+            return t;
+        });
+        const rec = d.best ? ('推荐：' + d.best.path + '（' + d.best.total + ' 个）') : '选择文件夹（按命中数排序）';
+        new BibleFolderPickModal(this.app, texts, rec, (t) => { void this.applyDailyMp3Folder(map.get(t) || t); }).open();
+    }
+
+    /* 应用目录改动：存盘 + 清索引 → 重画设置页与提示 → 告知结果 */
+    async applyDailyMp3Folder(value) {
+        await this.plugin.applyDailyMp3Folder(value);
+        const v = this.plugin.dailyMp3Folder();
+        this.display();
+        const st = this.plugin.scanDailyMp3(v);
+        new Notice('三旧一新 MP3 文件夹：' + (v || '整个仓库') + '，识别到 ' + st.files + ' 个文件（覆盖 ' + st.days + ' 天）');
+    }
+
+    /* ===== 圣经音频：整章 MP3 识别设置 =====
+       与 Hymns / 三旧一新同一套路子：手填 + 浏览… + 自动检测 + 清空，
+       下面跟一行「识别到多少章」的实时提示。识别规则见 bibleAudioKeyOf。 */
+    renderBibleAudioSettings(containerEl) {
+        const plugin = this.plugin;
+        new Setting(containerEl)
+            .setName('MP3 文件夹')
+            .setDesc('整章圣经音频所在目录，文件名按「书卷拼音 + 章号」（chuangshiji01.mp3 = 创世记 1 章、' +
+                'shipian150.mp3 = 诗篇 150 篇；写成 创世记01.mp3 也能认）。留空 = 扫描整个仓库；' +
+                '填了目录就只在这个目录及其子目录里找。')
+            .addText(text => text
+                .setPlaceholder('留空 = 扫描整个仓库')
+                .setValue(plugin.settings.bibleMp3Folder || '')
+                .onChange(async (value) => {
+                    await plugin.applyBibleMp3Folder(value);
+                    hint.update();
+                }))
+            .addButton(button => button
+                .setButtonText('浏览…')
+                .setTooltip('从仓库里的文件夹列表中点选，不用手打路径')
+                .onClick(() => this.browseBibleMp3Folder()))
+            .addButton(button => button
+                .setButtonText('自动检测')
+                .setTooltip('扫描整个仓库，列出圣经 MP3 最多的文件夹')
+                .onClick(() => this.pickBibleMp3Folder()))
+            .addButton(button => button
+                .setButtonText('清空')
+                .setTooltip('清空 = 不限定范围，扫描整个仓库')
+                .onClick(async () => {
+                    await plugin.applyBibleMp3Folder('');
+                    this.display();
+                    const st = plugin.scanBibleMp3('');
+                    new Notice('圣经音频：整个仓库，识别到 ' + st.files + ' 章 MP3（' + st.books + ' 卷）');
+                }));
+
+        const hint = this.makeBibleMp3Hint(containerEl);
+    }
+
+    /* 圣经 MP3 识别提示：✓ 共多少章 / 多少卷 / 覆盖全书的多少；缺哪些卷 */
+    makeBibleMp3Hint(containerEl) {
+        const plugin = this.plugin;
+        const el = containerEl.createDiv({ cls: 'bible-daily-mp3-hint' });
+        const update = () => {
+            const root = plugin.bibleMp3Folder();
+            const st = plugin.scanBibleMp3(root);
+            el.empty();
+            el.removeClass('is-error');
+            if (!st.files) {
+                el.addClass('is-error');
+                el.setText('✗ ' + (root ? '「' + root + '」及其子文件夹里' : '整个仓库里') +
+                    '没有找到圣经 MP3（文件名需为「书卷拼音 + 章号」，如 chuangshiji01.mp3）');
+                return;
+            }
+            el.setText('✓ ' + (root ? '「' + root + '」及子文件夹' : '整个仓库') + '共 ' + st.files + ' 章圣经 MP3（' +
+                st.books + ' 卷，全书共 ' + st.total + ' 章）');
+            if (st.missing.length) {
+                el.createDiv({
+                    cls: 'bible-daily-mp3-note',
+                    text: '缺 ' + st.missing.length + ' 卷的部分章节：' + st.missing.slice(0, 6).join('、') +
+                        (st.missing.length > 6 ? ' …' : '')
+                });
+            }
+            if (root && st.files < plugin.scanBibleMp3('').files) {
+                el.createDiv({ cls: 'bible-daily-mp3-note', text: '提示：全库其实有更多，当前路径可能只覆盖了一部分。' });
+            }
+        };
+        update();
+        return { el: el, update: update };
+    }
+
+    browseBibleMp3Folder() {
+        const folders = this.plugin.allVaultFolders();
+        if (!folders.length) { new Notice('仓库里还没有任何文件夹'); return; }
+        new BibleFolderPickModal(this.app, folders, '输入关键词过滤文件夹…', (p) => {
+            void this.applyBibleMp3FolderPick(p);
+        }).open();
+    }
+
+    pickBibleMp3Folder() {
+        const d = this.plugin.detectBibleMp3Folder();
+        if (!d.total) { new Notice('整个仓库都没有找到「书卷拼音 + 章号」形式的圣经 MP3'); return; }
+        const map = new Map();
+        const texts = d.counts.slice(0, 12).map((c) => {
+            const t = c.path + '（' + c.total + ' 个）';
+            map.set(t, c.path);
+            return t;
+        });
+        const rec = d.best ? ('推荐：' + d.best.path + '（' + d.best.total + ' 个）') : '选择文件夹（按命中数排序）';
+        new BibleFolderPickModal(this.app, texts, rec, (t) => {
+            void this.applyBibleMp3FolderPick(map.get(t) || t);
+        }).open();
+    }
+
+    async applyBibleMp3FolderPick(value) {
+        await this.plugin.applyBibleMp3Folder(value);
+        this.display();
+        const st = this.plugin.scanBibleMp3(this.plugin.bibleMp3Folder());
+        new Notice('圣经音频文件夹：' + (this.plugin.bibleMp3Folder() || '整个仓库') +
+            '，识别到 ' + st.files + ' 章 MP3（' + st.books + ' 卷）');
+    }
+}
+
+/* 文件夹 / 候选模糊选择弹窗：输入关键词过滤，点一项即选。
+   不引 FuzzySuggestModal，避免多一个 Obsidian API 依赖（老版本环境也能跑）。 */
+class BibleFolderPickModal extends Modal {
+    constructor(app, items, placeholder, onPick) {
+        super(app);
+        this.items = Array.isArray(items) ? items.slice() : [];
+        this.placeholder = placeholder || '选择文件夹';
+        this.onPick = typeof onPick === 'function' ? onPick : null;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('bible-folder-pick');
+        const input = contentEl.createEl('input', {
+            cls: 'bible-folder-pick-input',
+            attr: { type: 'text', placeholder: this.placeholder }
+        });
+        const list = contentEl.createDiv({ cls: 'bible-folder-pick-list' });
+        const render = () => {
+            const q = String(input.value || '').trim().toLowerCase();
+            list.empty();
+            let shown = 0;
+            for (const item of this.items) {
+                if (q && String(item).toLowerCase().indexOf(q) < 0) continue;
+                if (shown >= 300) break;
+                shown += 1;
+                const btn = list.createEl('button', { cls: 'bible-folder-pick-item', attr: { type: 'button' }, text: String(item) });
+                btn.addEventListener('click', () => {
+                    const pick = this.onPick;
+                    this.close();
+                    if (pick) { try { pick(item); } catch (e) { /* 忽略 */ } }
+                });
+            }
+            if (!shown) list.createDiv({ cls: 'bible-folder-pick-empty', text: '没有匹配的文件夹' });
+        };
+        input.addEventListener('input', render);
+        render();
+        try { input.focus(); } catch (e) { /* 忽略 */ }
+    }
+    onClose() {
+        try { this.contentEl.empty(); } catch (e) { /* 忽略 */ }
     }
 }
 
@@ -3516,7 +3874,8 @@ class BibleProjectionOverlay {
         qsInput.placeholder = '投影经文：太1、太1-3、csj1:1、恩典…（输入即投影 · 长按选书卷）';
         this.quickSearchInput = qsInput;
         const qsClear = quick.createEl('button', { cls: 'bible-proj-quick-search-clear', text: '✕', attr: { type: 'button', title: '清空搜索框' } });
-        const qsGo = quick.createEl('button', { cls: 'bible-proj-quick-search-go', text: '投影', attr: { type: 'button', title: '立即投影并把焦点交还画面（Enter）' } });
+        // 「投影」按钮已去掉：搜索框本身就是输入即投影，回车只是「确认 + 交还焦点」，
+        // 多一个按钮既占地方又容易让人以为必须点它才会投影。
         const topRight = topRow.createDiv({ cls: 'bible-proj-page-wrap' });
         const pageNumBtn = topRight.createEl('button', {
             cls: 'bible-proj-page-num',
@@ -3535,7 +3894,7 @@ class BibleProjectionOverlay {
         this.hintRow = hintRow;
         hintRow.setText(this.buildHintText(false));
         this.overlay.appendChild(topBar);
-        this.setupQuickSearch(qsInput, qsClear, qsGo);
+        this.setupQuickSearch(qsInput, qsClear);
 
         this.contentArea = document.createElement('div');
         this.contentArea.className = 'bible-proj-content';
@@ -3548,16 +3907,37 @@ class BibleProjectionOverlay {
 
         const bottomRow = bottomBar.createDiv({ cls: 'bible-proj-bottom-row' });
         bottomRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:6px 16px;gap:8px;';
-        // 返回上一个投影内容：从注解出处 / 经文弹窗再次投影后，可退回之前的投影（无历史时隐藏）
-        const backBtn = bottomRow.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-back', text: '↶', attr: { 'data-action': 'proj-back' } });
-        backBtn.title = '返回上一个投影内容（Z）';
-        backBtn.style.display = 'none';
-        backBtn.addEventListener('click', () => this.goBackProjection());
         const prevBtn = bottomRow.createEl('button', { cls: 'bible-proj-nav-btn bible-proj-prev', text: '◀' });
 
         const toolCenter = bottomRow.createDiv({ cls: 'bible-proj-tool-center' });
         toolCenter.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:6px;flex:1;';
         // 按钮使用「文字 + 符号」而非纯符号，暗色/亮色下都能看清
+        // 返回上一层投影 / 投影历史：原先贴在底栏最左、用的是圆形蓝底导航按钮，跟右边这排
+        // 工具按钮完全不搭；现在挪进工具区、手排在「缩小字体」左边，样式也统一成工具按钮。
+        // 图标取不到时退回文字（极少数环境会被裁掉图标字体），保证按钮不会是空白。
+        const addIconToolBtn = (icon, action, title, text, extraCls) => {
+            const btn = toolCenter.createEl('button', {
+                cls: 'bible-proj-tool-btn bible-proj-tool-icon' + (extraCls ? ' ' + extraCls : ''),
+                attr: { type: 'button', 'data-action': action, title: title }
+            });
+            let hasIcon = false;
+            try { setIcon(btn, icon); } catch (err) { /* 忽略 */ }
+            try { hasIcon = !!(btn.querySelector && btn.querySelector('svg')); } catch (err) { /* 忽略 */ }
+            if (!hasIcon && btn.setText) btn.setText(text);
+            return btn;
+        };
+        // 返回上一个投影内容：从注解出处 / 经文弹窗再次投影后，可退回之前的投影（无历史时隐藏）
+        const backBtn = addIconToolBtn('undo-2', 'proj-back', '返回上一个投影内容（Z）', '↶', 'bible-proj-back');
+        backBtn.style.display = 'none';
+        backBtn.addEventListener('click', () => this.goBackProjection());
+        // 投影历史：只看书卷章节 / 搜索词，按最近 → 最早排列，点一条直接投影且不改顺序
+        const historyBtn = addIconToolBtn('history', 'proj-history', '投影历史（最近投影过的书卷章节 / 搜索词）', '历史', 'bible-proj-history');
+        this.historyBtn = historyBtn;
+        historyBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            this.showProjectionHistory(historyBtn);
+        });
+
         const addToolBtn = (text, action, title, extraCls) => {
             return toolCenter.createEl('button', {
                 cls: 'bible-proj-tool-btn' + (extraCls ? ' ' + extraCls : ''),
@@ -3664,7 +4044,9 @@ class BibleProjectionOverlay {
             if (self._projAbbr) self._projAbbr.refresh(e);
             self.scheduleQuickSearch();
         });
-        goBtn.addEventListener('click', confirm);
+        // goBtn 为可选参数：界面上的「投影」按钮已移除，只留输入即投影 + Enter 确认；
+        // 保留这个入参是为了兼容仍想显式确认的调用方（例如以后加回按钮）。
+        if (goBtn) goBtn.addEventListener('click', confirm);
         clearBtn.addEventListener('click', () => {
             input.value = '';
             self.hideInlineNotice();
@@ -3710,6 +4092,34 @@ class BibleProjectionOverlay {
         try { input.focus({ preventScroll: true }); }
         catch (err) { try { input.focus(); } catch (e2) { /* 忽略 */ } }
         if (this._projAbbr) this._projAbbr.refresh();
+    }
+
+    // 长按 Enter 被判定为「短按」后，把原本那一次 Enter 的动作补做一遍：
+    // 输入框走它自己的 keydown（含短拼补全 / 确认投影），按钮走 click，其余按投影规则聚焦搜索框。
+    _replayShortEnter() {
+        if (this._closed) return;
+        const ae = document.activeElement;
+        if (ae && ae.closest && ae.closest('.bible-proj-quick-search')) {
+            let tried = false;
+            try {
+                if (typeof KeyboardEvent === 'function') {
+                    this._enterLongPressBypass = true;
+                    tried = true;
+                    ae.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'Enter', bubbles: true, cancelable: true, isComposing: false
+                    }));
+                }
+            } catch (err) { tried = false; /* 环境不支持合成事件时走下面的兜底 */ }
+            finally { this._enterLongPressBypass = false; }
+            // dispatchEvent 返回 false 只是表示 handler 调了 preventDefault，不能当作「没派发」
+            if (!tried && this.quickSearchInput) this.projectQuery(this.quickSearchInput.value);
+            return;
+        }
+        if (ae && ae.tagName === 'BUTTON' && ae.closest && ae.closest('.bible-projection-fullscreen')) {
+            try { ae.click(); } catch (err) { /* 忽略 */ }
+            return;
+        }
+        if (this.ownsScreen() && this.quickSearchInput) this.focusQuickSearch();
     }
 
     // ===== 长按搜索框：书卷 / 章数选择器 =====
@@ -3801,6 +4211,7 @@ class BibleProjectionOverlay {
     openBookPicker() {
         if (this._closed || !this.overlay) return;
         this.closeBookPicker();
+        this.closeProjectionHistory();
         const self = this;
         this._bookPickerOpenedAt = Date.now();
         if (this._projAbbr) this._projAbbr.close();
@@ -4103,11 +4514,33 @@ class BibleProjectionOverlay {
                 const ro = { quiet: true, noHistory: true };
                 if (chapterPagedQuery) ro.chapterPaged = true;
                 this.reloadResults(list, this.mode, ro);
+                // 输入即投影也是「真的看了这段经文」，必须进历史；
+                // 中间态用前缀合并压成一条，最终留下的是更完整的那个查询串。
+                // 从历史点开的查询不写（不重排、不新增）。
+                if (typeof this.plugin.noteProjection === 'function') {
+                    void this.plugin.noteProjection(q, list, this.mode, {
+                        chapterPaged: !!chapterPagedQuery,
+                        showSource: this.showSource,
+                        realtime: true,
+                        fromHistory: !!(opts && opts.fromHistory)
+                    });
+                }
                 return;
             }
             if (this._projAbbr) this._projAbbr.close();
             // 普通查询沿用「不传 opts」的老契约；纯整章查询（含整卷简拼）才带一章一页标记
             this.reloadResults(list, this.mode, chapterPagedQuery ? { chapterPaged: true } : undefined);
+            // 记住本次会话的「上次投影内容」；显式投影才写持久化历史，
+            // 从历史列表点开的查询只更新会话内容，绝不重排 / 新增历史记录。
+            if (typeof this.plugin.noteProjection === 'function') {
+                void this.plugin.noteProjection(q, list, this.mode, {
+                    chapterPaged: !!chapterPagedQuery,
+                    showSource: this.showSource,
+                    // ⚠️ 显式投影（回车 / 投影键）调用时不传 opts，这里必须容忍 undefined，
+                    // 否则 TypeError 被下面的 catch 吞掉，弹出「投影搜索失败」的假错误。
+                    fromHistory: !!(opts && opts.fromHistory)
+                });
+            }
             // 显式确认后把焦点交还投影容器，方向键 / QWE / 翻页立即恢复；想再搜按 / 或点顶部输入框
             try { if (this.quickSearchInput) this.quickSearchInput.blur(); } catch (err) { /* 忽略 */ }
             this.focusProjection(true);
@@ -4118,6 +4551,70 @@ class BibleProjectionOverlay {
     }
 
     bindEvents(toolCenter, bottomRow) {
+        // ===== 长按确定键（Enter）= 打开书卷 / 章数选择器 =====
+        // 与「长按搜索框」同样的入口，但键盘操作无论焦点在投影画面、底部按钮还是顶部输入框都生效。
+        // 短按完全保持原行为：在 keyup 时原样放回去（输入框确认 / 按钮点击 / 聚焦搜索框）。
+        // 注册在 document 捕获阶段，且早于投影自己的 keyHandler，才能压住输入框与按钮的默认动作。
+        this._enterLongPressBypass = false;
+        const enterContextOk = () => {
+            if (this._closed || this._bookPickerOpen || this._pageJumpOpen || this._historyMenuOpen) return false;
+            const ae = document.activeElement;
+            const insideProj = !!(ae && ae.closest && ae.closest('.bible-projection-fullscreen'));
+            if (!insideProj && !this.ownsScreen()) return false;
+            if (!insideProj && ae && ae.closest && ae.closest(
+                '.modal-container, .suggestion-container, .prompt, .menu, .popover')) return false;
+            return true;
+        };
+        this._enterKeyDown = (e) => {
+            if (this._enterLongPressBypass) return;
+            if (e.key !== 'Enter' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey ||
+                e.isComposing || e.keyCode === 229) return;
+            if (!enterContextOk()) return;
+            // 先接管：短按在 keyup 时补做，长按到时不让这次 Enter 触发任何别的动作。
+            try { e.preventDefault(); e.stopImmediatePropagation(); } catch (err) { /* 忽略 */ }
+            if (e.repeat || this._enterLongPressFired) return;
+            this._enterLongPressPending = true;
+            if (this._enterLongPressTimer) { clearTimeout(this._enterLongPressTimer); this._enterLongPressTimer = null; }
+            this._enterLongPressTimer = setTimeout(() => {
+                this._enterLongPressTimer = null;
+                this._enterLongPressPending = false;
+                this._enterLongPressFired = true;
+                if (this._closed) return;
+                // 焦点若停在其它按钮 / 浮层上，先收掉它们，免得刚弹出选择器就被覆盖或立刻关掉
+                try { this.closeThemeMenu(); } catch (err) { /* 忽略 */ }
+                try { this.closePageJump(); } catch (err) { /* 忽略 */ }
+                const strayMenu = this.overlay && this.overlay.querySelector('.bible-proj-mode-menu');
+                if (strayMenu && strayMenu.parentNode) strayMenu.parentNode.removeChild(strayMenu);
+                const ae = document.activeElement;
+                if (ae && ae.tagName === 'BUTTON' && typeof ae.blur === 'function') {
+                    try { ae.blur(); } catch (err) { /* 忽略 */ }
+                }
+                if (this.quickSearchInput) {
+                    try { this.quickSearchInput.blur(); } catch (err) { /* 忽略 */ }
+                }
+                this.openBookPicker();
+            }, 500);
+        };
+        this._enterKeyUp = (e) => {
+            if (e.key !== 'Enter') return;
+            if (!this._enterLongPressPending && !this._enterLongPressTimer && !this._enterLongPressFired) return;
+            try { e.preventDefault(); e.stopImmediatePropagation(); } catch (err) { /* 忽略 */ }
+            if (this._enterLongPressTimer) { clearTimeout(this._enterLongPressTimer); this._enterLongPressTimer = null; }
+            if (this._enterLongPressFired) { this._enterLongPressFired = false; return; }
+            if (!this._enterLongPressPending) return;
+            this._enterLongPressPending = false;
+            this._replayShortEnter();
+        };
+        document.addEventListener('keydown', this._enterKeyDown, true);
+        document.addEventListener('keyup', this._enterKeyUp, true);
+        // 按住 Enter 时窗口失焦收不到 keyup，标志会卡住；失焦时统一复位
+        this._enterWindowBlur = () => {
+            if (this._enterLongPressTimer) { clearTimeout(this._enterLongPressTimer); this._enterLongPressTimer = null; }
+            this._enterLongPressPending = false;
+            this._enterLongPressFired = false;
+        };
+        if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('blur', this._enterWindowBlur);
+
         toolCenter.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-action]');
             if (!btn) return;
@@ -4175,6 +4672,16 @@ class BibleProjectionOverlay {
                     if (e.preventDefault) e.preventDefault();
                     if (e.stopPropagation) e.stopPropagation();
                     this.closePageJump();
+                    return true;
+                }
+                return false;
+            }
+            // 投影历史列表：Esc 只收列表；其余键归列表里的按钮 / 滚动，不当成投影快捷键
+            if (this._historyMenuOpen) {
+                if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229) {
+                    if (e.preventDefault) e.preventDefault();
+                    if (e.stopPropagation) e.stopPropagation();
+                    this.closeProjectionHistory();
                     return true;
                 }
                 return false;
@@ -4432,7 +4939,12 @@ class BibleProjectionOverlay {
         }, { passive: false });
     }
 
-    renderSlide() {
+    // opts.preserveScroll：像「切换注解」这类原地重绘要留在当前阅读位置，
+    // 只换内容不把长经文滚回顶部。scrollTop 必须在清空 DOM 前取、重建后写回。
+    renderSlide(opts) {
+        // ⚠️ 这里会整块换掉 .bible-proj-slide-wrapper，必须只记「数值」：
+        // 记 DOM 引用的话，恢复时写到的是已被移除的旧 wrapper，新 wrapper 仍是 scrollTop=0。
+        const savedScroll = opts && opts.preserveScroll ? this._snapshotProjScroll() : null;
         while (this.contentArea.firstChild) this.contentArea.removeChild(this.contentArea.firstChild);
         if (this.slides.length === 0) {
             // 允许「不选中任何经文」直接开投影，这时用空态引导用户使用顶部常驻搜索框
@@ -4575,7 +5087,9 @@ class BibleProjectionOverlay {
         }
 
         this.contentArea.appendChild(wrapper);
+        // 先写好字号再恢复滚动：字号一变内容高度就变，先滚后改字号会把位置冲掉
         this.updateFontSize();
+        this._restoreProjScroll(savedScroll, wrapper);
         // 同步居中按钮高亮状态（应对内容原地更新导致模式切换的情形）
         const cb = this.overlay && this.overlay.querySelector('[data-action="toggle-centered"]');
         if (cb) cb.classList.toggle('active', this.isCentered);
@@ -4679,6 +5193,7 @@ class BibleProjectionOverlay {
         // 再点一次按钮＝收起，不重新弹
         if (this._themeMenuOpen) { this.closeThemeMenu(); return null; }
         this.closeThemeMenu();
+        this.closeProjectionHistory();
         const self = this;
         const menu = document.createElement('div');
         menu.className = 'bible-proj-theme-menu';
@@ -4775,6 +5290,205 @@ class BibleProjectionOverlay {
         this._themeMenuOpen = false;
     }
 
+    // ===== 投影历史列表：最近 → 最早，每条只存书卷章节 / 搜索词与首次打开时间 =====
+    showProjectionHistory(anchorEl) {
+        const overlay = this.overlay;
+        if (!overlay || this._closed) return null;
+        if (this._historyMenuOpen) { this.closeProjectionHistory(); return null; }
+        this.closeProjectionHistory();
+        // 同一时刻只开一个浮层，免得互相遮挡或被对方的「外部点击」立刻关掉
+        this.closeBookPicker();
+        this.closePageJump();
+        this.closeThemeMenu();
+        const strayModeMenu = overlay.querySelector('.bible-proj-mode-menu');
+        if (strayModeMenu && strayModeMenu.parentNode) strayModeMenu.parentNode.removeChild(strayModeMenu);
+
+        const self = this;
+        const token = (this._historyToken = (this._historyToken || 0) + 1);
+        const mk = (tag, cls, text) => {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            if (text != null) el.textContent = text;
+            return el;
+        };
+        const menu = mk('div', 'bible-proj-history-menu');
+        menu.setAttribute('role', 'dialog');
+        menu.setAttribute('aria-label', '投影历史');
+        const head = mk('div', 'bible-proj-picker-head');
+        head.appendChild(mk('span', 'bible-proj-picker-title', '投影历史'));
+        head.appendChild(mk('span', 'bible-proj-picker-tip', '最近 → 最早 · 点击即投影（不改变本列表顺序）'));
+        const closeBtn = mk('button', 'bible-proj-picker-close', '✕');
+        closeBtn.type = 'button';
+        closeBtn.title = '关闭（Esc）';
+        closeBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            self.closeProjectionHistory();
+        });
+        head.appendChild(closeBtn);
+        menu.appendChild(head);
+
+        const list = mk('div', 'bible-proj-history-list');
+        const entries = (this.plugin && typeof this.plugin.projectionHistoryEntries === 'function')
+            ? this.plugin.projectionHistoryEntries() : [];
+        if (!entries.length) {
+            list.appendChild(mk('div', 'bible-proj-history-empty', '还没有投影历史。投影过书卷章节或搜索词后，这里会按最近 → 最早列出。'));
+        } else {
+            // 高亮「上次点选的那一条」：优先本覆盖层的记录；投影关掉再打开时新实例没有，
+            // 退回插件级记录（同一会话内有效），这样「再去查看历史」仍能一眼看到上次选中项。
+            const activeQ = (this._activeHistoryQ != null && String(this._activeHistoryQ) !== '')
+                ? String(this._activeHistoryQ)
+                : ((this.plugin && this.plugin._projHistoryActiveQ) ? String(this.plugin._projHistoryActiveQ) : '');
+            entries.forEach((entry) => {
+                const isActive = !!activeQ && String(entry.q) === activeQ;
+                const row = mk('button', 'bible-proj-history-item' + (isActive ? ' is-active' : ''));
+                row.type = 'button';
+                row.setAttribute('data-history-q', entry.q);
+                if (isActive) row.setAttribute('aria-current', 'true');
+                row.appendChild(mk('span', 'bible-proj-history-q', entry.q));
+                row.appendChild(mk('span', 'bible-proj-history-time',
+                    formatProjectionHistoryTime(entry.firstAt) + ' 首次'));
+                row.addEventListener('click', (e) => {
+                    if (e && e.preventDefault) e.preventDefault();
+                    if (e && e.stopPropagation) e.stopPropagation();
+                    // 先把「选中的是哪条、它当时在列表里的位置」记下来，下次打开才能原样回到这里
+                    self.rememberHistoryAnchor(row, entry);
+                    self.projectFromHistory(entry);
+                });
+                list.appendChild(row);
+            });
+        }
+        menu.appendChild(list);
+        overlay.appendChild(menu);
+        this._historyMenu = menu;
+        this._historyMenuOpen = true;
+        this.positionHistoryMenu(menu, anchorEl);
+        this.restoreHistoryScroll(list);
+
+        // 与书卷选择器同款：手势常 preventDefault 掉 pointerdown 而不合成 click，
+        // 所以捕获阶段同时监听 pointerdown / mousedown / touchstart / click / focusin / wheel。
+        const inside = (t) => !!(t && t.closest && (
+            t.closest('.bible-proj-history-menu') || t.closest('[data-action="proj-history"]')));
+        const onOutside = (e) => {
+            if (token !== this._historyToken) return;
+            const t = e && e.target;
+            if (inside(t)) return;
+            if (e.type === 'focusin' && (!t || !t.closest ||
+                !t.closest('input, textarea, select, button, a[href], [contenteditable]'))) return;
+            self.closeProjectionHistory();
+        };
+        this._historyOutside = onOutside;
+        this._historyOutsideEvents = [
+            [document, 'pointerdown', { capture: true }],
+            [document, 'mousedown', { capture: true }],
+            [document, 'touchstart', { capture: true, passive: true }],
+            [document, 'click', { capture: true }],
+            [document, 'focusin', { capture: true }],
+            [document, 'wheel', { capture: true, passive: true }],
+            [(typeof window !== 'undefined' ? window : document), 'blur', false]
+        ];
+        for (const [target, type, opts] of this._historyOutsideEvents) {
+            target.addEventListener(type, onOutside, opts);
+        }
+        return menu;
+    }
+
+    // 历史菜单跟着「历史」按钮走：按钮从底栏最左挪进工具区后，固定贴左边会离按钮很远，
+    // 看起来跟按钮没关系。算不出来（拿不到布局）就退回 CSS 默认位置。
+    positionHistoryMenu(menu, anchorEl) {
+        try {
+            const ov = this.overlay;
+            if (!menu || !ov || !anchorEl ||
+                typeof anchorEl.getBoundingClientRect !== 'function' ||
+                typeof ov.getBoundingClientRect !== 'function') return;
+            const a = anchorEl.getBoundingClientRect();
+            const o = ov.getBoundingClientRect();
+            const w = menu.offsetWidth || 0;
+            if (!w || !Number.isFinite(a.left) || !Number.isFinite(a.top) || !Number.isFinite(o.height)) return;
+            const pad = 8;
+            const maxLeft = Math.max(pad, (o.width || 0) - w - pad);
+            const left = Math.min(Math.max(pad, a.left - o.left + a.width / 2 - w / 2), maxLeft);
+            const bottom = Math.max(pad, (o.height || 0) - (a.top - o.top) + 8);
+            menu.style.left = Math.round(left) + 'px';
+            menu.style.bottom = Math.round(bottom) + 'px';
+        } catch (e) { /* 忽略：退回 CSS 默认位置 */ }
+    }
+
+    // 记住「刚点的那一条」以及它当时离列表顶部多远。记距离而不是 scrollTop，
+    // 是因为之后又投影了新内容时列表顶部会插入新行，scrollTop 会指到别的条目上。
+    rememberHistoryAnchor(row, entry) {
+        this._activeHistoryQ = String((entry && entry.q) || '');
+        // 覆盖层是「每次投影新建一个实例」，所以插件级再存一份，投影关掉再开也认得上一条
+        try { if (this.plugin) this.plugin._projHistoryActiveQ = this._activeHistoryQ; } catch (e) { /* 忽略 */ }
+        try {
+            const list = this._historyMenu && this._historyMenu.querySelector('.bible-proj-history-list');
+            const top = row && typeof row.offsetTop === 'number' ? row.offsetTop : null;
+            this._historyActiveTop = (top != null && list && typeof list.scrollTop === 'number')
+                ? Math.max(0, top - list.scrollTop) : null;
+            this._historyScrollTop = (list && typeof list.scrollTop === 'number') ? list.scrollTop : 0;
+        } catch (e) {
+            this._historyActiveTop = null;
+            this._historyScrollTop = 0;
+        }
+    }
+
+    // 再次打开历史列表：把上次选中的那条滚回它原来的位置（视觉位置不变），并保持高亮
+    restoreHistoryScroll(list) {
+        if (!list) return;
+        try {
+            // 逐个孩子看类名，不用复合选择器：某些 WebView 上 `.a.b` 的匹配行为不一致，
+            // 而且这里只需要「第一行带 is-active 的」。
+            let activeRow = null;
+            const kids = list.children ? Array.prototype.slice.call(list.children) : [];
+            for (const kid of kids) {
+                if (kid && kid.className && String(kid.className).split(/\s+/).indexOf('is-active') !== -1) {
+                    activeRow = kid;
+                    break;
+                }
+            }
+            const top = activeRow && typeof activeRow.offsetTop === 'number' ? activeRow.offsetTop : null;
+            let want = null;
+            if (top != null && this._historyActiveTop != null) want = top - this._historyActiveTop;
+            else if (Number(this._historyScrollTop) > 0) want = Number(this._historyScrollTop);
+            // 首次打开（或换了投影实例）没有记录：至少把选中项滚到列表中间，
+            // 否则它可能远远落在可视区之外，看起来就像「没高亮」。
+            if (want == null && top != null && activeRow) {
+                const rowH = Number(activeRow.offsetHeight) || 0;
+                const view = Number(list.clientHeight) || 0;
+                want = top - Math.max(0, (view - rowH) / 2);
+            }
+            if (want != null && want > 0 && typeof list.scrollTop === 'number') {
+                list.scrollTop = Math.round(want);
+            }
+        } catch (e) { /* 忽略 */ }
+    }
+
+    closeProjectionHistory() {
+        this._historyToken = (this._historyToken || 0) + 1;
+        if (this._historyOutside && this._historyOutsideEvents) {
+            for (const [target, type, opts] of this._historyOutsideEvents) {
+                try { target.removeEventListener(type, this._historyOutside, opts); } catch (err) { /* 忽略 */ }
+            }
+        }
+        this._historyOutside = null;
+        this._historyOutsideEvents = null;
+        const menu = this._historyMenu;
+        if (menu && menu.parentNode) menu.parentNode.removeChild(menu);
+        this._historyMenu = null;
+        this._historyMenuOpen = false;
+    }
+
+    // 从历史列表投影：只把查询串交回同一个检索入口，不写历史、不重排列表；
+    // 会话内的「上次投影内容」会随之更新，之后空选中再开投影看到的就是这一条。
+    projectFromHistory(entry) {
+        const q = String((entry && entry.q) || '').trim();
+        if (!q) return;
+        this.closeProjectionHistory();
+        if (this.quickSearchInput) this.quickSearchInput.value = q;
+        this._lastNoResultQuery = '';
+        this.hideInlineNotice();
+        this.projectQuery(q, { fromHistory: true });
+    }
+
     // 投影整屏时覆盖层进入浏览器 top layer，Obsidian 的系统 Notice 会被盖住，
     // 所以「主题 / 查无结果」这类反馈一律写在覆盖层内部的这行提示里。
     showInlineNotice(message, duration) {
@@ -4842,6 +5556,7 @@ class BibleProjectionOverlay {
         const overlay = this.overlay;
         if (!overlay || !anchorEl) return;
         if (overlay.querySelector('.bible-proj-page-jump')) { this.closePageJump(); return; }
+        this.closeProjectionHistory();
         const total = this.slides.length;
         if (!total) return;
         const self = this;
@@ -5009,15 +5724,18 @@ class BibleProjectionOverlay {
         if (item.type === 'intro') {
             textDiv.classList.add('bible-proj-intro-text');
             const sections = Array.isArray(item.sections) ? item.sections : [];
-            if (!sections.length) { textDiv.setText(this.getItemContent(item)); return; }
+            if (!sections.length) { this.fillProjLinkedText(textDiv, this.getItemContent(item), item); return; }
             for (const s of sections) {
                 const row = textDiv.createDiv({ cls: 'bible-proj-intro-row' });
                 row.createEl('span', { cls: 'bible-proj-intro-label', text: String(s.label || '') + '：' });
-                row.createEl('span', { cls: 'bible-proj-intro-value', text: String(s.text || '') });
+                // 简介正文里的经文出处（如「太一1」）识别为可点击引用：点出处只弹经文，不选中词条
+                this.fillProjLinkedText(row.createEl('span', { cls: 'bible-proj-intro-value' }), String(s.text || ''), item);
             }
             return;
         }
         if (item.type !== 'note' && item.type !== 'chain') {
+            // 纲目（以及其它非经文词条）里的出处同样可点，点开只弹经文弹窗
+            if (item.type === 'outline') { this.fillProjLinkedText(textDiv, this.getItemContent(item), item); return; }
             textDiv.setText(this.getItemContent(item));
             return;
         }
@@ -5025,6 +5743,20 @@ class BibleProjectionOverlay {
         const paras = String(item.content || '').split(/\n+/).map(t => t.trim()).filter(t => t.length > 0);
         if (!paras.length) { textDiv.setText(''); return; }
         for (const p of paras) textDiv.createDiv({ cls: 'bible-proj-text-para', text: p });
+    }
+
+    // 把正文里的经文出处写成可点击引用（单击弹经文弹窗、双击跳转），
+    // 环境不具备识别能力时退回纯文本，绝不因为链接化失败而丢内容。
+    fillProjLinkedText(el, text, item, keywords) {
+        const plugin = this.plugin;
+        if (plugin && typeof plugin.linkifyBibleRefs === 'function') {
+            try {
+                plugin.linkifyBibleRefs(el, String(text == null ? '' : text),
+                    { bookId: item && item.bookId, chapter: (item && item.chapter) || 1 }, keywords);
+                return;
+            } catch (err) { /* 退回纯文本 */ }
+        }
+        el.setText(String(text == null ? '' : text));
     }
 
     // 投影默认字号微调：经文 +1、纲目 -6、主题不变，点 +/− 时整体缩放仍在此基础上生效
@@ -5114,6 +5846,45 @@ class BibleProjectionOverlay {
         if (wrapper) list.push(wrapper);
         if (this.contentArea && list.indexOf(this.contentArea) === -1) list.push(this.contentArea);
         return list.length ? list : null;
+    }
+
+    // 记下投影当前的滚动位置。只存「数值 + 是哪个容器」：
+    // renderSlide 会把整块 wrapper 换掉，存 DOM 引用的话恢复时写回的是已被移除的旧节点。
+    _snapshotProjScroll() {
+        const list = this._getProjScrollContainers();
+        if (!list) return null;
+        return list.map(el => ({
+            isWrapper: !!(el.classList && el.classList.contains('bible-proj-slide-wrapper')),
+            top: Number(el.scrollTop) || 0
+        }));
+    }
+
+    // 把滚动位置写回当前幻灯片。先同步写一次（此时字号已设好、布局已定），
+    // 下一帧再补一次：真机 WebView 里字体度量 / 布局可能延后一帧，早写的那次
+    // 会被「内容高度还算不出来」夹回 0，表现就是「开关注解又跳回本页开头」。
+    _restoreProjScroll(saved, wrapper) {
+        if (!saved || !saved.length) return;
+        const targetOf = (s) => {
+            if (!s.isWrapper) return this.contentArea;
+            return wrapper || (this.contentArea && this.contentArea.querySelector('.bible-proj-slide-wrapper'));
+        };
+        const apply = () => {
+            for (const s of saved) {
+                if (!s.top) continue;               // 原本就在顶部，不必碰
+                const el = targetOf(s);
+                if (!el) continue;
+                try { el.scrollTop = s.top; } catch (err) { /* 元素已移除时忽略 */ }
+            }
+        };
+        apply();
+        try {
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(() => {
+                    if (wrapper && wrapper.isConnected === false) return;  // 又重绘过了，交给新的那次
+                    apply();
+                });
+            }
+        } catch (err) { /* 忽略 */ }
     }
 
     // 投影里展开的注解 / 串珠内容（字号由外层面板统一控制，与经文一致）
@@ -5237,6 +6008,21 @@ class BibleProjectionOverlay {
         this.closeBookPicker();
         this.closePageJump();
         this.closeThemeMenu();
+        this.closeProjectionHistory();
+        if (this._enterLongPressTimer) {
+            clearTimeout(this._enterLongPressTimer);
+            this._enterLongPressTimer = null;
+        }
+        if (this._enterKeyDown) {
+            document.removeEventListener('keydown', this._enterKeyDown, true);
+            document.removeEventListener('keyup', this._enterKeyUp, true);
+            this._enterKeyDown = null;
+            this._enterKeyUp = null;
+        }
+        if (this._enterWindowBlur && typeof window !== 'undefined' && window.removeEventListener) {
+            window.removeEventListener('blur', this._enterWindowBlur);
+            this._enterWindowBlur = null;
+        }
         // 顶部搜索框的补全下拉挂在 body 上，不随 overlay 一起移除，必须单独销毁
         if (this._projAbbr && typeof this._projAbbr.destroy === 'function') {
             try { this._projAbbr.destroy(); } catch (e) { /* 忽略 */ }
@@ -6115,6 +6901,11 @@ class BibleSearchView extends ItemView {
         // 整个清理包一层：任何一项监听解绑抛错都不能让 Obsidian 的 leaf.detach() 半途中断，
         // 否则插件被关闭后侧边栏会留下一个「没样式但还在」的空壳面板。
         try {
+            // 耳机按钮跟着视图一起消失：清掉插件侧的引用，弹窗定位与「点的是不是耳机按钮」都靠它
+            if (this.plugin && this.plugin._audioButton === this.audioBtn) {
+                this.plugin._audioButton = null;
+                try { this.plugin.closeAudioPanel(); } catch (e) { /* 忽略 */ }
+            }
             if (typeof this.destroyAbbrSuggestion === 'function') this.destroyAbbrSuggestion();
             if (this._swipeHandlers) {
                 const h = this._swipeHandlers;
@@ -6191,19 +6982,55 @@ class BibleSearchView extends ItemView {
         this.tabSearch.addEventListener('click', () => this.switchTab('search'));
         this.tabReader.addEventListener('click', () => this.switchTab('reader'));
 
-        this.compareBtn = tabBar.createEl('button', { cls: 'bible-compare-toggle-btn', text: '对照' });
+        // 右侧三个功能按钮一律用符号（和「搜索 / 阅读」标签一样取 Lucide 图标）：
+        // 三旧一新（日历）→ 圣经音频（耳机）→ 对照 → 专注。尺寸统一收窄，窄侧边栏里
+        // 不会把前面两个标签挤没。
+        this.dailyBtn = this.createTabIconButton(tabBar, 'calendar-days', '三',
+            '三旧一新：打开当天的读经进度（F）', 'bible-daily-open-btn');
+        this.dailyBtn.addEventListener('click', (e) => {
+            void this.plugin.activateDailyView();
+            this.releaseTabButtonFocus(e);
+        });
+
+        // 圣经音频：临时弹出播放窗，点窗外隐藏（播放继续）
+        this.audioBtn = this.createTabIconButton(tabBar, 'headphones', '耳',
+            '圣经音频：播放某一章（整卷加入播放列表）', 'bible-audio-open-btn');
+        this.audioBtn.addEventListener('click', (e) => {
+            this.plugin.toggleAudioPanel();
+            this.releaseTabButtonFocus(e);
+        });
+        // 插件侧要用它来定位弹窗、判断「点的是不是耳机按钮」
+        this.plugin._audioButton = this.audioBtn;
+        this.plugin.syncAudioButton();
+
+        this.compareBtn = this.createTabIconButton(tabBar, 'columns-2', '对',
+            '打开对照设置', 'bible-compare-toggle-btn');
         this.compareBtn.addEventListener('click', (e) => {
             this.toggleComparePanel();
             this.releaseTabButtonFocus(e);
         });
 
-        this.focusModeBtn = tabBar.createEl('button', { cls: 'bible-focus-mode-btn', text: '专注' });
+        this.focusModeBtn = this.createTabIconButton(tabBar, 'maximize', '专',
+            '进入专注模式', 'bible-focus-mode-btn');
         this.focusModeBtn.addEventListener('click', (e) => {
             this.toggleFocusMode();
             this.releaseTabButtonFocus(e);
         });
 
         this.setupTabOverflowWatch();
+    }
+
+    // 标签栏右侧的符号按钮：图标优先，取不到图标时退回一个字，绝不出现空白按钮
+    createTabIconButton(parent, icon, fallback, title, extraCls) {
+        const btn = parent.createEl('button', {
+            cls: 'bible-tab-icon-btn' + (extraCls ? ' ' + extraCls : ''),
+            attr: { type: 'button', title: title, 'aria-label': title }
+        });
+        let hasIcon = false;
+        try { setIcon(btn, icon); } catch (e) { /* 忽略 */ }
+        try { hasIcon = !!(btn.querySelector && btn.querySelector('svg')); } catch (e) { /* 忽略 */ }
+        if (!hasIcon) btn.setText(fallback);
+        return btn;
     }
 
     // 移动端 WebView 点完 button 后，:hover / :focus 会粘在按钮上直到下一次触摸别处，
@@ -6231,9 +7058,13 @@ class BibleSearchView extends ItemView {
         try {
             if (this.compareBtn.classList && typeof this.compareBtn.classList.toggle === 'function')
                 this.compareBtn.classList.toggle('active', on);
-            // 按钮文字始终固定为「对照」：激活态只靠底色 + 内描边表达，不额外加符号
-            if (this.compareBtn.textContent !== '对照') this.compareBtn.textContent = '对照';
+            // 按钮现在是图标：激活态只靠底色 + 内描边表达。
+            // ⚠️ 这里绝不能写 textContent —— 会把 setIcon 插进去的 svg 冲掉，按钮变成空白。
             this.compareBtn.title = on ? '关闭对照设置' : '打开对照设置';
+            // 图标按钮没有文字，读屏只能靠 aria-label；单独 try 一层，
+            // 免得个别环境没有 setAttribute 时把后面的内联样式清理一起跳过。
+            try { if (this.compareBtn.setAttribute) this.compareBtn.setAttribute('aria-label', this.compareBtn.title); }
+            catch (e) { /* 忽略 */ }
             // 万一被别的逻辑写过内联隐藏，这里一律清掉，交给 CSS 决定可见性
             this.compareBtn.style.removeProperty('display');
             this.compareBtn.style.removeProperty('visibility');
@@ -6278,14 +7109,15 @@ class BibleSearchView extends ItemView {
                         btn.style.setProperty('visibility', 'visible');
                         btn.style.setProperty('opacity', '1');
                     }
-                    // 主题把背景 / 文字画成透明时，用与样式表兜底一致的硬编码色补回
+                    // ⚠️ 背景透明现在是「未选中」的正常外观（和「搜索 / 阅读」标签一致），
+                    // 不能再当成异常去补实心底色，否则一刷新就又变回一排青色块。
+                    // 真正会让按钮「消失」的只有文字色被主题 / WebView 画成透明，只补这一项。
                     const clear = (v) => v === 'transparent' || v === 'rgba(0, 0, 0, 0)';
-                    if (clear(cs.backgroundColor) || clear(cs.color)) {
+                    if (clear(cs.color)) {
                         const on = !!(btn.classList && typeof btn.classList.contains === 'function' &&
                             btn.classList.contains('active'));
-                        btn.style.setProperty('background-color', on ? '#3dbdb4' : '#4ecdc4');
-                        btn.style.setProperty('color', '#0b2b29');
-                        btn.style.setProperty('-webkit-text-fill-color', '#0b2b29');
+                        btn.style.setProperty('color', on ? '#0b2b29' : 'var(--text-muted)');
+                        btn.style.setProperty('-webkit-text-fill-color', on ? '#0b2b29' : 'var(--text-muted)');
                     }
                 }
             } catch (err) { /* 忽略 */ }
@@ -6584,6 +7416,8 @@ class BibleSearchView extends ItemView {
                 }
                 await this.plugin.saveSettings();
                 await this.plugin.loadBibleData();
+                // 勾选 / 取消对照版本后，三旧一新页要立刻出现 / 去掉对照行
+                await this.plugin.refreshDailyContent();
                 this._renderCompareModal();
                 if (this.activeTab === 'reader' && this.readerState === 'content') {
                     this.renderChapterContent();
@@ -6684,6 +7518,8 @@ class BibleSearchView extends ItemView {
                 // 注解模式可能已自动切换，实时回写对照 modal 的开关状态
                 this._syncCompareNotesCheckbox();
             }
+            // 拖动排序会顺带确定新的主版本：三旧一新页必须立刻按新主版本重画
+            await this.plugin.refreshDailyContent();
 
             if (this.activeTab === 'reader' && this.readerState === 'content') {
                 this.renderChapterContent();
@@ -7194,12 +8030,25 @@ class BibleSearchView extends ItemView {
             const lower0 = typeof key0 === 'string' ? key0.toLowerCase() : '';
             // X / I / Y / U 是全局动作键：点过工具栏按钮后焦点还留在按钮上，也要继续生效
             const actionKey = lower0 === 'x' || lower0 === 'i' || lower0 === 'y' || lower0 === 'u';
+            // 导航键：方向键 / 空格（选中）/ B / C。焦点停在刚用鼠标点过的按钮上时，
+            // 浏览器不会把按键交给视图容器，方向键与空格就「失灵」，得先点一下空白区。
+            // 这里把焦点收回容器后照常导航，等于恢复「点完按钮直接按键就能用」的老手感。
+            const navKey = key0 === 'ArrowLeft' || key0 === 'ArrowRight' ||
+                key0 === 'ArrowUp' || key0 === 'ArrowDown' ||
+                key0 === ' ' || key0 === 'Spacebar' || lower0 === 'b' || lower0 === 'c';
             if (t && t.closest && t.closest('input, textarea, select, button, [contenteditable="true"]')) {
                 // 输入框 / 可编辑区一律让行（打字时不能触发快捷键）
                 if (t.closest('input, textarea, select, [contenteditable="true"]')) return;
                 // 书卷 / 章节网格本身就是按钮：焦点落在它们上面时仍允许方向键导航，
-                // 其余工具栏按钮只放行上述四个动作键。
-                if (!(gridMode && t.closest('.bible-reader-book-btn, .bible-reader-chapter-btn')) && !actionKey) return;
+                // 其余工具栏按钮只放行上述四个动作键与导航键（导航键先把焦点收回容器）。
+                const gridBtn = !!(gridMode && t.closest('.bible-reader-book-btn, .bible-reader-chapter-btn'));
+                if (!gridBtn && !actionKey) {
+                    if (!navKey) return;
+                    try {
+                        if (typeof t.blur === 'function') t.blur();
+                        if (typeof host.focus === 'function') host.focus({ preventScroll: true });
+                    } catch (err) { /* 忽略 */ }
+                }
             }
             if (t && t.closest && t.closest('.bible-inline-tooltip-host, .bible-inline-tooltip, .bible-projection-fullscreen, .bible-popup-menu, .modal-container')) return;
             if (self.hasBlockingOverlay()) return;
@@ -7244,6 +8093,27 @@ class BibleSearchView extends ItemView {
 
     keyboardNavEnabled() {
         return !(this.plugin && this.plugin.settings && this.plugin.settings.keyboardNavigation === false);
+    }
+
+    // Y 切换标签页后把键盘焦点交回视图容器——只处理「焦点已经落在不会处理按键的地方」：
+    // 一是 document.body（document 级 Y 键按完最常见），二是本视图里的标签页 / 工具栏按钮。
+    // 笔记正文、输入框、弹窗与其它面板一律不抢：那边打字时方向键必须归它们自己。
+    focusViewForKeyboardNav() {
+        if (!this.keyboardNavEnabled()) return;
+        const host = this.container;
+        if (!host || typeof host.focus !== 'function') return;
+        if (this.hasBlockingOverlay && this.hasBlockingOverlay()) return;
+        const ae = (typeof document !== 'undefined') ? document.activeElement : null;
+        const isBody = !ae || ae === document.body || ae === document.documentElement;
+        if (!isBody) {
+            const inside = (typeof host.contains === 'function' && host.contains(ae));
+            if (!inside) return;   // 焦点在别处（笔记 / 别的面板），完全不打扰
+            if (ae.closest && ae.closest('input, textarea, select, [contenteditable="true"]')) return;
+        }
+        try {
+            if (typeof host.setAttribute === 'function') host.setAttribute('tabindex', '-1');
+            host.focus({ preventScroll: true });
+        } catch (err) { /* 忽略 */ }
     }
 
     // 滚动搜索结果 / 经文阅读时，把上下键的选框跟到「当前显示的内容」上。
@@ -7713,6 +8583,9 @@ class BibleSearchView extends ItemView {
         this.syncCompareBtnState();
         this.updateTabBarCompact();
         this.refreshTabButtonsVisible();
+        // Y 是 document 级全局键，按完焦点通常还落在原来的位置上（body 或标签按钮）。
+        // 只在「焦点确实已经不在能干活的元素上」时把它交还视图容器，别的一概不抢。
+        this.focusViewForKeyboardNav();
     }
 
     getPrimaryVersion() {
@@ -8146,7 +9019,8 @@ class BibleSearchView extends ItemView {
             attr: { type: 'text', placeholder: '出处 / 关键词 / 注串出处，如：太1、太1-3、csj1:1、恩典、创1:26注2' }
         });
         const clearBtn = inputRow.createEl('button', { cls: 'bible-input-btn', text: '✕' });
-        const searchBtn = inputRow.createEl('button', { cls: 'bible-input-btn bible-search-btn', text: '🔍 查询' });
+        // 「查询」按钮已去掉：输入即检索（见 setupLiveSearch），按钮只是让人误以为必须点一次。
+        // 回车、检索范围 / 种类变化、清空都会立刻刷新结果。
 
         this.searchHint = fixedTop.createEl('div', {
             cls: 'bible-search-hint',
@@ -8242,7 +9116,7 @@ class BibleSearchView extends ItemView {
             this.keywords = [];
             if (this.resultsContainer) {
                 this.resultsContainer.empty();
-                this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容后点击查询' });
+                this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容' });
             }
             if (this.resultsCount) this.resultsCount.setText('');
             if (this.paginationEl) this.paginationEl.empty();
@@ -8338,9 +9212,8 @@ class BibleSearchView extends ItemView {
 
         this.searchScrollArea = this.searchPanel.createDiv({ cls: 'bible-search-scroll-area' });
         this.resultsContainer = this.searchScrollArea.createDiv({ cls: 'bible-results-list' });
-        this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容后点击查询' });
+        this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容' });
 
-        searchBtn.addEventListener('click', () => this.performSearch());
         this.searchInput.addEventListener('keydown', (e) => {
             // 补全下拉打开时，方向键 / Enter / Tab / Esc 先给它用；关闭后 Enter 恢复查询
             if (this.handleAbbrSuggestionKey(e)) return;
@@ -8675,13 +9548,14 @@ class BibleSearchView extends ItemView {
     updateFocusModeBtn() {
         if (!this.focusModeBtn) return;
         const on = this.activeTab === 'search' ? !!this.searchFocusMode : !!this.readerFocusMode;
-        const label = on ? '取消' : '专注';
-        if (this.focusModeBtn.textContent !== label) this.focusModeBtn.textContent = label;
-        // 明确的激活态：浅色 / 深色主题下都能看出当前在专注模式，退出入口不会「消失」
+        // 同对照按钮：图标按钮，状态只走 active 类与 title，不碰 textContent。
+        // 明确的激活态让「当前在专注模式」一眼可见，退出入口不会「消失」。
         try {
             if (this.focusModeBtn.classList && typeof this.focusModeBtn.classList.toggle === 'function')
                 this.focusModeBtn.classList.toggle('active', on);
             this.focusModeBtn.title = on ? '退出专注模式' : '进入专注模式';
+            try { if (this.focusModeBtn.setAttribute) this.focusModeBtn.setAttribute('aria-label', this.focusModeBtn.title); }
+            catch (e) { /* 忽略 */ }
             // 清掉可能存在的内联隐藏，可见性一律由 CSS 决定
             this.focusModeBtn.style.removeProperty('display');
             this.focusModeBtn.style.removeProperty('visibility');
@@ -8794,7 +9668,7 @@ class BibleSearchView extends ItemView {
             this.lastSearchQuery = '';
             if (this.resultsContainer) {
                 this.resultsContainer.empty();
-                this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容后点击查询' });
+                this.resultsContainer.createEl('div', { cls: 'bible-empty-state', text: '请输入检索内容' });
             }
             if (this.resultsCount) this.resultsCount.setText('');
             if (this.paginationEl) this.paginationEl.empty();
@@ -8964,11 +9838,15 @@ class BibleSearchView extends ItemView {
                     for (const s of sections) {
                         const row = contentEl.createDiv({ cls: 'bible-result-intro-row' });
                         row.createEl('span', { cls: 'bible-result-intro-label', text: String(s.label || '') + '：' });
-                        row.createEl('span', { cls: 'bible-result-intro-value', text: String(s.text || '') });
+                        // 正文里的经文出处可点：只弹经文弹窗，不选中这条候选
+                        this.fillItemLinkedText(row.createEl('span', { cls: 'bible-result-intro-value' }), String(s.text || ''), item);
                     }
                 } else {
-                    contentEl.setText(displayText);
+                    this.fillItemLinkedText(contentEl, displayText, item);
                 }
+            } else if (item.type === 'outline') {
+                // 纲目里的经文出处同样可点，点出处只弹经文、不选中
+                this.fillItemLinkedText(contentEl, displayText, item);
             } else if (nd && nd.m && nd.m.length) {
                 this.plugin.renderTextWithMarkers(contentEl, displayText, nd.m, (kind, label) => {
                     this.toggleVerseNotePanel(card, item, nd, kind, label, 'search');
@@ -9576,11 +10454,21 @@ class BibleSearchView extends ItemView {
         // 空列表时不覆盖已有内容：多半是按 Q/W/E 想切模式，空列表会把正在投影的内容清掉
         if (this.plugin.currentProjection) {
             if (selected.length === 0) this.plugin.currentProjection.setMode(mode);
-            else this.plugin.currentProjection.reloadResults(selected, mode);
+            else {
+                this.plugin.currentProjection.reloadResults(selected, mode);
+                void this.plugin.noteProjection(
+                    this.plugin.deriveProjectionQuery(selected, !!this.plugin.currentProjection.chapterPaged),
+                    selected, mode, { showSource: true, chapterPaged: !!this.plugin.currentProjection.chapterPaged });
+            }
             return;
         }
+        // 没选内容：本次会话投影过就恢复上次内容；重启后第一次打开仍是空白页
+        if (selected.length === 0) { this.plugin.openProjectionWithLast(mode, true); return; }
         const overlay = new BibleProjectionOverlay(this.app, this.plugin, selected, mode, true);
         overlay.open();
+        void this.plugin.noteProjection(
+            this.plugin.deriveProjectionQuery(selected, !!overlay.chapterPaged),
+            selected, mode, { showSource: true, chapterPaged: !!overlay.chapterPaged });
     }
 
     renderReader() {
@@ -9595,6 +10483,10 @@ class BibleSearchView extends ItemView {
         else if (this.readerState === 'content') {
             this.renderChapterContent();
         }
+        // 阅读位置变了：播放器上的「转播创 13」提示跟着换（面板没开时只是一次空跑）
+        try {
+            if (this.plugin && typeof this.plugin.refreshAudioReaderHint === 'function') this.plugin.refreshAudioReaderHint();
+        } catch (e) { /* 忽略 */ }
     }
 
     renderBookList() {
@@ -10177,11 +11069,36 @@ class BibleSearchView extends ItemView {
         // 若已有投影，直接复用并更新内容；空列表时只切模式，不清空正在投影的内容
         if (this.plugin.currentProjection) {
             if (selected.length === 0) this.plugin.currentProjection.setMode(mode);
-            else this.plugin.currentProjection.reloadResults(selected, mode);
+            else {
+                this.plugin.currentProjection.reloadResults(selected, mode);
+                void this.plugin.noteProjection(
+                    this.plugin.deriveProjectionQuery(selected, !!this.plugin.currentProjection.chapterPaged),
+                    selected, mode, { showSource: false, chapterPaged: !!this.plugin.currentProjection.chapterPaged });
+            }
             return;
         }
+        // 没选内容：恢复本次会话的上次投影内容（重启后首次则空白）
+        if (selected.length === 0) { this.plugin.openProjectionWithLast(mode, false); return; }
         const overlay = new BibleProjectionOverlay(this.app, this.plugin, selected, mode, false);
         overlay.open();
+        void this.plugin.noteProjection(
+            this.plugin.deriveProjectionQuery(selected, !!overlay.chapterPaged),
+            selected, mode, { showSource: false, chapterPaged: !!overlay.chapterPaged });
+    }
+
+    // 简介 / 纲目正文里的经文出处：识别为可点击引用（单击弹经文弹窗、双击跳转）。
+    // 引用自身会 stopPropagation，所以点出处不会顺带把这条候选选中。
+    fillItemLinkedText(el, text, item, keywords) {
+        const plugin = this.plugin;
+        if (plugin && typeof plugin.linkifyBibleRefs === 'function') {
+            try {
+                plugin.linkifyBibleRefs(el, String(text == null ? '' : text),
+                    { bookId: item && item.bookId, chapter: (item && item.chapter) || 1 }, keywords);
+                return el;
+            } catch (err) { /* 退回纯文本 */ }
+        }
+        el.setText(String(text == null ? '' : text));
+        return el;
     }
 
     renderReaderItemCard(container, item) {
@@ -10208,10 +11125,11 @@ class BibleSearchView extends ItemView {
                 for (const s of sections) {
                     const row = body.createDiv({ cls: 'bible-reader-intro-row' });
                     row.createEl('span', { cls: 'bible-reader-intro-label', text: String(s.label || '') + '：' });
-                    row.createEl('span', { cls: 'bible-reader-intro-value', text: String(s.text || '') });
+                    // 简介正文里的经文出处可点：只弹经文弹窗，不选中这条简介
+                    this.fillItemLinkedText(row.createEl('span', { cls: 'bible-reader-intro-value' }), String(s.text || ''), item);
                 }
             } else {
-                body.createDiv({ cls: 'bible-reader-intro-value', text: item.content || '' });
+                this.fillItemLinkedText(body.createDiv({ cls: 'bible-reader-intro-value' }), item.content || '', item);
             }
 
             card.addEventListener('click', (e) => {
@@ -10230,7 +11148,8 @@ class BibleSearchView extends ItemView {
 
             const textEl = contentRow.createDiv({ cls: 'bible-reader-verse-text' });
             textEl.style.cssText = 'flex:1;line-height:1.7;';
-            textEl.setText('> ' + item.content);
+            // 纲目里的经文出处可点：点出处只弹经文弹窗，不选中这一行纲目
+            this.fillItemLinkedText(textEl, '> ' + item.content, item);
 
             card.addEventListener('click', (e) => {
                 if (e.target === card || e.target === textEl) this.toggleReaderItemSelection(item);
@@ -10879,6 +11798,2160 @@ class BibleSearchView extends ItemView {
     }
 }
 
+// ==================== 三旧一新：每日读经进度 ====================
+// 独立标签页视图：顶部固定导航（前一天 / 当天 / 后一天 / 纲目 / 日期 / 播放条），
+// 正文按「新约 → 旧约」列出当天范围；对照、注解、串珠全部跟随插件设置。
+const BIBLE_DAILY_VIEW_TYPE = 'bible-daily-view';
+
+// 数据来源：用户提供的《读经一年一遍_每天进度范围》，一行一天，格式：
+//   一月一日新约太一1～25，旧约创一1～二25
+// 366 天全覆盖（含 2/29）。这里保留原文、运行时再解析，而不是预生成 JSON：
+// 核对 / 修正范围时可以直接对着原文看，不用在两份数据之间来回对号。
+const DAILY_READING_TEXT = `
+一月一日新约太一1～25，旧约创一1～二25
+一月二日新约太二1～23，旧约创三1～五32
+一月三日新约太三1～17，旧约创六1～八22
+一月四日新约太四1～25，旧约创九1～十一9
+一月五日新约太五1～16，旧约创十一10～十三18
+一月六日新约太五17～48，旧约创十四1～十六16
+一月七日新约太六1～34，旧约创十七1～十八33
+一月八日新约太七1～29，旧约创十九1～二十18
+一月九日新约太八1～17，旧约创二一1～二三20
+一月十日新约太八18～九8，旧约创二四1～二十五18
+一月十一日新约太九9～34，旧约创二五19～二六35
+一月十二日新约太九35～十15，旧约创二七1～二八22
+一月十三日新约太十16～十一1，旧约创二九1～三一16
+一月十四日新约太十一2～30，旧约创三一17～三二21
+一月十五日新约太十二1～21，旧约创三二22～三四31
+一月十六日新约太十二22～50，旧约创三五1～三六43
+一月十七日新约太十三1～30，旧约创三七1～三十八30
+一月十八日新约太十三31～52，旧约创三九1～四一39
+一月十九日新约太十三53～十四13，旧约创四一40～四二38
+一月二十日新约太十四14～36，旧约创四三1～四四34
+一月二一日新约太十五1～28，旧约创四五1～四七27
+一月二二日新约太十五29～十六12，旧约创四七28～五十26
+一月二三日新约太十六13～27，旧约出一1～三22
+一月二四日新约太十六28～十七27，旧约出四1～七7
+一月二五日新约太十八1～35，旧约出七8～八19
+一月二六日新约太十九1～15，旧约出八20～十29
+一月二七日新约太十九16～二十16，旧约出十一1～十三22
+一月二八日新约太二十17～二一11，旧约出十四1～十五21
+一月二九日新约太二一12～22，旧约出十五22～十八27
+一月三十日新约太二一23～46，旧约出十九1～二一6
+一月三一日新约太二二1～14，旧约出二一7～二三33
+二月一日新约太二二15～46，旧约出二四1～二六30
+二月二日新约太二三1～39，旧约出二六31～二八43
+二月三日新约太二四1～31，旧约出二九1～三十38
+二月四日新约太二四32～51，旧约出三一1～三三23
+二月五日新约太二五1～30，旧约出三四1～三六7
+二月六日新约太二五31～46，旧约出三六8～三八8
+二月七日新约太二六1～30，旧约出三八9～三九43
+二月八日新约太二六31～56，旧约出四十1～38
+二月九日新约太二六57～75，旧约利一1～三17
+二月十日新约太二七1～26，旧约利四1～六7
+二月十一日新约太二七27～56，旧约利六8～七38
+二月十二日新约太二七57～66，旧约利八1～十20
+二月十三日新约太二八1～20，旧约利十一1～十二8
+二月十四日新约可一1～13，旧约利十三1～59
+二月十五日新约可一14～22，旧约利十四1～57
+二月十六日新约可一23～45，旧约利十五1～十七16
+二月十七日新约可二1～三6，旧约利十八1～二十27
+二月十八日新约可三7～35，旧约利二一1～二二33
+二月十九日新约可四1～20，旧约利二三1～二四23
+二月二十日新约可四21～34，旧约利二五1～二六13
+二月二一日新约可四35～五20，旧约利二六14～二七34
+二月二二日新约可五21～43，旧约民一1～二34
+二月二三日新约可六1～29，旧约民三1～四49
+二月二四日新约可六30～56，旧约民五1～六27
+二月二五日新约可七1～30，旧约民七1～89
+二月二六日新约可七31～八26，旧约民八1～十10
+二月二七日新约可八27～九13，旧约民十11～十二16
+二月二八日新约可九14～32，旧约民十三1～十四45
+二月二九日新约可九14～32，旧约民十三1～十四45
+三月一日新约可九33～50，旧约民十五1～十六50
+三月二日新约可十1～31，旧约民十七1～十九22
+三月三日新约可十32～52，旧约民二十1～二一20
+三月四日新约可十一1～26，旧约民二一21～二二41
+三月五日新约可十一27～十二17，旧约民二三1～二五8
+三月六日新约可十二18～44，旧约民二六1～65
+三月七日新约可十三1～37，旧约民二七1～二八31
+三月八日新约可十四1～26，旧约民二九1～三十16
+三月九日新约可十四27～42，旧约民三一1～54
+三月十日新约可十四43～52，旧约民三二1～42
+三月十一日新约可十四53～72，旧约民三三1～三四29
+三月十二日新约可十五1～15，旧约民三五1～三六13
+三月十三日新约可十五16～47，旧约申一1～二23
+三月十四日新约可十六1～20，旧约申二24～四43
+三月十五日新约路一1～25，旧约申四44～七8
+三月十六日新约路一26～56，旧约申七9～十11
+三月十七日新约路一57～80，旧约申十12～十一32
+三月十八日新约路二1～20，旧约申十二1～十三18
+三月十九日新约路二21～52，旧约申十四1～十六21
+三月二十日新约路三1～22，旧约申十七1～十九21
+三月二一日新约路三23～38，旧约申二一1～二二12
+三月二二日新约路四1～13，旧约申二二13～二四22
+三月二三日新约路四14～30，旧约申二五1～二八14
+三月二四日新约路四31～44，旧约申二八15～二九17
+三月二五日新约路五1～16，旧约申二九18～三一29
+三月二六日新约路五17～39，旧约申三一30～三二47
+三月二七日新约路六1～11，旧约申三二48～三四12
+三月二八日新约路六12～49，旧约书一1～二24
+三月二九日新约路七1～17，旧约书三1～四24
+三月三十日新约路七18～50，旧约书五1～六27
+三月三一日新约路八1～25，旧约书七1～八35
+四月一日新约路八26～56，旧约书九1～十27
+四月二日新约路九1～17，旧约书十28～十二24
+四月三日新约路九18～36，旧约书十三1～十四5
+四月四日新约路九37～50，旧约书十四6～十五63
+四月五日新约路九51～62，旧约书十六1～十八28
+四月六日新约路十1～24，旧约书十九1～二十9
+四月七日新约路十25～37，旧约书二一1～二二34
+四月八日新约路十38～十一13，旧约书二三1～二四33
+四月九日新约路十一14～32，旧约士一1～三6
+四月十日新约路十一33～54，旧约士三7～五31
+四月十一日新约路十二1～34，旧约士六1～八32
+四月十二日新约路十二35～48，旧约士八33～十5
+四月十三日新约路十二49～59，旧约士十6～十二15
+四月十四日新约路十三1～21，旧约士十三1～十六31
+四月十五日新约路十三22～35，旧约士十七1～十八31
+四月十六日新约路十四1～14，旧约士十九1～30
+四月十七日新约路十四15～35，旧约士二十1～二一25
+四月十八日新约路十五1～32，旧约得一1～二23
+四月十九日新约路十六1～18，旧约得三1～四22
+四月二十日新约路十六19～十七10，旧约撒上一1～二26
+四月二一日新约路十七11～37，旧约撒上二27～三21
+四月二二日新约路十八1～30，旧约撒上四1～七17
+四月二三日新约路十八31～43，旧约撒上八1～十27
+四月二四日新约路十九1～27，旧约撒上十一1～十二25
+四月二五日新约路十九28～48，旧约撒上十三1～十四52
+四月二六日新约路二十1～19，旧约撒上十五1～35
+四月二七日新约路二十20～二一4，旧约撒上十六1～十七58
+四月二八日新约路二一5～36，旧约撒上十八1～二十42
+四月二九日新约路二一37～二二23，旧约撒上二一1～二三28
+四月三十日新约路二二24～46，旧约撒上二三29～二六25
+五月一日新约路二二47～71，旧约撒上二七1～三一13
+五月二日新约路二三1～25，旧约撒下一1～四12
+五月三日新约路二三26～56，旧约撒下五1～七29
+五月四日新约路二四1～12，旧约撒下八1～十19
+五月五日新约路二四13～35，旧约撒下十一1～十二31
+五月六日新约路二四36～53，旧约撒下十三1～十四33
+五月七日新约约一1～18，旧约撒下十五1～十九8上
+五月八日新约约一19～51，旧约撒下十九8下～二十26
+五月九日新约约二1～22，旧约撒下二一1～二三7
+五月十日新约约二23～三13，旧约撒下二三8～二四25
+五月十一日新约约三14～36，旧约王上一1～53
+五月十二日新约约四1～14，旧约王上二1～46
+五月十三日新约约四15～26，旧约王上三1～四19
+五月十四日新约约四27～54，旧约王上四20～六38
+五月十五日新约约五1～16，旧约王上七1～51
+五月十六日新约约五17～47，旧约王上八1～66
+五月十七日新约约六1～21，旧约王上九1～十29
+五月十八日新约约六22～31，旧约王上十一1～43上
+五月十九日新约约六32～71，旧约王上十一43下～十三32
+五月二十日新约约七1～36，旧约王上十三33～十四31上
+五月二一日新约约七37～52，旧约王上十四31下～十六34
+五月二二日新约约七53～八36，旧约王上十七1～十八16
+五月二三日新约约八37～59，旧约王上十八17～十九21
+五月二四日新约约九1～13，旧约王上二十1～二一29
+五月二五日新约约九14～41，旧约王上二二1～50
+五月二六日新约约十1～21，旧约王上二二51～王下二18
+五月二七日新约约十22～42，旧约王下二19～四17
+五月二八日新约约十一1～40，旧约王下四18～六7
+五月二九日新约约十一41～57，旧约王下六8～八29
+五月三十日新约约十二1～36上，旧约王下九1～十36
+五月三一日新约约十二36下～50，旧约王下十一1～十二21
+六月一日新约约十三1～17，旧约王下十三1～十五22上
+六月二日新约约十三18～38，旧约王下十五22下～十七41
+六月三日新约约十四1～31，旧约王下十八1～十九37
+六月四日新约约十五1～十六4，旧约王下二十1～二一26上
+六月五日新约约十六5～33，旧约王下二一26下～二三30上
+六月六日新约约十七1～26，旧约王下二三30下～二五26
+六月七日新约约十八1～38上，旧约代上一1～二2
+六月八日新约约十八38下～十九16，旧约代上二3～四23
+六月九日新约约十九17～42，旧约代上四24～五26
+六月十日新约约二十1～31，旧约代上六1～81
+六月十一日新约约二一1～25，旧约代上七1～八40
+六月十二日新约徒一1～14，旧约代上九1～十14
+六月十三日新约徒一15～26，旧约代上十一1～十二40
+六月十四日新约徒二1～13，旧约代上十三1～十六43
+六月十五日新约徒二14～47，旧约代上十七1～十八17
+六月十六日新约徒三1～26，旧约代上十九1～二一30
+六月十七日新约徒四1～12，旧约代上二二1～二四31
+六月十八日新约徒四13～31，旧约代上二五1～二六32
+六月十九日新约徒四32～五11，旧约代上二七1～34
+六月二十日新约徒五12～32，旧约代上二八1～二九30
+六月二一日新约徒五33～42，旧约代下一1～五1
+六月二二日新约徒六1～七1，旧约代下五2～七10
+六月二三日新约徒七2～53，旧约代下七11～九31上
+六月二四日新约徒七54～八3，旧约代下九31下～十二16上
+六月二五日新约徒八4～25，旧约代下十二16下～十六14
+六月二六日新约徒八26～40，旧约代下十七1～二一1上
+六月二七日新约徒九1～30，旧约代下二一1下～二二9
+六月二八日新约徒九31～43，旧约代下二二10～二四27上
+六月二九日新约徒十1～16，旧约代下二四27下～二五28
+六月三十日新约徒十17～48，旧约代下二六1～二八27上
+七月一日新约徒十一1～18，旧约代下二八27下～三一1
+七月二日新约徒十一19～30，旧约代下三一2～三二33上
+七月三日新约徒十二1～24，旧约代下三二33下～三五27
+七月四日新约徒十二25～十三12，旧约代下三六1～23
+七月五日新约徒十三13～52，旧约拉一1～二70
+七月六日新约徒十四1～28，旧约拉三1～四24
+七月七日新约徒十五1～34，旧约拉五1～六22
+七月八日新约徒十五35～十六18，旧约拉七1～八36
+七月九日新约徒十六19～40，旧约拉九1～十44
+七月十日新约徒十七1～34，旧约尼一1～三32
+七月十一日新约徒十八1～22，旧约尼四1～七4
+七月十二日新约徒十八23～十九20，旧约尼七5～八18
+七月十三日新约徒十九21～41，旧约尼九1～十39
+七月十四日新约徒二十1～12，旧约尼十一1～十二26
+七月十五日新约徒二十13～38，旧约尼十二27～十三31
+七月十六日新约徒二一1～17，旧约斯一1～二23
+七月十七日新约徒二一18～39，旧约斯三1～八2
+七月十八日新约徒二一40～二二29，旧约斯八3～十3
+七月十九日新约徒二二30～二三15，旧约伯一1～三26
+七月二十日新约徒二三16～35，旧约伯四1～七21
+七月二一日新约徒二四1～27，旧约伯八1～十一20
+七月二二日新约徒二五1～27，旧约伯十二1～十四22
+七月二三日新约徒二六1～32，旧约伯十五1～十七16
+七月二四日新约徒二七1～26，旧约伯十八1～二十29
+七月二五日新约徒二七27～44，旧约伯二一1～二二30
+七月二六日新约徒二八1～10，旧约伯二三1～二五6
+七月二七日新约徒二八11～31，旧约伯二六1～二九25
+七月二八日新约罗一1～17，旧约伯三十1～三二1
+七月二九日新约罗一18～32，旧约伯三二2～三四37
+七月三十日新约罗二1～16，旧约伯三五1～三七24
+七月三一日新约罗二17～三8，旧约伯三八1～四十14
+八月一日新约罗三9～20，旧约伯四十15～四二17
+八月二日新约罗三21～四25，旧约诗一～六篇
+八月三日新约罗五1～11，旧约诗七～十篇
+八月四日新约罗五12～21，旧约诗十一～十七篇
+八月五日新约罗六1～23，旧约诗十八～二十篇
+八月六日新约罗七1～25，旧约诗二十一～二十五篇
+八月七日新约罗八1～13，旧约诗二十六～三十篇
+八月八日新约罗八14～39，旧约诗三十一～三十三篇
+八月九日新约罗九1～18，旧约诗三十四～三十六篇
+八月十日新约罗九19～十3，旧约诗三十七～三十八篇
+八月十一日新约罗十4～21，旧约诗三十九～四十一篇
+八月十二日新约罗十一1～10，旧约诗四十二～四十五篇
+八月十三日新约罗十一11～36，旧约诗四十六～四十九篇
+八月十四日新约罗十二1～21，旧约诗五十～五十二篇
+八月十五日新约罗十三1～14，旧约诗五十三～五十八篇
+八月十六日新约罗十四1～十五13，旧约诗五十九～六十四篇
+八月十七日新约罗十五14～十六27，旧约诗六十五～六十八篇
+八月十八日新约林前一1～9，旧约诗六十九～七十二篇
+八月十九日新约林前一10～31，旧约诗七十三～七十七篇
+八月二十日新约林前二1～16，旧约诗七十八～七十九篇
+八月二一日新约林前三1～23，旧约诗八十～八十九篇
+八月二二日新约林前四1～21，旧约诗九十～九十七篇
+八月二三日新约林前五1～13，旧约诗九十八～一○二篇
+八月二四日新约林前六1～20，旧约诗一○三～一○六篇
+八月二五日新约林前七1～24，旧约诗一○七～一一○篇
+八月二六日新约林前七25～40，旧约诗一一一～一一八篇
+八月二七日新约林前八1～13，旧约诗一一九1～88
+八月二八日新约林前九1～27，旧约诗一一九89～176
+八月二九日新约林前十1～十一1，旧约诗一二○～一三一篇
+八月三十日新约林前十一2～34，旧约诗一三二～一三四篇
+八月三一日新约林前十二1～31，旧约诗一三五～一三九篇
+九月一日新约林前十三1～31，旧约诗一四○～一四四篇
+九月二日新约林前十四1～25，旧约诗一四五～一五○篇
+九月三日新约林前十四26～40，旧约箴一1～二22
+九月四日新约林前十五1～28，旧约箴三1～五23
+九月五日新约林前十五29～58，旧约箴六1～七27
+九月六日新约林前十六1～24，旧约箴八1～九18
+九月七日新约林后一1～二11，旧约箴十1～十一31
+九月八日新约林后二12～三11，旧约箴十二1～十三25
+九月九日新约林后三12～四6，旧约箴十四1～十五33
+九月十日新约林后四7～五15，旧约箴十六1～十七28
+九月十一日新约林后五16～六13，旧约箴十八1～十九29
+九月十二日新约林后六14～七16，旧约箴二十1～二一31
+九月十三日新约林后八1～24，旧约箴二二1～二三35
+九月十四日新约林后九1～15，旧约箴二四1～34
+九月十五日新约林后十1～18，旧约箴二五1～二六28
+九月十六日新约林后十一1～33，旧约箴二七1～二八28
+九月十七日新约林后十二1～18，旧约箴二九1～27
+九月十八日新约林后十二19～十三14，旧约箴三十1～三一31
+九月十九日新约加一1～二10，旧约传一1～三15
+九月二十日新约加二11～21，旧约传三16～五7
+九月二一日新约加三1～29，旧约传五8～六12
+九月二二日新约加四1～31，旧约传七1～十一8
+九月二三日新约加五1～15，旧约传十一9～十二14
+九月二四日新约加五16～六18，旧约歌一1～四15
+九月二五日新约弗一1～23，旧约歌四16～八14
+九月二六日新约弗二1～22，旧约赛一1～五30
+九月二七日新约弗三1～21，旧约赛六1～九7
+九月二八日新约弗四1～16，旧约赛九8～十二6
+九月二九日新约弗四17～五21，旧约赛十三1～十六14
+九月三十日新约弗五22～六24，旧约赛十七1～二十6
+十月一日新约腓一1～18，旧约赛二一1～二三18
+十月二日新约腓一19～30，旧约赛二四1～二七13
+十月三日新约腓二1～30，旧约赛二八1～二九24
+十月四日新约腓三1～21，旧约赛三十1～三一9
+十月五日新约腓四1～23，旧约赛三二1～三五10
+十月六日新约西一1～14，旧约赛三六1～三八22
+十月七日新约西一15～29，旧约赛三九1～四十31
+十月八日新约西二1～23，旧约赛四一1～四二25
+十月九日新约西三1～11，旧约赛四三1～四五25
+十月十日新约西三12～四6，旧约赛四六1～四九26
+十月十一日新约西四7～18，旧约赛五十1～五二12
+十月十二日新约帖前一1～10，旧约赛五二13～五五13
+十月十三日新约帖前二1～20，旧约赛五六1～五八14
+十月十四日新约帖前三1～13，旧约赛五九1～六一3
+十月十五日新约帖前四1～18，旧约赛六一4～六三19
+十月十六日新约帖前五1～28，旧约赛六四1～六六24
+十月十七日新约帖后一1～12，旧约耶一1～四2
+十月十八日新约帖后二1～三5，旧约耶四3～六30
+十月十九日新约帖后三6～三18，旧约耶七1～八22
+十月二十日新约提前一1～20，旧约耶九1～十25
+十月二一日新约提前二1～15，旧约耶十一1～十三27
+十月二二日新约提前三1～16，旧约耶十四1～十五9
+十月二三日新约提前四1～16，旧约耶十五10～十七27
+十月二四日新约提前五1～25，旧约耶十八1～二十18
+十月二五日新约提前六1～21，旧约耶二一1～二三8
+十月二六日新约提后一1～18，旧约耶二三9～二四10
+十月二七日新约提后二1～26，旧约耶二五1～二六24
+十月二八日新约提后三1～17，旧约耶二七1～二八17
+十月二九日新约提后四1～22，旧约耶二九1～32
+十月三十日新约多一1～16，旧约耶三十1～三一40
+十月三一日新约多二1～15，旧约耶三二1～三三26
+十一月一日新约多三1～15，旧约耶三四1～三五19
+十一月二日新约门1～25，旧约耶三六1～三八28
+十一月三日新约来一1～14，旧约耶三九1～18
+十一月四日新约来二1～18，旧约耶四十1～四一18
+十一月五日新约来三1～四13，旧约耶四二1～四四30
+十一月六日新约来四14～五10，旧约耶四五1～四七7
+十一月七日新约来五11～六20，旧约耶四八1～四九6
+十一月八日新约来七1～28，旧约耶四九7～39
+十一月九日新约来八1～13，旧约耶五十1～五一64
+十一月十日新约来九1～十18，旧约耶五二1～34
+十一月十一日新约来十19～39，旧约哀一1～二22
+十一月十二日新约来十一1～40，旧约哀三1～66
+十一月十三日新约来十二1～29，旧约哀四1～五22
+十一月十四日新约来十三1～25，旧约结一1～三27
+十一月十五日新约雅一1～12，旧约结四1～七27
+十一月十六日新约雅一13～27，旧约结八1～十一25
+十一月十七日新约雅二1～13，旧约结十二1～十四23
+十一月十八日新约雅二14～26，旧约结十五1～十六63
+十一月十九日新约雅三1～18，旧约结十七1～十九14
+十一月二十日新约雅四1～五6，旧约结二十1～44
+十一月二一日新约雅五7～20，旧约结二十45～二二31
+十一月二二日新约彼前一1～12，旧约结二三1～二四27
+十一月二三日新约彼前一13～25，旧约结二五1～二八19
+十一月二四日新约彼前二1～10，旧约结二八20～三二32
+十一月二五日新约彼前二11～25，旧约结三三1～三四10
+十一月二六日新约彼前三1～13，旧约结三四11～三五15
+十一月二七日新约彼前三14～四19，旧约结三六1～38
+十一月二八日新约彼前五1～14，旧约结三七1～28
+十一月二九日新约彼后一1～11，旧约结三八1～三九29
+十一月三十日新约彼后一12～21，旧约结四十1～四一26
+十二月一日新约彼后二1～22，旧约结四二1～四三27
+十二月二日新约彼后三1～18，旧约结四四1～四五8
+十二月三日新约约壹一1～二11，旧约结四五9～四六24
+十二月四日新约约壹二12～27，旧约结四七1～四八35
+十二月五日新约约壹二28～三10上，旧约但一1～21
+十二月六日新约约壹三10下～24，旧约但二1～49
+十二月七日新约约壹四1～五3，旧约但三1～四37
+十二月八日新约约壹五4～21，旧约但五1～六28
+十二月九日新约约贰1～13，旧约但七1～八27
+十二月十日新约约叁1～14，旧约但九1～十一1
+十二月十一日新约犹1～25，旧约但十一2～十二13
+十二月十二日新约启一1～20，旧约何一1～三5
+十二月十三日新约启二1～29，旧约何四1～七16
+十二月十四日新约启三1～22，旧约何八1～十15
+十二月十五日新约启四1～五14，旧约何十一1～十四9
+十二月十六日新约启六1～17，旧约珥一1～三21
+十二月十七日新约启七1～17，旧约摩一1～二16
+十二月十八日新约启八1～12，旧约摩三1～五27
+十二月十九日新约启八13～九12，旧约摩六1～九15
+十二月二十日新约启十1～11，旧约俄1～21
+十二月二一日新约启十一1～19，旧约拿一1～四11
+十二月二二日新约启十二1～18，旧约弥一1～五15
+十二月二三日新约启十三1～18，旧约弥六1～七20
+十二月二四日新约启十四1～20，旧约鸿一1～三19
+十二月二五日新约启十五1～十六21，旧约哈一1～三19
+十二月二六日新约启十七1～18，旧约番一1～三20
+十二月二七日新约启十八1～24，旧约该一1～二23
+十二月二八日新约启十九1～21，旧约亚一1～六8
+十二月二九日新约启二十1～15，旧约亚六9～九17
+十二月三十日新约启二一1～27，旧约亚十1～十四21
+十二月三一日新约启二二1～21，旧约玛一1～四6
+`;
+
+const DAILY_CN_NUM = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '○': 0, '〇': 0, '零': 0 };
+const DAILY_WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const DAILY_CAL_WEEK_HEAD = ['日', '一', '二', '三', '四', '五', '六'];
+// 三旧一新正文字号：默认 17px（原来 15px 偏小），可导航栏的「字」按钮现场调，
+// 调完写回设置，下次打开还是这个大小。
+const DAILY_FONT_DEFAULT = 17;
+const DAILY_FONT_MIN = 12;
+const DAILY_FONT_MAX = 30;
+function dailyFontSizeOf(settings) {
+    const v = Number(settings && settings.dailyFontSize);
+    if (!Number.isFinite(v) || v <= 0) return DAILY_FONT_DEFAULT;
+    return Math.max(DAILY_FONT_MIN, Math.min(DAILY_FONT_MAX, Math.round(v)));
+}
+
+// 对照版背景框：默认开启（没写过这个设置的老用户也当开）。
+// 关掉后对照经文不再套一层底色 + 左侧竖线，直接接在主版本正文下面、左边缘对齐。
+function dailyCompareBoxOn(settings) {
+    return !(settings && settings.dailyCompareBox === false);
+}
+
+// 中文数字 → 阿拉伯数字。进度文档里两种写法混用，必须都认：
+//   二十三 → 23（有「十」按位计）、二一 → 21（没有「十」就是逐位写）、一○二 → 102（○ 当 0）
+function dailyCnToNumber(raw) {
+    const s = String(raw == null ? '' : raw).replace(/〇/g, '○').replace(/零/g, '○');
+    if (!s) return NaN;
+    const ten = s.indexOf('十');
+    if (ten >= 0) {
+        const head = s.slice(0, ten);
+        const tail = s.slice(ten + 1);
+        const tens = head ? (DAILY_CN_NUM[head] || 0) : 1;
+        const ones = tail ? (DAILY_CN_NUM[tail] || 0) : 0;
+        return tens * 10 + ones;
+    }
+    let n = 0;
+    for (const ch of s) {
+        const d = DAILY_CN_NUM[ch];
+        if (d == null) return NaN;
+        n = n * 10 + d;
+    }
+    return n;
+}
+
+let _dailyBookShorts = null;
+// 书卷简称按长度倒序匹配：先试「帖前 / 约壹」，再退回「约」，否则约壹 / 约贰 / 约叁会被错认成约翰福音
+function dailyBookShorts() {
+    if (!_dailyBookShorts) {
+        _dailyBookShorts = BIBLE_BOOKS.slice().sort((a, b) => b.shortName.length - a.shortName.length);
+    }
+    return _dailyBookShorts;
+}
+
+// 解析一侧范围，如「太十三53～十四13」「诗一～六篇」「门1～25」「约十二36下～50」。
+// 规则：章用中文数字、节用阿拉伯数字；「上 / 下」只表示半节，显示时按整节处理；
+// 没有章号又只有数字（门 / 犹 / 俄 / 约贰 / 约叁这些单章书）按「第 1 章第 N 节」算。
+function parseDailyReadingSide(raw) {
+    let side = String(raw == null ? '' : raw).replace(/\s+/g, '');
+    if (!side) return null;
+    const isPsalm = side.endsWith('篇');
+    if (isPsalm) side = side.slice(0, -1);
+    let book = null;
+    for (const b of dailyBookShorts()) {
+        if (side.indexOf(b.shortName) === 0) { book = b; break; }
+    }
+    if (!book) return null;
+    const rest = side.slice(book.shortName.length);
+    const at = rest.indexOf('～');
+    if (at < 0) return null;
+    const left = rest.slice(0, at).replace(/[上下]/g, '');
+    const right = rest.slice(at + 1).replace(/[上下]/g, '');
+    const readPart = (text, defaultChapter) => {
+        let chapter = defaultChapter;
+        let tail = text;
+        const m = /^([一二三四五六七八九十○〇零]+)([\s\S]*)$/.exec(text);
+        if (m) { chapter = dailyCnToNumber(m[1]); tail = m[2]; }
+        const v = /^(\d+)$/.exec(tail);
+        return { chapter: chapter, verse: v ? parseInt(v[1], 10) : null };
+    };
+    const a = readPart(left, 1);
+    const b = readPart(right, a.chapter);
+    if (!Number.isFinite(a.chapter) || !Number.isFinite(b.chapter)) return null;
+    if (a.chapter < 1 || b.chapter < 1) return null;
+    return {
+        bookId: book.id, shortName: book.shortName, fullName: book.fullName,
+        chapter: a.chapter, verse: a.verse,
+        endChapter: b.chapter, endVerse: b.verse
+    };
+}
+
+// 解析一行：返回 { month, day, nt, ot }；格式不对返回 null（宁可少一天，也不猜）
+function parseDailyReadingLine(line) {
+    const s = String(line == null ? '' : line).replace(/\s+/g, '');
+    if (!s) return null;
+    const m = /^([一二三四五六七八九十]+)月([一二三四五六七八九十]+)日新约(.+?)，旧约(.+)$/.exec(s);
+    if (!m) return null;
+    const month = dailyCnToNumber(m[1]);
+    const day = dailyCnToNumber(m[2]);
+    const nt = parseDailyReadingSide(m[3]);
+    const ot = parseDailyReadingSide(m[4]);
+    if (!month || !day || !nt || !ot) return null;
+    return { month: month, day: day, nt: nt, ot: ot };
+}
+
+let _dailyReadingIndex = null;
+// 'M-D' → 当天范围。懒解析一次并缓存：366 行只跑一遍，之后全是查表。
+function dailyReadingIndex() {
+    if (_dailyReadingIndex) return _dailyReadingIndex;
+    const map = new Map();
+    for (const line of DAILY_READING_TEXT.split('\n')) {
+        const parsed = parseDailyReadingLine(line);
+        if (parsed) map.set(parsed.month + '-' + parsed.day, parsed);
+    }
+    _dailyReadingIndex = map;
+    return map;
+}
+
+function dailyReadingOfDate(date) {
+    if (!date || typeof date.getMonth !== 'function') return null;
+    return dailyReadingIndex().get((date.getMonth() + 1) + '-' + date.getDate()) || null;
+}
+
+function dailyStartOfDay(date) {
+    const d = date || new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function dailyAddDays(date, days) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function dailyDateKey(date) {
+    return date.getFullYear() + '-' + (date.getMonth() + 1) + '-' + date.getDate();
+}
+
+function dailyFormatDate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return y + '/' + m + '/' + d + ' ' + DAILY_WEEKDAY_NAMES[date.getDay()];
+}
+
+// MMDD.mp3 → 'MMDD'；不是这个形式或月份 / 日期越界返回 null。
+// 索引构建与设置页的「识别统计」共用这一处，两边口径不会分叉。
+function dailyMp3KeyOf(name) {
+    const m = /^(\d{2})(\d{2})\.mp3$/i.exec(String(name == null ? '' : name));
+    if (!m) return null;
+    const month = Number(m[1]);
+    const day = Number(m[2]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return m[1] + m[2];
+}
+
+function dailyMp3Name(date) {
+    return String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0') + '.mp3';
+}
+
+function dailyFormatDuration(sec) {
+    const total = Math.max(0, Math.floor(Number(sec) || 0));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    if (m >= 60) {
+        return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+    return m + ':' + String(s).padStart(2, '0');
+}
+
+// ==================== 圣经音频（整章 MP3） ====================
+// 一个文件 = 一章，文件名 = 书卷拼音 + 章号，如 圣经MP3/chuangshiji01.mp3（创世记 1 章）、
+// shipian150.mp3（诗篇 150 篇）。各位宽不统一（50 章的创世记用 2 位、150 篇的诗篇用 3 位），
+// 所以只要求「末尾是数字」，章号按数字解析后再用 BIBLE_BOOKS 的 maxChapters 校验，
+// 这样 三旧一新 的 0101.mp3（没有书卷字母）不会被误认成圣经音频。
+const BIBLE_AUDIO_SLUGS = {
+    1: 'chuangshiji', 2: 'chuaijiji', 3: 'liweiji', 4: 'minshuji', 5: 'shenmingji',
+    6: 'yueshuyaji', 7: 'shishiji', 8: 'ludeji', 9: 'samuerjishang', 10: 'samuerjixia',
+    11: 'liewangjishang', 12: 'liewangjixia', 13: 'lidaizhishang', 14: 'lidaizhixia',
+    15: 'yisilaji', 16: 'niximiji', 17: 'yisitieji', 18: 'yueboji', 19: 'shipian',
+    20: 'zhenyan', 21: 'chuandaoshu', 22: 'yage', 23: 'yisaiyashu', 24: 'yelimishu',
+    25: 'yelimiaige', 26: 'yixijieshu', 27: 'danyilishu', 28: 'hexiashu', 29: 'yueershu',
+    30: 'amosishu', 31: 'ebadiyashu', 32: 'yuenashu', 33: 'mijiashu', 34: 'nahongshu',
+    35: 'habagushu', 36: 'xifanyashu', 37: 'hagaishu', 38: 'sajialiyashu', 39: 'malajishu',
+    40: 'mataifuyin', 41: 'makefuyin', 42: 'lujiafuyin', 43: 'yuehanfuyin',
+    44: 'shituxingzhuan', 45: 'luomashu', 46: 'gelinduoqianshu', 47: 'gelinduohoushu',
+    48: 'jialataishu', 49: 'yifusuoshu', 50: 'feilibishu', 51: 'geluoxishu',
+    52: 'tiesaluonijiaqianshu', 53: 'tiesaluonijiahoushu', 54: 'timotaiqianshu',
+    55: 'timotaihoushu', 56: 'tiduoshu', 57: 'feilimenshu', 58: 'xibolaishu',
+    59: 'yageshu', 60: 'bideqianshu', 61: 'bidehoushu', 62: 'yuehanyishu',
+    63: 'yuehanershu', 64: 'yuehansanshu', 65: 'youdashu', 66: 'qishilu'
+};
+
+// 播放模式：单曲循环 / 列表顺序 / 列表循环 / 全书顺序 / 全书循环
+const BIBLE_AUDIO_MODES = ['one', 'list', 'listLoop', 'bookSeq', 'bookLoop'];
+const BIBLE_AUDIO_MODE_LABELS = {
+    one: '单曲循环', list: '列表顺序', listLoop: '列表循环', bookSeq: '全书顺序', bookLoop: '全书循环'
+};
+const BIBLE_AUDIO_MODE_ICONS = {
+    one: 'repeat-1', list: 'list-music', listLoop: 'repeat', bookSeq: 'book-open', bookLoop: 'library'
+};
+// 播放器副标题：这一套整章 MP3 的版本名（与 Hymns 播放器显示「大本诗歌」同一个位置）
+const BIBLE_AUDIO_SUBTITLE = '原注版';
+
+function bibleAudioModeOf(value) {
+    return BIBLE_AUDIO_MODES.indexOf(value) >= 0 ? value : 'list';
+}
+
+// 拼音 / 中文书名 → 书卷号。中文全名与简称都收，方便自己改名成 创世记01.mp3 也能认。
+let _bibleAudioNameMap = null;
+function bibleAudioBookNameMap() {
+    if (_bibleAudioNameMap) return _bibleAudioNameMap;
+    const map = new Map();
+    for (const b of BIBLE_BOOKS) {
+        const slug = BIBLE_AUDIO_SLUGS[b.id];
+        if (slug) map.set(slug.toLowerCase(), b.id);
+        map.set(String(b.fullName).toLowerCase(), b.id);
+        map.set(String(b.shortName).toLowerCase(), b.id);
+    }
+    _bibleAudioNameMap = map;
+    return map;
+}
+
+// 文件名 → { bookId, chapter }；不是「书卷 + 章号」的形式返回 null
+function bibleAudioKeyOf(name) {
+    const raw = String(name == null ? '' : name).trim();
+    if (!/\.mp3$/i.test(raw)) return null;
+    // 允许 chuangshiji-01 / chuangshiji 01 / chuangshiji_01 这类写法
+    const base = raw.slice(0, -4).replace(/[\s_\-·]+/g, '');
+    const m = /^([A-Za-z\u4e00-\u9fa5]+?)(\d{1,3})$/.exec(base);
+    if (!m) return null;
+    const bookId = bibleAudioBookNameMap().get(m[1].toLowerCase());
+    if (!bookId) return null;
+    const book = BIBLE_BOOKS.find(b => b.id === bookId);
+    const chapter = Number(m[2]);
+    if (!book || !(chapter >= 1 && chapter <= book.maxChapters)) return null;
+    return { bookId: bookId, chapter: chapter };
+}
+
+// 1 → 一、13 → 十三、50 → 五十、150 → 一百五十
+function bibleAudioCnNumber(n) {
+    const num = Math.floor(Number(n) || 0);
+    if (num <= 0) return '零';
+    const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    const units = ['', '十', '百', '千'];
+    const s = String(num);
+    let out = '';
+    let zero = false;
+    for (let i = 0; i < s.length; i++) {
+        const d = Number(s[i]);
+        const pos = s.length - 1 - i;
+        if (d === 0) { zero = true; continue; }
+        if (zero && out) out += '零';
+        zero = false;
+        // 10～19 读作「十一…十九」，不读「一十…」
+        if (d === 1 && pos === 1 && !out) { out += units[pos]; continue; }
+        out += digits[d] + units[pos];
+    }
+    return out || '零';
+}
+
+// 播放器标题：创世记 第一章
+function bibleAudioTitleOf(bookId, chapter) {
+    const book = BIBLE_BOOKS.find(b => b.id === bookId);
+    if (!book || !chapter) return '圣经音频';
+    return book.fullName + ' 第' + bibleAudioCnNumber(chapter) + '章';
+}
+
+// 出处简写：创 13（用于「转播」小标签与播放列表）
+function bibleAudioShortOf(bookId, chapter) {
+    const book = BIBLE_BOOKS.find(b => b.id === bookId);
+    if (!book) return '';
+    return book.shortName + (chapter ? ' ' + chapter : '');
+}
+
+// 范围的人读写法：1:1～25 / 13:53～14:13 / 1～6 篇
+function dailyRangeLabel(range) {
+    if (!range) return '';
+    if (!range.verse && !range.endVerse) {
+        return range.chapter === range.endChapter
+            ? range.chapter + ' 篇'
+            : range.chapter + '～' + range.endChapter + ' 篇';
+    }
+    if (range.chapter === range.endChapter) {
+        return range.chapter + ':' + (range.verse || 1) + '～' + (range.endVerse || '末');
+    }
+    return range.chapter + ':' + (range.verse || 1) + '～' +
+        range.endChapter + ':' + (range.endVerse || '末');
+}
+
+class BibleDailyView extends ItemView {
+    constructor(leaf, plugin) {
+        super(leaf);
+        this.plugin = plugin;
+        this.viewDate = dailyStartOfDay(new Date());
+        this.navEl = null;
+        this.scrollEl = null;
+        this.playerEl = null;
+        this.playBtn = null;
+        this.timeEl = null;
+        this.progressEl = null;
+        this.sectionEls = {};
+        this._audio = null;
+        this._audioPath = null;
+        this._popover = null;
+        this._popoverAnchor = null;
+        this._popoverCleanup = null;
+        this.fontLabelEl = null;
+        this._calYear = this.viewDate.getFullYear();
+        this._calMonth = this.viewDate.getMonth();
+        this._renderToken = 0;
+    }
+
+    getViewType() { return BIBLE_DAILY_VIEW_TYPE; }
+    getDisplayText() { return '三旧一新'; }
+    getIcon() { return 'calendar-days'; }
+
+    async onOpen() {
+        // onOpen 绝不能抛：抛出的 Promise 会让 Obsidian 的 leaf.detach 失败
+        try { await this.build(); }
+        catch (e) { console.error('[Bible] 三旧一新视图初始化失败:', e); }
+    }
+
+    async onClose() {
+        try { this.destroy(); } catch (e) { /* 忽略 */ }
+        try { if (this.plugin && this.plugin._liveViewRefs) this.plugin._liveViewRefs.delete(this); } catch (e) { /* 忽略 */ }
+    }
+
+    async build() {
+        const root = this.contentEl;
+        if (!root) return;
+        root.empty();
+        root.addClass('bible-daily-view');
+        this.navEl = root.createDiv({ cls: 'bible-daily-nav' });
+        this.scrollEl = root.createDiv({ cls: 'bible-daily-scroll' });
+        this.applyFontSize();
+        this.renderNav();
+        await this.renderContent();
+    }
+
+    destroy() {
+        this.closePopover();
+        const audio = this._audio;
+        this._audio = null;
+        this._audioPath = null;
+        if (audio) {
+            try { audio.pause(); } catch (e) { /* 忽略 */ }
+            try { audio.removeAttribute('src'); audio.load(); } catch (e) { /* 忽略 */ }
+            try { if (audio.parentNode) audio.parentNode.removeChild(audio); } catch (e) { /* 忽略 */ }
+        }
+    }
+
+    // ========== 导航栏 ==========
+    iconBtn(parent, icon, fallback, title, extraCls) {
+        const btn = parent.createEl('button', {
+            cls: 'bible-daily-btn' + (extraCls ? ' ' + extraCls : ''),
+            attr: { type: 'button', title: title }
+        });
+        let hasIcon = false;
+        try { setIcon(btn, icon); } catch (e) { /* 忽略 */ }
+        try { hasIcon = !!(btn.querySelector && btn.querySelector('svg')); } catch (e) { /* 忽略 */ }
+        // 图标字体个别环境会被裁掉，退回文字符号，绝不出现空白按钮
+        if (!hasIcon) btn.setText(fallback);
+        return btn;
+    }
+
+    renderNav() {
+        const nav = this.navEl;
+        if (!nav) return;
+        nav.empty();
+        const row = nav.createDiv({ cls: 'bible-daily-nav-row' });
+
+        const prevBtn = this.iconBtn(row, 'chevron-left', '‹', '前一天');
+        prevBtn.addEventListener('click', () => this.shiftDay(-1));
+        // 「回到今天」固定用实心圆 ◉，不依赖图标字体：一眼就是「今天」，也不会和翻页箭头混淆
+        const todayBtn = row.createEl('button', {
+            cls: 'bible-daily-btn bible-daily-today',
+            attr: { type: 'button', title: '回到今天', 'aria-label': '回到今天' },
+            text: '◉'
+        });
+        todayBtn.addEventListener('click', () => this.setDate(dailyStartOfDay(new Date())));
+        const nextBtn = this.iconBtn(row, 'chevron-right', '›', '后一天');
+        nextBtn.addEventListener('click', () => this.shiftDay(1));
+        const outlineBtn = this.iconBtn(row, 'list', '纲', '纲目：跳到新约 / 旧约');
+        outlineBtn.addEventListener('click', () => this.toggleOutlinePopover(outlineBtn));
+
+        const dateBtn = row.createEl('button', {
+            cls: 'bible-daily-btn bible-daily-date',
+            attr: { type: 'button', title: '点击选择日期' }
+        });
+        dateBtn.setText(dailyFormatDate(this.viewDate));
+        dateBtn.addEventListener('click', () => this.toggleCalendarPopover(dateBtn));
+
+        // 撑开剩余空间：左边是「翻页 / 日期」，右边是「投影 / 字号 / 播放器」，
+        // 两组分居两端，窗口再宽也不会挤在一起。
+        row.createDiv({ cls: 'bible-daily-spacer' });
+
+        // 投影与字号靠右：这两个都是「把这一页拿出去看」的动作，紧挨在播放器左侧。
+        const projBtn = this.iconBtn(row, 'presentation', '⛶', '投影这一天的三旧一新内容', 'bible-daily-project');
+        projBtn.addEventListener('click', () => { void this.projectDailyContent(); });
+
+        const fontBtn = this.iconBtn(row, 'settings-2', '字', '字号：调整三旧一新的默认字体大小', 'bible-daily-font');
+        fontBtn.addEventListener('click', () => this.toggleFontPopover(fontBtn));
+
+        // 播放器合成一个整体（药丸形）：播放键 + 进度条 + 时间读数，不再是一排互不相干的控件
+        this.playerEl = row.createDiv({ cls: 'bible-daily-player' });
+        this.playBtn = this.iconBtn(this.playerEl, 'play', '▶', '播放当天的三旧一新 MP3', 'bible-daily-play');
+        this.playBtn.addEventListener('click', () => { void this.togglePlay(); });
+        this.progressEl = this.playerEl.createEl('input', {
+            cls: 'bible-daily-progress',
+            attr: { type: 'range', min: '0', max: '1000', step: '1', value: '0', 'aria-label': '播放进度' }
+        });
+        this.progressEl.addEventListener('input', () => this.seekFromSlider());
+        this.timeEl = this.playerEl.createEl('span', { cls: 'bible-daily-time', text: '0:00 / --:--' });
+
+        this.updatePlayButton();
+        this.syncProgress();
+    }
+
+    // ========== 字号（写回设置，下次打开沿用） ==========
+    fontSize() {
+        return dailyFontSizeOf(this.plugin && this.plugin.settings);
+    }
+
+    applyFontSize() {
+        const px = this.fontSize();
+        // 只设一个自定义属性，正文 / 简介 / 纲目 / 对照都按它换算，改一处全页生效
+        try { if (this.contentEl && this.contentEl.style) this.contentEl.style.setProperty('--daily-font-size', px + 'px'); }
+        catch (e) { /* 忽略 */ }
+        if (this.fontLabelEl) { try { this.fontLabelEl.setText(px + 'px'); } catch (e) { /* 忽略 */ } }
+    }
+
+    setFontSize(px) {
+        const v = Math.max(DAILY_FONT_MIN, Math.min(DAILY_FONT_MAX, Math.round(Number(px) || DAILY_FONT_DEFAULT)));
+        if (this.plugin && this.plugin.settings) {
+            this.plugin.settings.dailyFontSize = v;
+            try { void this.plugin.saveSettings(); } catch (e) { /* 忽略：存不下也不影响本次会话 */ }
+        }
+        this.applyFontSize();
+    }
+
+    // ========== 对照版背景框（写回设置，下次打开沿用） ==========
+    compareBoxOn() {
+        return dailyCompareBoxOn(this.plugin && this.plugin.settings);
+    }
+
+    setCompareBox(on) {
+        const v = !!on;
+        if (this.plugin && this.plugin.settings) {
+            this.plugin.settings.dailyCompareBox = v;
+            try { void this.plugin.saveSettings(); } catch (e) { /* 忽略 */ }
+        }
+        // 只是去掉 / 加回一层底色，正文结构没变，重画一遍最稳（位置照旧保住）
+        void this.refreshContentAtPosition();
+    }
+
+    toggleFontPopover(anchor) {
+        if (this._popover && this._popoverAnchor === anchor) { this.closePopover(); return; }
+        this.openPopover(anchor, (box) => {
+            box.addClass('bible-daily-font-pop');
+            box.createDiv({ cls: 'bible-daily-pop-title', text: '正文字号' });
+            const row = box.createDiv({ cls: 'bible-daily-font-row' });
+            const minus = row.createEl('button', { cls: 'bible-daily-font-step', attr: { type: 'button', title: '减小字号' }, text: '−' });
+            this.fontLabelEl = row.createEl('span', { cls: 'bible-daily-font-value', text: this.fontSize() + 'px' });
+            const plus = row.createEl('button', { cls: 'bible-daily-font-step', attr: { type: 'button', title: '增大字号' }, text: '+' });
+            minus.addEventListener('click', () => this.setFontSize(this.fontSize() - 1));
+            plus.addEventListener('click', () => this.setFontSize(this.fontSize() + 1));
+            const reset = box.createEl('button', { cls: 'bible-daily-pop-item bible-daily-font-reset', attr: { type: 'button' }, text: '恢复默认（' + DAILY_FONT_DEFAULT + 'px）' });
+            reset.addEventListener('click', () => this.setFontSize(DAILY_FONT_DEFAULT));
+
+            // 对照版背景框开关：默认开。关掉后对照经文不套框，直接排在主版本下面、左对齐。
+            const boxRow = box.createDiv({ cls: 'bible-daily-pop-toggle' });
+            boxRow.createSpan({ cls: 'bible-daily-pop-toggle-label', text: '对照版背景框' });
+            const cb = boxRow.createEl('input', {
+                cls: 'bible-daily-pop-checkbox',
+                attr: { type: 'checkbox', 'aria-label': '对照版背景框' }
+            });
+            try { cb.checked = this.compareBoxOn(); } catch (e) { /* 忽略 */ }
+            // 开关不该像「按钮」那样把浮层关掉：拦在冒泡里
+            cb.addEventListener('click', (e) => { try { e.stopPropagation(); } catch (err) { /* 忽略 */ } });
+            cb.addEventListener('change', () => this.setCompareBox(!!cb.checked));
+        });
+    }
+
+    shiftDay(delta) {
+        this.setDate(dailyAddDays(this.viewDate, delta));
+    }
+
+    // 切换日期：换天就停掉音频（当天的 MP3 与上一天无关），再重刷导航与正文
+    setDate(date) {
+        if (!date) return;
+        this.viewDate = dailyStartOfDay(date);
+        this._calYear = this.viewDate.getFullYear();
+        this._calMonth = this.viewDate.getMonth();
+        this.closePopover();
+        this.resetAudio();
+        this.renderNav();
+        void this.renderContent();
+        if (this.scrollEl) this.scrollEl.scrollTop = 0;
+    }
+
+    // ========== 正文 ==========
+    primaryVersionKey() {
+        const list = (this.plugin && this.plugin.settings && this.plugin.settings.versions) || [];
+        const pv = list.find(v => v.isPrimary && v.enabled && v.installed);
+        return pv ? pv.key : null;
+    }
+
+    enabledVersions() {
+        const list = (this.plugin && this.plugin.settings && this.plugin.settings.versions) || [];
+        return list.filter(v => v.enabled && v.installed);
+    }
+
+    // 与检索 / 阅读页同一条口径：装了 2 个以上版本才谈得上「对照」
+    hasCompare() {
+        return this.enabledVersions().length > 1;
+    }
+
+    compareVersions() {
+        const primary = this.enabledVersions().find(v => v.isPrimary);
+        return this.enabledVersions().filter(v => v.key !== (primary && primary.key));
+    }
+
+    compareItems(item) {
+        const out = [];
+        if (!item) return out;
+        for (const ver of this.compareVersions()) {
+            const found = this.plugin.allItems.find(i =>
+                i.versionKey === ver.key && i.bookId === item.bookId && i.chapter === item.chapter &&
+                i.verse === item.verse && i.type === item.type
+            );
+            if (found) out.push({ item: found, versionName: ver.name, versionKey: ver.key });
+        }
+        return out;
+    }
+
+    async renderContent() {
+        const scroll = this.scrollEl;
+        if (!scroll) return;
+        const token = ++this._renderToken;
+        scroll.empty();
+        this.sectionEls = {};
+        const entry = dailyReadingOfDate(this.viewDate);
+        if (!entry) {
+            scroll.createDiv({ cls: 'bible-daily-empty', text: '这一天没有三旧一新的进度内容' });
+            return;
+        }
+        const plugin = this.plugin;
+        if (plugin.allItems.length === 0) {
+            scroll.createDiv({ cls: 'bible-daily-empty', text: '正在读取圣经数据…' });
+            try { await plugin.loadBibleData(); } catch (e) { /* 忽略 */ }
+            if (token !== this._renderToken || scroll.isConnected === false) return;
+            scroll.empty();
+        }
+        if (plugin.settings.showNotes && !plugin.notesData) {
+            try { await plugin.loadNotesData(); } catch (e) { /* 忽略 */ }
+            if (token !== this._renderToken || scroll.isConnected === false) return;
+        }
+        const primaryKey = this.primaryVersionKey();
+        if (!primaryKey) {
+            scroll.createDiv({ cls: 'bible-daily-empty', text: '还没有可用的圣经版本，请先在设置里安装数据' });
+            return;
+        }
+        this.renderSection(scroll, 'nt', '新约', entry.nt, primaryKey);
+        this.renderSection(scroll, 'ot', '旧约', entry.ot, primaryKey);
+    }
+
+    renderSection(parent, key, label, range, primaryKey) {
+        if (!range) return;
+        const section = parent.createDiv({ cls: 'bible-daily-section', attr: { 'data-section': key } });
+        this.sectionEls[key] = section;
+        const head = section.createDiv({ cls: 'bible-daily-section-head' });
+        head.createEl('span', { cls: 'bible-daily-section-badge', text: label });
+        head.createEl('span', { cls: 'bible-daily-section-range', text: range.fullName + ' ' + dailyRangeLabel(range) });
+
+        // 该书卷的主版本条目一次性取出，逐章分派：书卷简介 / 主题是全书卷级（chapter 恒 0），
+        // 纲目与经文才是逐章的。
+        const bookItems = this.plugin.allItems.filter(i => i.versionKey === primaryKey && i.bookId === range.bookId);
+        const intros = bookItems.filter(i => i.type === 'intro');
+        const themes = bookItems.filter(i => i.type === 'theme');
+
+        let shown = 0;
+        for (let ch = range.chapter; ch <= range.endChapter; ch++) {
+            const startV = (ch === range.chapter && range.verse) ? range.verse : 1;
+            const endV = (ch === range.endChapter && range.endVerse) ? range.endVerse : Number.MAX_SAFE_INTEGER;
+            // 纲目与经文按原文行序穿插（见 chapterSequence）：纲目就站在它领起的
+            // 那节经文前面，读起来是连贯的一段，而不是章首另起一块。
+            const chapterItems = this.chapterSequence(bookItems, ch, startV, endV);
+            // 书卷简介 / 主题只在「第 1 章 + 从第 1 节开始」时出现，也就是只贴在
+            // 真正的卷首章开头。当天从第 1 章中间开始（如 雅1:13）时，读者并不在
+            // 卷首，这时再顶一段简介反而打断阅读，所以一并省掉。
+            const heads = (ch === 1 && startV === 1) ? [...intros, ...themes] : [];
+            if (!heads.length && !chapterItems.length) continue;
+            shown++;
+
+            const block = section.createDiv({ cls: 'bible-daily-chapter' });
+            block.createDiv({ cls: 'bible-daily-chapter-title', text: range.fullName + ' ' + ch + ' 章' });
+            for (const it of heads) {
+                if (it.type === 'intro') this.renderIntro(block, it);
+                else this.renderTheme(block, it);
+            }
+            for (const it of chapterItems) {
+                if (it.type === 'outline') this.renderOutline(block, it);
+                else this.renderVerse(block, it);
+            }
+        }
+        if (!shown) section.createDiv({ cls: 'bible-daily-empty', text: '没有读取到这一段的经文数据' });
+    }
+
+    // 一章内「纲目 + 经文」按原文行序排成一条流：纲目是原文里的一行，
+    // 排在它领起的经节之前，所以穿插出来就是原文的阅读顺序。
+    // ⚠️ 纲目也要按当天范围裁：当天从第 13 节开始时，领起 1～12 节的章纲
+    // 全部丢掉——否则它们会一起堆在第一节前面，看上去又变成「纲目一块、经文一块」。
+    chapterSequence(bookItems, ch, startV, endV) {
+        const inRange = (v) => !!v && v.verse >= startV && v.verse <= endV;
+        const raw = bookItems
+            .filter(i => i.chapter === ch && (i.type === 'outline' || i.type === 'verse'))
+            .sort((a, b) => a.lineIndex - b.lineIndex);
+        const out = [];
+        for (let i = 0; i < raw.length; i++) {
+            const it = raw[i];
+            if (it.type !== 'outline') {
+                if (inRange(it)) out.push(it);
+                continue;
+            }
+            // 纲目归属「它后面第一节经文」；章末没有后续经文时退回看前一节
+            let next = null;
+            let prev = null;
+            for (let j = i + 1; j < raw.length; j++) { if (raw[j].type === 'verse') { next = raw[j]; break; } }
+            for (let j = i - 1; j >= 0; j--) { if (raw[j].type === 'verse') { prev = raw[j]; break; } }
+            if (inRange(next) || (!next && inRange(prev))) out.push(it);
+        }
+        return out;
+    }
+
+    // 简介 / 纲目里的经文出处要能点：复用检索页那套识别（单击弹经文窗、双击跳转），
+    // 引用自身带 stopPropagation，点到出处不会顺带触发别的动作。
+    fillLinkedText(el, text, item) {
+        const plugin = this.plugin;
+        const src = String(text == null ? '' : text);
+        if (plugin && typeof plugin.linkifyBibleRefs === 'function') {
+            try {
+                plugin.linkifyBibleRefs(el, src, { bookId: item && item.bookId, chapter: (item && item.chapter) || 1 });
+                return el;
+            } catch (e) { /* 退回纯文本 */ }
+        }
+        el.setText(src);
+        return el;
+    }
+
+    // 书卷简介：标题 + 逐条「著者 / 著时 / 主题…」，只读，不参与选中 / 投影
+    renderIntro(parent, item) {
+        const box = parent.createDiv({ cls: 'bible-daily-intro' });
+        this.fillLinkedText(
+            box.createDiv({ cls: 'bible-daily-intro-title' }),
+            item.title || (item.bookFullName + ' 简介'), item);
+        const body = box.createDiv({ cls: 'bible-daily-intro-body' });
+        const sections = Array.isArray(item.sections) ? item.sections : [];
+        if (sections.length) {
+            for (const s of sections) {
+                const row = body.createDiv({ cls: 'bible-daily-intro-row' });
+                row.createEl('span', { cls: 'bible-daily-intro-label', text: String(s.label || '') + '：' });
+                this.fillLinkedText(row.createEl('span', { cls: 'bible-daily-intro-value' }), String(s.text || ''), item);
+            }
+        } else {
+            this.fillLinkedText(body.createDiv({ cls: 'bible-daily-intro-value' }), item.content || '', item);
+        }
+    }
+
+    // 书卷主题：整卷一句，弱化成一条提示带
+    renderTheme(parent, item) {
+        const box = parent.createDiv({ cls: 'bible-daily-block bible-daily-theme' });
+        box.createEl('span', { cls: 'bible-daily-block-badge', text: '主题' });
+        box.createEl('span', { cls: 'bible-daily-block-text', text: item.content || '' });
+    }
+
+    // 纲目：原文里的一行（「一 神的创造 一1～31」），按 lineIndex 落在对应经节之前，
+    // 斜体弱化，左侧一道竖线，和正文一眼分得开。
+    renderOutline(parent, item) {
+        const line = parent.createDiv({ cls: 'bible-daily-outline-line' });
+        this.fillLinkedText(line, item.content || '', item);
+    }
+
+    renderVerse(parent, item) {
+        // 左边窄列放节号、右边整块放正文：对照行与注解面板都挂在右列，
+        // 这样长经文换行时不会绕到节号下面去。
+        const card = parent.createDiv({ cls: 'bible-daily-verse' });
+        const head = card.createDiv({ cls: 'bible-daily-verse-head' });
+        head.createEl('span', { cls: 'bible-daily-verse-ref', text: item.chapter + ':' + item.verse + (item.part || '') });
+        const body = card.createDiv({ cls: 'bible-daily-body' });
+
+        const textEl = body.createDiv({ cls: 'bible-daily-verse-text' });
+        const nd = (this.plugin.settings.showNotes && this.plugin.notesData)
+            ? this.plugin.getVerseNotes(item.bookId, item.chapter, item.verse, item.part)
+            : null;
+        if (nd && nd.m && nd.m.length) {
+            this.plugin.renderTextWithMarkers(textEl, item.content, nd.m, (kind, label) => {
+                this.toggleNotePanel(body, item, nd, kind, label);
+            });
+        } else {
+            textEl.setText(item.content);
+        }
+
+        if (this.hasCompare()) {
+            const plainCompare = !this.compareBoxOn();
+            for (const cmp of this.compareItems(item)) {
+                // 只显示内容，不标版本名：读者要的是「另一种译法的这句话」，
+                // 版本名在这页里是多余的一行小字。
+                // is-plain：用户在「字」按钮里关掉了背景框 —— 去掉底色 / 竖线 / 内边距，
+                // 左边缘与主版本正文严格对齐，只靠字号与颜色区分。
+                const row = body.createDiv({ cls: 'bible-daily-compare' + (plainCompare ? ' is-plain' : '') });
+                row.createDiv({ cls: 'bible-daily-compare-text', text: cmp.item.content });
+            }
+        }
+    }
+
+    // 正文依赖的数据（注解开关、主版本 / 对照版本）变了都要走这里：整页按当前设置重画，
+    // 再把滚动位置放回去。只重绘不跳位——否则正读到中段时一按 A / 一切版本就回到开头。
+    async refreshContentAtPosition() {
+        const scroll = this.scrollEl;
+        if (!scroll) return;
+        const top = scroll.scrollTop;
+        try { await this.renderContent(); } catch (e) { /* 忽略：保持上一版内容 */ }
+        if (this.scrollEl) this.scrollEl.scrollTop = top;
+    }
+
+    // 兼容旧调用名（注解开关注解时用）
+    async refreshNotesAtPosition() {
+        await this.refreshContentAtPosition();
+    }
+
+    // ========== 投影：把当天内容一次性投出去 ==========
+    // 与正文同源：书卷简介 → 主题 → 纲目 → 经文，只用主版本（对照投影没有并排位置，
+    // 要对照请到检索 / 阅读页）。排列成一章一页，整屏翻页正好一章一章读。
+    collectProjectionItems(primaryKey) {
+        const out = [];
+        const entry = dailyReadingOfDate(this.viewDate);
+        if (!entry || !primaryKey) return out;
+        const all = this.plugin.allItems || [];
+        let order = 0;
+        const push = (item) => {
+            if (!item) return;
+            order += 1;
+            out.push({ item: item, selected: true, order: order, sideBySide: false, _isCompare: false });
+        };
+        for (const range of [entry.nt, entry.ot]) {
+            if (!range) continue;
+            const bookItems = all.filter(i => i.versionKey === primaryKey && i.bookId === range.bookId);
+            const intros = bookItems.filter(i => i.type === 'intro');
+            const themes = bookItems.filter(i => i.type === 'theme');
+            for (let ch = range.chapter; ch <= range.endChapter; ch++) {
+                const startV = (ch === range.chapter && range.verse) ? range.verse : 1;
+                const endV = (ch === range.endChapter && range.endVerse) ? range.endVerse : Number.MAX_SAFE_INTEGER;
+                // 与正文同一口径：简介 / 主题只跟「第 1 章 + 从第 1 节开始」走
+                if (ch === 1 && startV === 1) {
+                    for (const it of intros) push(it);
+                    for (const it of themes) push(it);
+                }
+                this.chapterSequence(bookItems, ch, startV, endV).forEach(push);
+            }
+        }
+        return out;
+    }
+
+    // 写进投影历史用的出处串（只记出处，不存正文）：太1:1-25，创1:1-25
+    projectionQuery() {
+        const entry = dailyReadingOfDate(this.viewDate);
+        if (!entry) return '';
+        const maxOf = (bookId, ch) => {
+            try { return this.plugin.verseMaxIndex().get(bookId + ':' + ch) || 0; } catch (e) { return 0; }
+        };
+        const tokens = [];
+        for (const r of [entry.nt, entry.ot]) {
+            if (!r) continue;
+            const head = r.shortName + r.chapter + ':' + (r.verse || 1);
+            const tailVerse = r.endVerse || maxOf(r.bookId, r.endChapter);
+            const tail = (r.chapter === r.endChapter)
+                ? String(tailVerse || '')
+                : r.endChapter + ':' + (tailVerse || '');
+            tokens.push(head + '-' + tail);
+        }
+        return tokens.filter(Boolean).join('，');
+    }
+
+    async projectDailyContent() {
+        const plugin = this.plugin;
+        if (!plugin) return;
+        if (!plugin.allItems || plugin.allItems.length === 0) {
+            try { await plugin.loadBibleData(); } catch (e) { /* 忽略 */ }
+        }
+        const primaryKey = this.primaryVersionKey();
+        if (!primaryKey) { new Notice('还没有可用的圣经版本，请先在设置里安装数据'); return; }
+        const list = this.collectProjectionItems(primaryKey);
+        if (!list.length) { new Notice('这一天的经文还没读取到，请稍后再试'); return; }
+        const query = this.projectionQuery();
+        // 已经开着投影就在原地换内容，避免叠第二层覆盖
+        if (plugin.currentProjection && typeof plugin.currentProjection.reloadResults === 'function') {
+            plugin.currentProjection.reloadResults(list, 'parallel', { chapterPaged: true });
+        } else {
+            const overlay = new BibleProjectionOverlay(this.app, plugin, list, 'parallel', true);
+            overlay.chapterPaged = true;
+            // 构造时已经按默认（不分页）建过 slides，必须重建才能一章一页
+            overlay.buildSlides();
+            overlay.open();
+        }
+        if (typeof plugin.noteProjection === 'function') {
+            void plugin.noteProjection(query, list, 'parallel', { showSource: true, chapterPaged: true });
+        }
+    }
+
+    // 注解 / 串珠面板：只读。这里没有候选框，三旧一新是「看」的页面，
+    // 选中 / 复制 / 投影仍然在检索页和阅读页里做。
+    toggleNotePanel(card, item, nd, kind, label) {
+        const key = kind + ':' + label;
+        let existing = null;
+        const kids = card.children ? Array.prototype.slice.call(card.children) : [];
+        for (const kid of kids) {
+            if (kid && kid.classList && kid.classList.contains('bible-daily-note-panel')) existing = kid;
+        }
+        if (existing && existing.getAttribute('data-note-key') === key) { existing.remove(); return; }
+        if (existing) existing.remove();
+
+        const panel = card.createDiv({ cls: 'bible-daily-note-panel bible-note-panel' });
+        panel.setAttribute('data-note-key', key);
+        panel.addEventListener('click', (e) => { if (e && e.stopPropagation) e.stopPropagation(); });
+
+        if (kind === 'n') {
+            const list = (nd.n || []).filter(n => n[0] === label);
+            if (!list.length) { panel.createDiv({ cls: 'bible-note-empty', text: '没有对应的注解' }); return; }
+            for (const n of list) {
+                const row = panel.createDiv({ cls: 'bible-note-item' });
+                const content = row.createDiv({ cls: 'bible-note-content' });
+                content.createEl('span', { cls: 'bible-note-label bible-note-label-note', text: '注' + n[0] });
+                appendNoteBody(content, n[1], this.plugin, { bookId: item.bookId, chapter: item.chapter });
+            }
+            return;
+        }
+        const list = (nd.r || []).filter(r => r[0] === label);
+        if (!list.length) { panel.createDiv({ cls: 'bible-note-empty', text: '没有对应的串珠' }); return; }
+        for (const r of list) {
+            const row = panel.createDiv({ cls: 'bible-note-item bible-note-item-ref' });
+            const content = row.createDiv({ cls: 'bible-note-content' });
+            const refHead = content.createDiv({ cls: 'bible-note-ref-head' });
+            refHead.createEl('span', { cls: 'bible-note-label bible-note-label-ref', text: '串' + r[0] });
+            refHead.createEl('span', { cls: 'bible-note-refs', text: r[1] });
+            let verses = [];
+            try { verses = this.plugin.getChainReferencedVerses(r, this.primaryVersionKey()) || []; }
+            catch (e) { verses = []; }
+            for (const v of verses) {
+                const vr = content.createDiv({ cls: 'bible-note-ref-verse' });
+                vr.createEl('span', { cls: 'bible-note-ref-addr', text: v.bookShortName + v.chapter + ':' + v.verse });
+                vr.createEl('span', { cls: 'bible-note-ref-text', text: v.content });
+            }
+        }
+    }
+
+    // ========== 浮层（纲目 / 日历） ==========
+    openPopover(anchor, builder) {
+        this.closePopover();
+        const root = this.contentEl;
+        if (!root) return null;
+        const pop = root.createDiv({ cls: 'bible-daily-popover' });
+        this._popover = pop;
+        this._popoverAnchor = anchor || null;
+        builder(pop);
+        try {
+            const a = anchor.getBoundingClientRect();
+            const r = root.getBoundingClientRect();
+            const w = pop.offsetWidth || 0;
+            const maxLeft = Math.max(6, (root.clientWidth || r.width || 0) - w - 6);
+            pop.style.left = Math.round(Math.min(Math.max(6, a.left - r.left), maxLeft)) + 'px';
+            pop.style.top = Math.round(a.bottom - r.top + 6) + 'px';
+        } catch (e) { /* 拿不到布局就用 CSS 默认位置 */ }
+
+        // 手势里 preventDefault 之后不合成 click，所以 pointerdown 也要挂；
+        // 只监 click 会出现「点外面收不起来」。
+        const onDown = (e) => {
+            const t = e && e.target;
+            if (t && t.closest && (t.closest('.bible-daily-popover') || t.closest('.bible-daily-btn'))) return;
+            this.closePopover();
+        };
+        const onKey = (e) => {
+            const k = e && (e.key || e.code);
+            if (k === 'Escape' || k === 'Esc' || k === '27') {
+                this.closePopover();
+                if (e.stopPropagation) e.stopPropagation();
+            }
+        };
+        document.addEventListener('pointerdown', onDown, true);
+        document.addEventListener('keydown', onKey, true);
+        this._popoverCleanup = () => {
+            document.removeEventListener('pointerdown', onDown, true);
+            document.removeEventListener('keydown', onKey, true);
+        };
+        return pop;
+    }
+
+    closePopover() {
+        if (this._popoverCleanup) {
+            try { this._popoverCleanup(); } catch (e) { /* 忽略 */ }
+        }
+        this._popoverCleanup = null;
+        if (this._popover && this._popover.parentNode) {
+            try { this._popover.parentNode.removeChild(this._popover); } catch (e) { /* 忽略 */ }
+        }
+        this._popover = null;
+        this._popoverAnchor = null;
+        this.fontLabelEl = null;
+    }
+
+    toggleOutlinePopover(anchor) {
+        if (this._popover && this._popoverAnchor === anchor) { this.closePopover(); return; }
+        this.openPopover(anchor, (box) => {
+            box.createDiv({ cls: 'bible-daily-pop-title', text: '纲目' });
+            const nt = box.createEl('button', { cls: 'bible-daily-pop-item', attr: { type: 'button' }, text: '新约' });
+            nt.addEventListener('click', () => { this.closePopover(); this.scrollToSection('nt'); });
+            const ot = box.createEl('button', { cls: 'bible-daily-pop-item', attr: { type: 'button' }, text: '旧约' });
+            ot.addEventListener('click', () => { this.closePopover(); this.scrollToSection('ot'); });
+        });
+    }
+
+    scrollToSection(key) {
+        const el = this.sectionEls[key];
+        if (!el || !this.scrollEl) return;
+        // 用两个 rect 的差值算目标位置：offsetTop 的参照物取决于哪一层是 positioned，
+        // 换主题 / 换宿主布局就可能偏，rect 差值不受影响。
+        try {
+            const delta = el.getBoundingClientRect().top - this.scrollEl.getBoundingClientRect().top;
+            this.scrollEl.scrollTop = Math.max(0, this.scrollEl.scrollTop + delta - 8);
+        } catch (e) { /* 忽略 */ }
+    }
+
+    toggleCalendarPopover(anchor) {
+        if (this._popover && this._popoverAnchor === anchor) { this.closePopover(); return; }
+        this._calYear = this.viewDate.getFullYear();
+        this._calMonth = this.viewDate.getMonth();
+        this.openPopover(anchor, (box) => this.fillCalendar(box));
+    }
+
+    fillCalendar(box) {
+        box.empty();
+        box.addClass('bible-daily-cal');
+        const head = box.createDiv({ cls: 'bible-daily-cal-head' });
+        const prev = head.createEl('button', { cls: 'bible-daily-cal-nav', attr: { type: 'button', title: '上个月' }, text: '‹' });
+        head.createEl('span', { cls: 'bible-daily-cal-title', text: this._calYear + ' 年 ' + (this._calMonth + 1) + ' 月' });
+        const next = head.createEl('button', { cls: 'bible-daily-cal-nav', attr: { type: 'button', title: '下个月' }, text: '›' });
+        prev.addEventListener('click', () => this.shiftCalendarMonth(-1));
+        next.addEventListener('click', () => this.shiftCalendarMonth(1));
+
+        const grid = box.createDiv({ cls: 'bible-daily-cal-grid' });
+        for (const w of DAILY_CAL_WEEK_HEAD) grid.createDiv({ cls: 'bible-daily-cal-week', text: w });
+        const firstDay = new Date(this._calYear, this._calMonth, 1).getDay();
+        const daysInMonth = new Date(this._calYear, this._calMonth + 1, 0).getDate();
+        for (let i = 0; i < firstDay; i++) grid.createDiv({ cls: 'bible-daily-cal-cell is-blank' });
+        const todayKey = dailyDateKey(dailyStartOfDay(new Date()));
+        const currentKey = dailyDateKey(this.viewDate);
+        for (let d = 1; d <= daysInMonth; d++) {
+            const cell = grid.createEl('button', { cls: 'bible-daily-cal-cell', attr: { type: 'button' }, text: String(d) });
+            const key = dailyDateKey(new Date(this._calYear, this._calMonth, d));
+            if (key === todayKey) cell.addClass('is-today');
+            if (key === currentKey) cell.addClass('is-active');
+            if (!dailyReadingIndex().has((this._calMonth + 1) + '-' + d)) cell.addClass('is-empty');
+            cell.addEventListener('click', () => this.setDate(new Date(this._calYear, this._calMonth, d)));
+        }
+    }
+
+    shiftCalendarMonth(delta) {
+        const d = new Date(this._calYear, this._calMonth + delta, 1);
+        this._calYear = d.getFullYear();
+        this._calMonth = d.getMonth();
+        if (this._popover) this.fillCalendar(this._popover);
+    }
+
+    // ========== 播放（当天的 MMDD.mp3） ==========
+    ensureAudio() {
+        if (this._audio) return this._audio;
+        let audio = null;
+        try { audio = document.createElement('audio'); } catch (e) { audio = null; }
+        if (!audio) return null;
+        audio.preload = 'metadata';
+        audio.className = 'bible-daily-audio';
+        audio.addEventListener('timeupdate', () => this.syncProgress());
+        audio.addEventListener('loadedmetadata', () => this.syncProgress());
+        audio.addEventListener('durationchange', () => this.syncProgress());
+        audio.addEventListener('play', () => this.updatePlayButton());
+        audio.addEventListener('pause', () => this.updatePlayButton());
+        audio.addEventListener('ended', () => { this.updatePlayButton(); this.syncProgress(); });
+        this._audio = audio;
+        try { if (this.contentEl && this.contentEl.appendChild) this.contentEl.appendChild(audio); }
+        catch (e) { /* 挂不上也能播：src 设好即可 */ }
+        return audio;
+    }
+
+    audioFile() {
+        if (!this.plugin || typeof this.plugin.findDailyAudioFile !== 'function') return null;
+        return this.plugin.findDailyAudioFile(this.viewDate);
+    }
+
+    async togglePlay() {
+        const file = this.audioFile();
+        if (!file) {
+            const folder = this.plugin.dailyMp3Folder ? this.plugin.dailyMp3Folder() : '';
+            new Notice('没有找到这一天的三旧一新 MP3（文件名应为 ' + dailyMp3Name(this.viewDate) + '）' +
+                (folder ? '，当前只扫「' + folder + '」目录' : '') + '。可在插件设置的「三旧一新」里指定 MP3 文件夹。');
+            return;
+        }
+        const audio = this.ensureAudio();
+        if (!audio) { new Notice('当前环境不支持音频播放'); return; }
+        const src = this.plugin.dailyAudioSrc(file);
+        if (!src) { new Notice('无法取得音频文件路径'); return; }
+        if (this._audioPath !== file.path) {
+            this._audioPath = file.path;
+            audio.src = src;
+            try { audio.load(); } catch (e) { /* 忽略 */ }
+        }
+        if (audio.paused) {
+            try { await audio.play(); }
+            catch (e) { new Notice('播放失败：' + ((e && e.message) || '未知错误')); }
+        } else {
+            audio.pause();
+        }
+        this.updatePlayButton();
+    }
+
+    updatePlayButton() {
+        if (!this.playBtn) return;
+        const playing = !!(this._audio && !this._audio.paused && !this._audio.ended);
+        this.playBtn.empty();
+        let hasIcon = false;
+        try { setIcon(this.playBtn, playing ? 'pause' : 'play'); } catch (e) { /* 忽略 */ }
+        try { hasIcon = !!(this.playBtn.querySelector && this.playBtn.querySelector('svg')); } catch (e) { /* 忽略 */ }
+        if (!hasIcon) this.playBtn.setText(playing ? '❚❚' : '▶');
+        const file = this.audioFile();
+        this.playBtn.toggleClass('is-playing', playing);
+        this.playBtn.toggleClass('is-missing', !file);
+        this.playBtn.title = file
+            ? (playing ? '暂停' : '播放当天的三旧一新 MP3（' + dailyMp3Name(this.viewDate) + '）')
+            : '未找到 ' + dailyMp3Name(this.viewDate);
+    }
+
+    syncProgress() {
+        const audio = this._audio;
+        if (!audio) return;
+        const dur = Number(audio.duration);
+        const cur = Number(audio.currentTime) || 0;
+        const hasDur = Number.isFinite(dur) && dur > 0;
+        if (this.progressEl) {
+            let focused = false;
+            try { focused = !!(document && document.activeElement === this.progressEl); } catch (e) { focused = false; }
+            if (!focused) this.progressEl.value = String(hasDur ? Math.round((cur / dur) * 1000) : 0);
+            // 已播部分的上色靠自定义属性画在轨道背景上：range 的 value 本身没法只染一半
+            const ratio = focused ? (Number(this.progressEl.value) / 1000) : (hasDur ? cur / dur : 0);
+            const pct = Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0)) * 100;
+            try { this.progressEl.style.setProperty('--daily-progress', pct.toFixed(2) + '%'); } catch (e) { /* 忽略 */ }
+        }
+        if (this.timeEl) {
+            this.timeEl.setText(dailyFormatDuration(cur) + ' / ' + (hasDur ? dailyFormatDuration(dur) : '--:--'));
+        }
+    }
+
+    seekFromSlider() {
+        const audio = this._audio;
+        if (!audio || !this.progressEl) return;
+        const dur = Number(audio.duration);
+        if (!Number.isFinite(dur) || dur <= 0) { this.syncProgress(); return; }
+        const ratio = Math.max(0, Math.min(1, Number(this.progressEl.value) / 1000));
+        try { this.progressEl.style.setProperty('--daily-progress', (ratio * 100).toFixed(2) + '%'); } catch (e) { /* 忽略 */ }
+        try { audio.currentTime = ratio * dur; } catch (e) { /* 忽略 */ }
+        this.syncProgress();
+    }
+
+    resetAudio() {
+        const audio = this._audio;
+        if (audio) {
+            try { audio.pause(); } catch (e) { /* 忽略 */ }
+            try { audio.removeAttribute('src'); audio.load(); } catch (e) { /* 忽略 */ }
+        }
+        this._audioPath = null;
+        if (this.progressEl) {
+            this.progressEl.value = '0';
+            try { this.progressEl.style.setProperty('--daily-progress', '0%'); } catch (e) { /* 忽略 */ }
+        }
+        if (this.timeEl) this.timeEl.setText('0:00 / --:--');
+        this.updatePlayButton();
+    }
+}
+
+/* ==================== 圣经音频播放器 ====================
+   侧边栏「耳机」按钮弹出的临时播放窗：点窗外即隐藏，但**播放不暂停**——
+   <audio> 挂在 body 上（不在面板里），面板只是它的遥控器。
+   播放列表 = 一卷书的整章 MP3；播到末尾时按播放模式决定停下 / 循环 / 换下一卷。 */
+class BibleAudioPlayer {
+    constructor(plugin) {
+        this.plugin = plugin;
+        this.panel = null;
+        this.el = {};
+        this.bookId = 0;
+        this.chapter = 0;
+        this.playlist = [];
+        this.index = -1;
+        this.mode = bibleAudioModeOf(plugin && plugin.settings && plugin.settings.bibleAudioMode);
+        this.playing = false;
+        this._audio = null;
+        this._path = '';
+        this._outsideHandler = null;
+        this._outsideToken = 0;
+    }
+
+    // ---------- 小工具 ----------
+    static setBtnIcon(btn, icon, fallback) {
+        if (!btn) return false;
+        try { setIcon(btn, icon); } catch (e) { /* 忽略：退回文字 */ }
+        let ok = false;
+        try { ok = !!(btn.querySelector && btn.querySelector('svg')); } catch (e) { ok = false; }
+        if (!ok && fallback) { try { btn.setText(fallback); } catch (e) { /* 忽略 */ } }
+        return ok;
+    }
+
+    iconBtn(parent, icon, fallback, title, cls) {
+        const btn = parent.createEl('button', {
+            cls: cls || 'bible-audio-btn',
+            attr: { type: 'button', title: title, 'aria-label': title }
+        });
+        BibleAudioPlayer.setBtnIcon(btn, icon, fallback);
+        return btn;
+    }
+
+    audioEl() {
+        if (this._audio) return this._audio;
+        let el = null;
+        try { el = document.createElement('audio'); } catch (e) { el = null; }
+        if (!el) return null;
+        try {
+            el.className = 'bible-audio-el';
+            el.setAttribute('preload', 'metadata');
+            el.addEventListener('play', () => { this.playing = true; this.render(); });
+            el.addEventListener('pause', () => { this.playing = false; this.render(); });
+            el.addEventListener('timeupdate', () => this.updateProgress());
+            el.addEventListener('loadedmetadata', () => this.updateProgress());
+            el.addEventListener('ended', () => this.handleEnded());
+            el.addEventListener('error', () => { this.playing = false; this.render(); });
+        } catch (e) { /* 忽略 */ }
+        try { document.body.appendChild(el); } catch (e) { /* 忽略 */ }
+        this._audio = el;
+        return el;
+    }
+
+    isPlaying() {
+        const a = this._audio;
+        if (a && typeof a.paused === 'boolean') return !a.paused;
+        return !!this.playing;
+    }
+
+    currentEntry() {
+        return this.playlist[this.index] || null;
+    }
+
+    // 某一卷能播的章节（只收真的有 MP3 的章，列表里就不会出现点了没反应的条目）
+    playlistOf(bookId) {
+        const out = [];
+        const book = BIBLE_BOOKS.find(b => b.id === bookId);
+        const index = this.plugin && this.plugin.getBibleAudioIndex ? this.plugin.getBibleAudioIndex() : null;
+        if (!book || !index) return out;
+        for (let ch = 1; ch <= book.maxChapters; ch++) {
+            if (index.has(bookId + ':' + ch)) out.push({ bookId: bookId, chapter: ch });
+        }
+        return out;
+    }
+
+    // 缺这一章时取它之后最近的一章，再不行退回最后一章
+    closestIndex(list, chapter) {
+        const exact = list.findIndex(e => e.chapter === chapter);
+        if (exact >= 0) return exact;
+        for (let i = 0; i < list.length; i++) if (list[i].chapter > chapter) return i;
+        return list.length - 1;
+    }
+
+    // ---------- 播放 ----------
+    load(autoplay) {
+        const cur = this.currentEntry();
+        if (!cur) { this.render(); return; }
+        this.bookId = cur.bookId;
+        this.chapter = cur.chapter;
+        const a = this.audioEl();
+        const file = this.plugin && this.plugin.findBibleAudio ? this.plugin.findBibleAudio(cur.bookId, cur.chapter) : null;
+        const src = (file && this.plugin.bibleAudioSrc) ? this.plugin.bibleAudioSrc(file) : '';
+        if (a && file && src) {
+            if (this._path !== file.path) {
+                this._path = file.path;
+                try { a.src = src; } catch (e) { /* 忽略 */ }
+                try { if (typeof a.load === 'function') a.load(); } catch (e) { /* 忽略 */ }
+            }
+            if (autoplay && typeof a.play === 'function') {
+                try {
+                    const p = a.play();
+                    if (p && typeof p.catch === 'function') p.catch(() => { this.playing = false; this.render(); });
+                } catch (e) { /* 忽略 */ }
+            }
+        }
+        this.render();
+    }
+
+    startAt(bookId, chapter) {
+        const list = this.playlistOf(bookId);
+        if (!list.length) {
+            new Notice('这一卷没有找到圣经 MP3（文件名应为「书卷拼音 + 章号」，如 chuangshiji01.mp3）。' +
+                '可在插件设置的「圣经音频」里指定 MP3 文件夹。');
+            return false;
+        }
+        this.playlist = list;
+        this.index = this.closestIndex(list, chapter);
+        this.load(true);
+        return true;
+    }
+
+    toggle() {
+        if (!this.currentEntry()) { this.playCurrent(); return; }
+        const a = this.audioEl();
+        if (a && !a.paused && typeof a.pause === 'function') {
+            try { a.pause(); } catch (e) { /* 忽略 */ }
+            this.render();
+            return;
+        }
+        this.playCurrent();
+    }
+
+    playCurrent() {
+        if (!this.currentEntry()) {
+            // 还没选章节：优先从阅读页当前这一章开播（与「转播」同一个来源）
+            const t = this.readerTarget();
+            if (t && this.startAt(t.bookId, t.chapter)) return;
+            new Notice('先用左上角的「圣经」选一章，或在阅读页点播放器上的「转播」');
+            return;
+        }
+        if (!this._path) { this.load(true); return; }
+        const a = this.audioEl();
+        if (a && typeof a.play === 'function') {
+            try {
+                const p = a.play();
+                if (p && typeof p.catch === 'function') p.catch(() => { /* 被拦截就算了 */ });
+            } catch (e) { /* 忽略 */ }
+        }
+        this.render();
+    }
+
+    // 手动 / 自动前进一格：列表内直接走；到边界按模式循环或换卷
+    step(dir, auto) {
+        if (!this.playlist.length) return false;
+        const next = this.index + dir;
+        if (next >= 0 && next < this.playlist.length) {
+            this.index = next;
+            this.load(true);
+            return true;
+        }
+        if (this.mode === 'listLoop') {
+            this.index = dir > 0 ? 0 : this.playlist.length - 1;
+            this.load(true);
+            return true;
+        }
+        if ((this.mode === 'bookSeq' || this.mode === 'bookLoop') && this.gotoAdjacentBook(dir)) return true;
+        if (!auto) new Notice(dir > 0 ? '已经是播放列表的最后一章' : '已经是播放列表的第一章');
+        return false;
+    }
+
+    // 换到相邻一卷（全书顺序 / 全书循环）；整卷都没有 MP3 时继续往后找
+    gotoAdjacentBook(dir) {
+        let id = this.bookId + dir;
+        let guard = 0;
+        while (guard++ < 70) {
+            if (id < 1 || id > 66) {
+                if (this.mode !== 'bookLoop') return false;
+                id = id < 1 ? 66 : 1;
+            }
+            const list = this.playlistOf(id);
+            if (list.length) {
+                this.bookId = id;
+                this.playlist = list;
+                this.index = dir > 0 ? 0 : list.length - 1;
+                this.load(true);
+                return true;
+            }
+            id += dir;
+        }
+        return false;
+    }
+
+    handleEnded() {
+        if (this.mode === 'one') {
+            const a = this._audio;
+            if (a) {
+                try { a.currentTime = 0; } catch (e) { /* 忽略 */ }
+                if (typeof a.play === 'function') {
+                    try { const p = a.play(); if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ }); }
+                    catch (e) { /* 忽略 */ }
+                }
+            }
+            this.render();
+            return;
+        }
+        if (this.step(1, true)) return;
+        this.playing = false;
+        this.render();
+    }
+
+    jump(index) {
+        const i = Math.max(0, Math.min(this.playlist.length - 1, Math.floor(Number(index) || 0)));
+        if (!this.playlist.length) return;
+        this.index = i;
+        this.load(true);
+    }
+
+    cycleMode() {
+        const i = BIBLE_AUDIO_MODES.indexOf(this.mode);
+        this.setMode(BIBLE_AUDIO_MODES[(i + 1) % BIBLE_AUDIO_MODES.length]);
+    }
+
+    setMode(mode) {
+        this.mode = bibleAudioModeOf(mode);
+        if (this.plugin && this.plugin.settings) {
+            this.plugin.settings.bibleAudioMode = this.mode;
+            try { void this.plugin.saveSettings(); } catch (e) { /* 忽略 */ }
+        }
+        this.render();
+    }
+
+    // ---------- 阅读页「转播」 ----------
+    readerTarget() {
+        const view = this.plugin && this.plugin.getSearchView ? this.plugin.getSearchView() : null;
+        if (!view) return null;
+        if (view.activeTab !== 'reader' || view.readerState !== 'content' || !view.readerBook) return null;
+        return { bookId: view.readerBook.id, chapter: view.readerChapter };
+    }
+
+    refreshSwitch() {
+        const el = this.el;
+        if (!el || !el.switch) return;
+        const t = this.readerTarget();
+        const cur = this.currentEntry();
+        const same = !!(t && cur && t.bookId === cur.bookId && t.chapter === cur.chapter);
+        if (!t || same) {
+            el.switch.setText('');
+            try { el.switch.addClass('is-hidden'); } catch (e) { /* 忽略 */ }
+            return;
+        }
+        el.switch.setText('转播' + bibleAudioShortOf(t.bookId, t.chapter));
+        el.switch.setAttribute('title', '阅读页正在看 ' + bibleAudioTitleOf(t.bookId, t.chapter) +
+            '，点击从这一章开始播放这一卷');
+        try { el.switch.removeClass('is-hidden'); } catch (e) { /* 忽略 */ }
+    }
+
+    switchToReader() {
+        const t = this.readerTarget();
+        if (!t) return;
+        this.startAt(t.bookId, t.chapter);
+    }
+
+    // ---------- 面板 ----------
+    build() {
+        if (this.panel) return this.panel;
+        let root = null;
+        try { root = document.createElement('div'); } catch (e) { root = null; }
+        if (!root) return null;
+        root.className = 'bible-audio-panel is-hidden';
+        try { document.body.appendChild(root); } catch (e) { /* 忽略 */ }
+        this.panel = root;
+        const el = this.el = {};
+
+        const head = root.createDiv({ cls: 'bible-audio-head' });
+        el.book = this.iconBtn(head, 'book-open', '圣', '选择要播放的圣经章节', 'bible-audio-btn bible-audio-book');
+        el.book.addEventListener('click', () => this.openPicker());
+        const titles = head.createDiv({ cls: 'bible-audio-titles' });
+        const titleRow = titles.createDiv({ cls: 'bible-audio-title-row' });
+        el.title = titleRow.createEl('span', { cls: 'bible-audio-title', text: '圣经音频' });
+        el.switch = titleRow.createEl('span', { cls: 'bible-audio-switch is-hidden', text: '' });
+        el.switch.addEventListener('click', () => this.switchToReader());
+        el.sub = titles.createDiv({ cls: 'bible-audio-sub', text: BIBLE_AUDIO_SUBTITLE });
+
+        const controls = root.createDiv({ cls: 'bible-audio-controls' });
+        el.mode = controls.createEl('button', {
+            cls: 'bible-audio-btn bible-audio-mode',
+            attr: { type: 'button', title: '播放模式（点击切换）' }
+        });
+        el.modeIcon = el.mode.createSpan({ cls: 'bible-audio-mode-icon' });
+        el.modeName = el.mode.createSpan({ cls: 'bible-audio-mode-name', text: '' });
+        el.mode.addEventListener('click', () => this.cycleMode());
+
+        const transport = controls.createDiv({ cls: 'bible-audio-transport' });
+        el.prev = this.iconBtn(transport, 'skip-back', '⏮', '上一章');
+        el.prev.addEventListener('click', () => this.step(-1, false));
+        el.play = this.iconBtn(transport, 'play', '▶', '播放', 'bible-audio-btn bible-audio-play');
+        el.play.addEventListener('click', () => this.toggle());
+        el.next = this.iconBtn(transport, 'skip-forward', '⏭', '下一章');
+        el.next.addEventListener('click', () => this.step(1, false));
+
+        el.listBtn = this.iconBtn(controls, 'list-music', '≡♪', '播放列表', 'bible-audio-btn bible-audio-list');
+        el.listBtn.addEventListener('click', () => this.openPlaylist());
+
+        const prog = root.createDiv({ cls: 'bible-audio-progress' });
+        el.cur = prog.createEl('span', { cls: 'bible-audio-time', text: '00:00' });
+        el.bar = prog.createEl('input', {
+            cls: 'bible-audio-bar',
+            attr: { type: 'range', min: '0', max: '1000', step: '1', value: '0', 'aria-label': '播放进度' }
+        });
+        el.bar.addEventListener('input', () => this.seekFromBar());
+        el.dur = prog.createEl('span', { cls: 'bible-audio-time bible-audio-dur', text: '00:00' });
+
+        el.hint = root.createDiv({ cls: 'bible-audio-hint', text: '' });
+
+        this.render();
+        return root;
+    }
+
+    render() {
+        const el = this.el;
+        if (!el || !this.panel) return;
+        const cur = this.currentEntry();
+        if (el.title) el.title.setText(cur ? bibleAudioTitleOf(cur.bookId, cur.chapter) : '圣经音频');
+        if (el.sub) el.sub.setText(BIBLE_AUDIO_SUBTITLE);
+        if (el.modeName) el.modeName.setText(BIBLE_AUDIO_MODE_LABELS[this.mode] || BIBLE_AUDIO_MODE_LABELS.list);
+        if (el.mode) {
+            el.mode.setAttribute('title', '播放模式：' + (BIBLE_AUDIO_MODE_LABELS[this.mode] || '') + '（点击切换）');
+            if (el.modeIcon) BibleAudioPlayer.setBtnIcon(el.modeIcon, BIBLE_AUDIO_MODE_ICONS[this.mode] || 'repeat', '');
+        }
+        const playing = this.isPlaying();
+        if (el.play) {
+            BibleAudioPlayer.setBtnIcon(el.play, playing ? 'pause' : 'play', playing ? '⏸' : '▶');
+            el.play.setAttribute('title', playing ? '暂停' : '播放');
+        }
+        if (el.listBtn) {
+            el.listBtn.setAttribute('title', '播放列表' + (this.playlist.length ? '（' + this.playlist.length + ' 章）' : ''));
+        }
+        if (el.hint) {
+            let text = '';
+            if (!cur) {
+                // 用已建好的索引判断有没有音频，避免每次重画都全库扫一遍
+                const total = (this.plugin && this.plugin.getBibleAudioIndex)
+                    ? this.plugin.getBibleAudioIndex().size : 0;
+                text = total ? '点左上角的「圣经」选择要播放的章节'
+                    : '没有找到圣经 MP3：请在插件设置的「圣经音频」里指定 MP3 文件夹';
+            } else {
+                text = bibleAudioShortOf(cur.bookId, cur.chapter) + ' · 列表第 ' +
+                    (this.index + 1) + ' / ' + this.playlist.length + ' 章';
+            }
+            el.hint.setText(text);
+        }
+        this.refreshSwitch();
+        this.updateProgress();
+        if (this.plugin && typeof this.plugin.syncAudioButton === 'function') this.plugin.syncAudioButton();
+    }
+
+    updateProgress() {
+        const el = this.el;
+        if (!el || !el.bar) return;
+        const a = this._audio;
+        const dur = a && isFinite(a.duration) ? (Number(a.duration) || 0) : 0;
+        const cur = a && isFinite(a.currentTime) ? (Number(a.currentTime) || 0) : 0;
+        if (el.cur) el.cur.setText(dailyFormatDuration(cur));
+        if (el.dur) el.dur.setText(dailyFormatDuration(dur));
+        const pct = dur > 0 ? Math.min(100, Math.max(0, cur / dur * 100)) : 0;
+        try { if (el.bar.value !== String(Math.round(pct * 10))) el.bar.value = String(Math.round(pct * 10)); } catch (e) { /* 忽略 */ }
+        try { if (el.bar.style && el.bar.style.setProperty) el.bar.style.setProperty('--audio-progress', pct.toFixed(2) + '%'); }
+        catch (e) { /* 忽略 */ }
+    }
+
+    seekFromBar() {
+        const a = this._audio;
+        const el = this.el;
+        if (!a || !el || !el.bar) return;
+        const v = Number(el.bar.value) || 0;
+        const dur = Number(a.duration) || 0;
+        if (dur > 0) { try { a.currentTime = dur * v / 1000; } catch (e) { /* 忽略 */ } }
+        this.updateProgress();
+    }
+
+    openPicker() {
+        const app = this.plugin && this.plugin.app;
+        if (!app) return;
+        this.openDialog(() => new BibleAudioPickerModal(app, this.plugin, (bookId, chapter) => { this.startAt(bookId, chapter); }));
+    }
+
+    openPlaylist() {
+        if (!this.playlist.length) {
+            new Notice('播放列表还是空的：先用左上角的「圣经」选一章');
+            return;
+        }
+        const app = this.plugin && this.plugin.app;
+        if (!app) return;
+        this.openDialog(() => new BibleAudioPlaylistModal(app, this));
+    }
+
+    // 播放器里的弹窗（圣经选择 / 播放列表）统一走这里，两个作用：
+    //  1) 同一时刻只允许一个：连点按钮不会再叠出好几层窗；
+    //  2) 开窗期间把播放面板藏起来——面板是 fixed + z-index 2200，压在弹窗上面
+    //     会把底部几行书卷 / 章节挡住（手机上是整整一条）。关窗后原样回来。
+    openDialog(make) {
+        if (this._dialog) return null;
+        let modal = null;
+        try { modal = make(); } catch (e) { modal = null; }
+        if (!modal) return null;
+        this._dialog = modal;
+        modal.onClosed = () => {
+            if (this._dialog === modal) this._dialog = null;
+            this.setPanelDimmed(false);
+        };
+        this.setPanelDimmed(true);
+        try { modal.open(); } catch (e) { /* 忽略：开不出来也要把面板放回来 */
+            this._dialog = null;
+            this.setPanelDimmed(false);
+        }
+        return modal;
+    }
+
+    // 弹出弹窗时把面板隐形（不是收起：收起会改标题栏按钮状态，也会断开「点外面」监听）
+    setPanelDimmed(on) {
+        this._dimmed = !!on;
+        if (!this.panel || !this.panel.classList) return;
+        try {
+            if (on) this.panel.classList.add('is-dimmed');
+            else this.panel.classList.remove('is-dimmed');
+        } catch (e) { /* 忽略 */ }
+    }
+
+    // ---------- 显隐 ----------
+    isOpen() {
+        if (!this.panel) return false;
+        try { return !(this.panel.classList && this.panel.classList.contains('is-hidden')); }
+        catch (e) { return true; }
+    }
+
+    open() {
+        const root = this.build();
+        if (!root) return;
+        try { root.removeClass('is-hidden'); } catch (e) { /* 忽略 */ }
+        // 让位状态跟着「有没有弹窗」重算一遍：万一上次弹窗没走到 onClose（插件重载等），
+        // 也不会留下一个看不见的面板。
+        this.setPanelDimmed(!!this._dialog);
+        // 还没播过任何东西：先把阅读页当前这一章摆上来（不自动出声），
+        // 面板一打开就有「当前播放」可看，按播放键就从头播这一卷。
+        if (!this.currentEntry()) this.prefillFromReader();
+        this.render();
+        this.positionPanel();
+        this.bindOutside();
+    }
+
+    prefillFromReader() {
+        const t = this.readerTarget();
+        if (!t) return false;
+        const list = this.playlistOf(t.bookId);
+        if (!list.length) return false;
+        this.playlist = list;
+        this.index = this.closestIndex(list, t.chapter);
+        this.chapter = list[this.index].chapter;
+        this.bookId = t.bookId;
+        return true;
+    }
+
+    close() {
+        if (this.panel) { try { this.panel.addClass('is-hidden'); } catch (e) { /* 忽略 */ } }
+        this.unbindOutside();
+        if (this.plugin && typeof this.plugin.syncAudioButton === 'function') this.plugin.syncAudioButton();
+    }
+
+    togglePanel() {
+        if (this.isOpen()) this.close();
+        else this.open();
+    }
+
+    // 贴着侧边栏的「耳机」按钮弹出；窄屏退化成贴底整宽
+    positionPanel() {
+        const root = this.panel;
+        if (!root || !root.style) return;
+        const btn = this.plugin && typeof this.plugin.audioButtonEl === 'function' ? this.plugin.audioButtonEl() : null;
+        let rect = null;
+        try { rect = btn && btn.getBoundingClientRect ? btn.getBoundingClientRect() : null; }
+        catch (e) { rect = null; }
+        const vw = (typeof window !== 'undefined' && window.innerWidth) || 1200;
+        const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
+        if (vw <= 560) {
+            root.style.left = '8px';
+            root.style.right = '8px';
+            root.style.top = 'auto';
+            root.style.bottom = '8px';
+            root.style.width = 'auto';
+            return;
+        }
+        const width = 340;
+        let left = rect ? Math.round(rect.left) : Math.max(8, vw - width - 16);
+        left = Math.max(8, Math.min(left, vw - width - 8));
+        let top = rect ? Math.round(rect.bottom + 8) : 90;
+        if (top + 240 > vh - 8) top = Math.max(8, Math.round((rect ? rect.top : 120) - 248));
+        root.style.left = left + 'px';
+        root.style.top = top + 'px';
+        root.style.right = 'auto';
+        root.style.bottom = 'auto';
+        root.style.width = width + 'px';
+    }
+
+    // 点面板以外的地方就收起（播放继续）。三种事件都挂：只监听 click 会漏掉
+    // 被 preventDefault 的手势 / 触摸序列。
+    bindOutside() {
+        this.unbindOutside();
+        if (typeof document === 'undefined' || !document.addEventListener) return;
+        const token = this._outsideToken;
+        const handler = (e) => {
+            if (token !== this._outsideToken) return;
+            const t = e && e.target;
+            if (this.panel && t && this.panel.contains && this.panel.contains(t)) return;
+            // 从面板里打开的弹窗（圣经选择 / 播放列表）不算「点外面」：点它不该把播放窗收掉
+            try { if (t && t.closest && t.closest('.modal-container')) return; } catch (err) { /* 忽略 */ }
+            if (this.plugin && typeof this.plugin.isAudioButtonTarget === 'function' && this.plugin.isAudioButtonTarget(t)) return;
+            this.close();
+        };
+        this._outsideHandler = handler;
+        try { document.addEventListener('pointerdown', handler, true); } catch (e) { /* 忽略 */ }
+        try { document.addEventListener('mousedown', handler, true); } catch (e) { /* 忽略 */ }
+        try { document.addEventListener('touchstart', handler, true); } catch (e) { /* 忽略 */ }
+    }
+
+    unbindOutside() {
+        const h = this._outsideHandler;
+        this._outsideHandler = null;
+        this._outsideToken += 1;
+        if (!h || typeof document === 'undefined' || !document.removeEventListener) return;
+        try { document.removeEventListener('pointerdown', h, true); } catch (e) { /* 忽略 */ }
+        try { document.removeEventListener('mousedown', h, true); } catch (e) { /* 忽略 */ }
+        try { document.removeEventListener('touchstart', h, true); } catch (e) { /* 忽略 */ }
+    }
+
+    destroy() {
+        this.unbindOutside();
+        // 插件卸载时如果还开着选择 / 列表弹窗，一并关掉——它挂在 document.body 上，
+        // Obsidian 不会替我们收拾。
+        if (this._dialog) {
+            const m = this._dialog;
+            this._dialog = null;
+            try { m.close(); } catch (e) { /* 忽略 */ }
+        }
+        const a = this._audio;
+        this._audio = null;
+        this._path = '';
+        if (a) {
+            try { a.pause(); } catch (e) { /* 忽略 */ }
+            try { a.removeAttribute('src'); } catch (e) { /* 忽略 */ }
+            try { if (a.parentNode) a.parentNode.removeChild(a); } catch (e) { /* 忽略 */ }
+        }
+        if (this.panel) {
+            try { if (this.panel.parentNode) this.panel.parentNode.removeChild(this.panel); } catch (e) { /* 忽略 */ }
+        }
+        this.panel = null;
+        this.el = {};
+    }
+}
+
+/* 圣经选择弹窗：先点书卷，再点章；没有 MP3 的章标灰但仍可用（点了会落到最近能播的一章） */
+class BibleAudioPickerModal extends Modal {
+    constructor(app, plugin, onPick) {
+        super(app);
+        this.plugin = plugin;
+        this.onPick = typeof onPick === 'function' ? onPick : null;
+        this.onClosed = null;
+        this.bookId = 0;
+        this.box = null;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('bible-audio-picker');
+        this.box = contentEl.createDiv({ cls: 'bible-audio-picker-body' });
+        this.renderBooks();
+    }
+
+    setTitle(text) {
+        try { if (this.titleEl) this.titleEl.setText(text); } catch (e) { /* 忽略 */ }
+    }
+
+    renderBooks() {
+        const box = this.box;
+        if (!box) return;
+        box.empty();
+        this.setTitle('选择书卷');
+        for (const testament of ['old', 'new']) {
+            box.createDiv({ cls: 'bible-audio-picker-label', text: testament === 'old' ? '旧约' : '新约' });
+            const grid = box.createDiv({ cls: 'bible-audio-picker-grid' });
+            for (const b of BIBLE_BOOKS.filter(x => x.testament === testament)) {
+                const n = this.plugin && this.plugin.countBibleAudioChapters ? this.plugin.countBibleAudioChapters(b.id) : 0;
+                const btn = grid.createEl('button', {
+                    cls: 'bible-audio-picker-book' + (n ? '' : ' is-empty'),
+                    attr: { type: 'button', title: b.fullName + '（' + n + ' 章 MP3）' }
+                });
+                btn.setText(b.shortName);
+                btn.addEventListener('click', () => { this.bookId = b.id; this.renderChapters(); });
+            }
+        }
+    }
+
+    renderChapters() {
+        const box = this.box;
+        const book = BIBLE_BOOKS.find(b => b.id === this.bookId);
+        if (!box || !book) return;
+        box.empty();
+        this.setTitle(book.fullName);
+        const head = box.createDiv({ cls: 'bible-audio-picker-head' });
+        const back = head.createEl('button', { cls: 'bible-audio-picker-back', attr: { type: 'button' }, text: '← 返回' });
+        back.addEventListener('click', () => { this.bookId = 0; this.renderBooks(); });
+        head.createSpan({ cls: 'bible-audio-picker-name', text: book.fullName + '（' + book.maxChapters + ' 章）' });
+        const grid = box.createDiv({ cls: 'bible-audio-picker-grid bible-audio-picker-chapters' });
+        for (let ch = 1; ch <= book.maxChapters; ch++) {
+            const has = !!(this.plugin && this.plugin.findBibleAudio ? this.plugin.findBibleAudio(book.id, ch) : null);
+            const btn = grid.createEl('button', {
+                cls: 'bible-audio-picker-chapter' + (has ? '' : ' is-empty'),
+                attr: { type: 'button', title: has ? '' : '这一章还没有 MP3' }
+            });
+            btn.setText(String(ch));
+            btn.addEventListener('click', () => {
+                if (this.onPick) this.onPick(book.id, ch);
+                this.close();
+            });
+        }
+    }
+
+    onClose() {
+        try { this.contentEl.empty(); } catch (e) { /* 忽略 */ }
+        // 关窗后让播放器把面板放回来（onClosed 只跑一次，避免重复触发）
+        const done = this.onClosed;
+        this.onClosed = null;
+        if (typeof done === 'function') { try { done(); } catch (e) { /* 忽略 */ } }
+    }
+}
+
+/* 播放列表弹窗：按列表顺序列出当前这一卷的章节，点一行就跳到那一章 */
+class BibleAudioPlaylistModal extends Modal {
+    constructor(app, player) {
+        super(app);
+        this.player = player;
+        this.onClosed = null;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.addClass('bible-audio-playlist');
+        const player = this.player;
+        const cur = player.currentEntry();
+        const book = cur ? BIBLE_BOOKS.find(b => b.id === cur.bookId) : null;
+        try {
+            if (this.titleEl) {
+                this.titleEl.setText('播放列表' + (book ? '：' + book.fullName : '') +
+                    (player.playlist.length ? '（' + player.playlist.length + ' 章）' : ''));
+            }
+        } catch (e) { /* 忽略 */ }
+        const list = contentEl.createDiv({ cls: 'bible-audio-playlist-list' });
+        player.playlist.forEach((entry, i) => {
+            const row = list.createEl('button', {
+                cls: 'bible-audio-playlist-row' + (i === player.index ? ' is-active' : ''),
+                attr: { type: 'button' }
+            });
+            row.createSpan({ cls: 'bible-audio-playlist-idx', text: String(i + 1) });
+            row.createSpan({ cls: 'bible-audio-playlist-name', text: bibleAudioTitleOf(entry.bookId, entry.chapter) });
+            row.addEventListener('click', () => {
+                player.jump(i);
+                this.close();
+            });
+            if (i === player.index) {
+                const note = row.createSpan({ cls: 'bible-audio-playlist-now', text: player.isPlaying() ? '播放中' : '已暂停' });
+            }
+        });
+        const active = list.querySelector ? list.querySelector('.is-active') : null;
+        if (active && typeof active.scrollIntoView === 'function') {
+            try { active.scrollIntoView({ block: 'center' }); } catch (e) { /* 忽略 */ }
+        }
+    }
+
+    onClose() {
+        try { this.contentEl.empty(); } catch (e) { /* 忽略 */ }
+        const done = this.onClosed;
+        this.onClosed = null;
+        if (typeof done === 'function') { try { done(); } catch (e) { /* 忽略 */ } }
+    }
+}
+
 // ==================== 插件主类 ====================
 class BibleSearchPlugin extends Plugin {
     async onload() {
@@ -10893,6 +13966,9 @@ class BibleSearchPlugin extends Plugin {
         // 否则启动期异步回调（自动开面板 / 更新提示）会在插件已禁用后继续跑。
         if (this._unloaded !== true) this._unloaded = false;
         await this.loadSettings();
+        // 「上次投影内容」只活在本次会话：重启后第一次开投影必定是默认空白页，
+        // 持久化保存的只有历史列表里的查询串（见 projectionHistory）。
+        this._lastProjectionSnapshot = null;
         // 启动即全库扫描：把 vault 任意位置的数据文件与插件目录里的做对比，
         // 最新一份集中到插件目录、其余旧/重复副本静默删除（详见 syncScannedVersions）。
         try { await this.syncScannedVersions(); }
@@ -10913,6 +13989,19 @@ class BibleSearchPlugin extends Plugin {
         // 记录所有活着的视图实例：卸载时 workspace 的 leaf 查询可能漏掉弹出窗口 /
         // 折叠侧边栏里的延迟视图，届时还得靠这些引用把 DOM 清干净。
         this._liveViewRefs = new Set();
+        // 三旧一新 MP3 索引：首次播放时按 vault.getFiles() 扫一遍，之后查表；
+        // 仓库里增删改名就清缓存，用户新放进去的 MP3 不用重载插件也能被认出来。
+        this._dailyAudioIndex = null;
+        // 圣经音频（整章 MP3）同理：索引 + 播放器实例 + 耳机按钮引用
+        this._bibleAudioIndex = null;
+        this._audioPlayer = null;
+        this._audioButton = null;
+        const clearAudioIndex = () => { this._dailyAudioIndex = null; this._bibleAudioIndex = null; };
+        try {
+            this.registerEvent(this.app.vault.on('create', clearAudioIndex));
+            this.registerEvent(this.app.vault.on('delete', clearAudioIndex));
+            this.registerEvent(this.app.vault.on('rename', clearAudioIndex));
+        } catch (e) { /* 事件 API 不可用时退回「只在首次构建」 */ }
         this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => {
             const view = new BibleSearchView(leaf, this);
             this.searchViewRef = view;
@@ -10923,6 +14012,14 @@ class BibleSearchPlugin extends Plugin {
         // 投影「标签页模式」的宿主视图：由 Obsidian 负责与侧边栏并排排版，避免手动算宽度导致遮挡
         this.registerView(BIBLE_PROJECTION_VIEW_TYPE, (leaf) => {
             const view = new BibleProjectionView(leaf, this);
+            this._liveViewRefs.add(view);
+            return view;
+        });
+
+        // 三旧一新：独立标签页（F 键 / 标签栏日历按钮打开），展示当天的读经进度
+        this.registerView(BIBLE_DAILY_VIEW_TYPE, (leaf) => {
+            const view = new BibleDailyView(leaf, this);
+            this.dailyViewRef = view;
             this._liveViewRefs.add(view);
             return view;
         });
@@ -11116,6 +14213,12 @@ class BibleSearchPlugin extends Plugin {
                 else if (hk === 'y') v.keyboardSwitchTab();
                 return;
             }
+            // ⑦ 三旧一新（F）：新标签页打开当天的读经进度。不依赖本插件视图是否开着，
+            //    但有输入焦点 / 输入法合成态时上面的门禁已经放行，所以在笔记里打字不会误触。
+            if (hk === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+                void this.activateDailyView();
+                return;
+            }
             let mode = null;
             if (e.key === 'q' || e.key === 'Q') mode = 'focus';
             else if (e.key === 'w' || e.key === 'W') mode = 'parallel';
@@ -11203,10 +14306,9 @@ class BibleSearchPlugin extends Plugin {
             }
             // ④ 没有可见界面、但投影仍在运行（例如从弹窗起投影后弹窗已关）：退化为切换模式
             if (this.currentProjection) { this.currentProjection.setMode(mode); return; }
-            // ⑤ 连插件界面都不可见（侧边栏收起、只开着笔记）时，也允许按 Q/W/E 打开「空投影」：
-            //    投影顶部常驻搜索框可直接输入出处投影经文，不必先回侧边栏选内容
-            const emptyProj = new BibleProjectionOverlay(this.app, this, [], mode, true);
-            emptyProj.open();
+            // ⑤ 连插件界面都不可见（侧边栏收起、只开着笔记）时，也允许按 Q/W/E 打开投影：
+            //    本次会话投影过就恢复上次内容，重启后第一次仍是带搜索框的默认空白页。
+            this.openProjectionWithLast(mode, true);
         });
 
         this.addRibbonIcon('book-plus', '圣经检索', () => { this.activateSearchView(); });
@@ -11241,6 +14343,11 @@ class BibleSearchPlugin extends Plugin {
             id: 'toggle-bible-notes',
             name: '切换恢复本注解 / 串珠（开 / 关）',
             callback: guarded(async () => { await this.toggleShowNotes(); })
+        });
+        this.addCommand({
+            id: 'open-daily-reading',
+            name: '打开三旧一新（当天读经进度）',
+            callback: guarded(() => { void this.activateDailyView(); })
         });
         this.addSettingTab(new BibleSettingTab(this.app, this));
 
@@ -11324,7 +14431,7 @@ class BibleSearchPlugin extends Plugin {
         try {
             const vr = this.app && this.app.viewRegistry;
             if (!vr || !vr.viewByType) return;
-            for (const t of [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE]) {
+            for (const t of [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE, BIBLE_DAILY_VIEW_TYPE]) {
                 if (!Object.prototype.hasOwnProperty.call(vr.viewByType, t)) continue;
                 try {
                     if (typeof vr.unregisterView === 'function') vr.unregisterView(t);
@@ -11345,6 +14452,11 @@ class BibleSearchPlugin extends Plugin {
         // 因此同步阶段只做「解绑全局监听 + 请 Obsidian 摘视图」，
         // 破坏性的 DOM 兜底统一延后到下一轮事件循环，并且只在插件确实已卸载时执行。
         this._unloaded = true;
+        // 音频播放器：<audio> 与浮层都挂在 body 上，Obsidian 不会替我们摘，
+        // 禁用插件时必须自己停掉并移除，否则会留下一个继续出声的隐藏元素。
+        try { if (this._audioPlayer) this._audioPlayer.destroy(); } catch (e) { /* 忽略 */ }
+        this._audioPlayer = null;
+        this._audioButton = null;
         // ③′ 第三重保险：主动注销本插件的视图类型。Obsidian 的 registerView 清理回调
         //    排在卸载链较靠后的位置，一旦前面某个回调抛错就会被跳过；这里再兜一次，
         //    unregisterView 幂等（内部先判 hasOwnProperty 再 delete），重复调用无害。
@@ -11352,11 +14464,11 @@ class BibleSearchPlugin extends Plugin {
         try {
             const vr = this.app && this.app.viewRegistry;
             if (vr && typeof vr.unregisterView === 'function') {
-                for (const t of [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE]) vr.unregisterView(t);
+                for (const t of [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE, BIBLE_DAILY_VIEW_TYPE]) vr.unregisterView(t);
             }
         } catch (e) { /* 忽略 */ }
         try {
-            const viewTypes = [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE];
+            const viewTypes = [BIBLE_SEARCH_VIEW_TYPE, BIBLE_PROJECTION_VIEW_TYPE, BIBLE_DAILY_VIEW_TYPE];
             // detachLeavesOfType / leaf.detach 都返回 Promise；未捕获的 rejection
             // 会让 Obsidian 的 disablePlugin 失败并弹「无法禁用插件」，必须统一吞掉。
             const swallow = (r) => {
@@ -11528,10 +14640,25 @@ class BibleSearchPlugin extends Plugin {
             // 经文投影默认字号：桌面端与移动端分开设置，只决定「新打开投影」时的初始字号。
             // 投影里按 +/- 调整、按 R 重置都不改写这里；重置回的是当前设备的默认值。
             projectionFontSizeDesktop: 48,
-            projectionFontSizeMobile: 48
+            projectionFontSizeMobile: 48,
+            // 三旧一新正文默认字号：导航栏「字」按钮可现场调，调完写回这里
+            dailyFontSize: DAILY_FONT_DEFAULT,
+            // 对照版经文是否套一层背景框（默认开；关了就纯文字排下来，和主版本左对齐）
+            dailyCompareBox: true,
+            // 三旧一新 MP3 所在文件夹（留空 = 扫描整个仓库）；文件名按 MMDD.mp3
+            dailyMp3Folder: '',
+            // 圣经音频（整章 MP3）：目录留空 = 全库；播放模式默认列表顺序
+            bibleMp3Folder: '',
+            bibleAudioMode: 'list',
+            // 投影历史：默认 50 条，只存书卷章节 / 搜索词 + 首次打开时间，重启后仍保留
+            projectionHistoryLimit: 50,
+            projectionHistory: []
         };
         const loaded = await this.loadData() || {};
         this.settings = Object.assign({}, defaults, loaded);
+        this.settings.projectionHistoryLimit = normalizeProjectionHistoryLimit(this.settings.projectionHistoryLimit);
+        this.settings.projectionHistory = normalizeProjectionHistoryList(
+            this.settings.projectionHistory, this.settings.projectionHistoryLimit);
         // 兼容旧版布尔标志：曾点过「不再提示」的用户，按当时缺失的默认版本写入数组
         if (loaded && loaded.skipMissingVersionPrompt === true && (!this.settings.dismissedVersionPrompts || this.settings.dismissedVersionPrompts.length === 0)) {
             this.settings.dismissedVersionPrompts = (this.settings.versions || [])
@@ -11543,6 +14670,175 @@ class BibleSearchPlugin extends Plugin {
 
     async saveSettings() {
         await this.saveData(this.settings);
+    }
+
+    // ===== 投影历史（持久化）与「上次投影内容」（仅本次会话）=====
+    projectionHistoryLimit() {
+        return normalizeProjectionHistoryLimit(this.settings && this.settings.projectionHistoryLimit);
+    }
+
+    projectionHistoryEntries() {
+        return normalizeProjectionHistoryList(this.settings && this.settings.projectionHistory, this.projectionHistoryLimit());
+    }
+
+    // 历史落盘很便宜但很频繁（输入即投影时每个字一次），合并写入用防抖，
+    // 显式投影（回车 / 点按钮）仍然立即保存，避免崩溃丢记录。
+    scheduleHistorySave() {
+        try { if (this._historySaveTimer) clearTimeout(this._historySaveTimer); } catch (e) { /* 忽略 */ }
+        this._historySaveTimer = setTimeout(() => {
+            this._historySaveTimer = null;
+            try { this.saveSettings().catch(() => { /* 忽略 */ }); } catch (e) { /* 忽略 */ }
+        }, 400);
+    }
+
+    // opts.merge：实时投影（输入即投影）的中间态。把「太」→「太1」→「太1:1」并成一条，
+    // 只留更完整的那个查询串，否则历史会被输入碎片塞满、真正看过的出处反而被挤掉。
+    async rememberProjectionQuery(query, opts) {
+        const q = String(query == null ? '' : query).trim();
+        const limit = this.projectionHistoryLimit();
+        if (!q || !limit) return;
+        const list = this.projectionHistoryEntries();
+        const now = Date.now();
+        if (opts && opts.merge && list.length && now - (Number(list[0].lastAt) || 0) < 120000) {
+            const head = list[0];
+            const a = String(head.q || '');
+            if (a && (a === q || a.startsWith(q) || q.startsWith(a))) {
+                // 屏幕上是哪一条就记哪一条（含退格改短），只是不新增条目
+                head.q = q;
+                head.lastAt = now;                       // 首次打开时间保持不动
+                this.settings.projectionHistory = normalizeProjectionHistoryList(list, limit);
+                this.scheduleHistorySave();
+                return;
+            }
+        }
+        const idx = list.findIndex(e => e.q === q);
+        if (idx >= 0) {
+            const entry = list.splice(idx, 1)[0];
+            // 同一查询再次投影移到最前，但「首次打开时间」保持不变
+            entry.lastAt = now;
+            list.unshift(entry);
+        } else {
+            list.unshift({ q, firstAt: now, lastAt: now });
+        }
+        this.settings.projectionHistory = normalizeProjectionHistoryList(list, limit);
+        try { await this.saveSettings(); }
+        catch (e) { console.warn('[Bible] 保存投影历史失败:', e); }
+    }
+
+    // 会话内的「上一次投影内容」：重启后为 null，因此第一次打开投影仍是默认空白页。
+    // 只保留选中项与必要的排版标记，不落盘，也不改动持久化历史。
+    async noteProjection(query, results, mode, opts) {
+        this._lastProjectionSnapshot = {
+            results: (results || []).filter(r => r && r.selected !== false).map(r => r),
+            mode: mode || 'parallel',
+            chapterPaged: !!(opts && opts.chapterPaged),
+            showSource: opts && typeof opts.showSource === 'boolean' ? opts.showSource : true
+        };
+        if (opts && opts.fromHistory) return;
+        await this.rememberProjectionQuery(query, { merge: !!(opts && opts.realtime) });
+    }
+
+    // 空选中再开经文投影：本次会话里有上次内容就原样恢复，否则（含重启后第一次）空白页。
+    openProjectionWithLast(mode, showSource) {
+        const snap = this._lastProjectionSnapshot;
+        const overlay = new BibleProjectionOverlay(this.app, this,
+            (snap && snap.results && snap.results.length) ? snap.results.map(r => r) : [],
+            // 排版模式服从本次打开方式（Q/W/E 或投影按钮），内容才沿用上次投影
+            mode || (snap && snap.mode) || 'parallel',
+            (snap && typeof snap.showSource === 'boolean') ? snap.showSource : (showSource !== false));
+        if (snap && snap.results && snap.results.length) overlay.chapterPaged = !!snap.chapterPaged;
+        overlay.open();
+        return overlay;
+    }
+
+    // 侧边栏 / 阅读页选中经文后投影：历史只记「太1」「csj」「士2，士3:1」这类出处，
+    // 不存正文。⚠️ 必须逐节核对覆盖范围：整章全选才算「士2」，只选了第 1 节就必须写
+    // 「士3:1」。绝不能因为两章相邻就合并成「士2-3」——那样点开历史看到的经文比当初多，
+    // 历史的用处（回到看过的出处）就废了。
+    deriveProjectionQuery(results) {
+        const byBook = new Map();
+        for (const r of (results || [])) {
+            const item = r && r.item;
+            if (!item) continue;
+            // 简介 / 主题 / 纲目没有节号，不参与出处推导（它们跟着所属书卷章一起显示）
+            if (item.type && item.type !== 'verse') continue;
+            const book = BIBLE_BOOKS.find(b => b.id === item.bookId) ||
+                BIBLE_BOOKS.find(b => item.bookShortName && b.shortName === item.bookShortName) ||
+                BIBLE_BOOKS.find(b => item.bookFullName && b.fullName === item.bookFullName);
+            if (!book) continue;
+            const ch = Number(item.chapter);
+            const v = Number(item.verse);
+            if (!Number.isFinite(ch) || ch < 1) continue;
+            if (!byBook.has(book.id)) byBook.set(book.id, { book, chapters: new Map() });
+            const entry = byBook.get(book.id);
+            if (!entry.chapters.has(ch)) entry.chapters.set(ch, new Set());
+            if (Number.isFinite(v) && v >= 1) entry.chapters.get(ch).add(v);
+        }
+        const maxIdx = this.verseMaxIndex();
+        const tokens = [];
+        for (const { book, chapters } of byBook.values()) {
+            const chs = Array.from(chapters.keys()).sort((a, b) => a - b);
+            const whole = new Set();
+            const partial = new Map();
+            for (const ch of chs) {
+                const verses = Array.from(chapters.get(ch)).sort((a, b) => a - b);
+                if (!verses.length) { whole.add(ch); continue; }   // 只有章号的条目＝整章
+                const max = maxIdx.get(book.id + ':' + ch) || 0;
+                const isWhole = max > 0 && verses[0] === 1 &&
+                    verses[verses.length - 1] === max && verses.length === max;
+                if (isWhole) whole.add(ch);
+                else partial.set(ch, verses);
+            }
+            // 整卷（全部章都整章选上）→ 唯一短拼，如 csj
+            if (whole.size && whole.size === book.maxChapters && chs.length === book.maxChapters) {
+                const ab = BOOK_UNIQUE_ABBR[book.id];
+                tokens.push(ab && /^[A-Za-z]+$/.test(ab) ? ab : (book.shortName + '1-' + book.maxChapters));
+                continue;
+            }
+            // 整章按连续段合并：士2 / 士2-3；零散节号逐段写出：士3:1 / 士3:1-3
+            let runStart = null, runEnd = null;
+            const flush = () => {
+                if (runStart == null) return;
+                tokens.push(runStart === runEnd
+                    ? (book.shortName + runStart)
+                    : (book.shortName + runStart + '-' + runEnd));
+                runStart = null; runEnd = null;
+            };
+            for (const ch of chs) {
+                if (whole.has(ch)) {
+                    if (runStart == null) { runStart = ch; runEnd = ch; }
+                    else if (ch === runEnd + 1) runEnd = ch;
+                    else { flush(); runStart = ch; runEnd = ch; }
+                    continue;
+                }
+                flush();
+                const verses = partial.get(ch);
+                if (!verses) continue;
+                for (const seg of compressVerseRanges(verses)) {
+                    tokens.push(book.shortName + ch + ':' + seg);
+                }
+            }
+            flush();
+        }
+        return tokens.slice(0, 40).join('，');
+    }
+
+    // 主版本「每章最大节号」索引：判断某一章是不是整章全选。只建一次，数据更新时清空。
+    verseMaxIndex() {
+        if (this._verseMaxIdx) return this._verseMaxIdx;
+        const map = new Map();
+        let pk = null;
+        try { pk = this.getPrimaryVersionKey(); } catch (e) { pk = null; }
+        for (const it of (this.allItems || [])) {
+            if (!it || it.type !== 'verse') continue;
+            if (pk && it.versionKey && it.versionKey !== pk) continue;
+            const ch = Number(it.chapter), v = Number(it.verse);
+            if (!Number.isFinite(ch) || ch < 1 || !Number.isFinite(v) || v < 1) continue;
+            const k = it.bookId + ':' + ch;
+            if (v > (map.get(k) || 0)) map.set(k, v);
+        }
+        this._verseMaxIdx = map;
+        return map;
     }
 
     async migrateOldData() {
@@ -11897,6 +15193,7 @@ class BibleSearchPlugin extends Plugin {
         try {
             this.allItems = await this.parser.parseAllBooks();
             this._notesAttached = false;   // 数据重载后需要重新挂接注解
+            this._verseMaxIdx = null;      // 「每章最大节号」索引随数据一起重建
             if (this.searchEngine) this.searchEngine.setItems(this.allItems);
             // 经节索引必须跟着数据一起重建：首次安装下载完数据后若不重建，
             // 索引仍是空的，经文弹窗会显示「未找到经文」（见 ensureVerseIndex）
@@ -12225,10 +15522,19 @@ class BibleSearchPlugin extends Plugin {
     refreshProjectionNotes() {
         const proj = this.currentProjection;
         if (!proj) return;
+        // 在整个刷新链外面再包一层记录：renderSlide 内部已经恢复过一次，
+        // 但注解数据是异步加载的，中途任何一次重排都可能把刚写回的滚动位置冲掉，
+        // 这里在刷新动作结束后补最后一次，确保「开关注解 = 只多 / 少上标，画面不动」。
+        const saved = (typeof proj._snapshotProjScroll === 'function') ? proj._snapshotProjScroll() : null;
         try {
-            if (typeof proj.renderSlide === 'function') proj.renderSlide();
+            // 保留当前页与当前滚动位置：打开 / 关闭注解只是在原处多出或少掉上标，
+            // 绝不能把长经文从中间滚回这一页的开头（页码本来就没变）。
+            if (typeof proj.renderSlide === 'function') proj.renderSlide({ preserveScroll: true });
             else if (typeof proj.refresh === 'function') proj.refresh();
         } catch (e) { console.error('[Bible] 刷新投影注解失败:', e); }
+        if (saved && typeof proj._restoreProjScroll === 'function') {
+            try { proj._restoreProjScroll(saved, null); } catch (e) { /* 忽略 */ }
+        }
     }
 
     // 经文弹窗同理：用原锚点重开一次，正文才会重新带上 / 去掉注串上标。
@@ -12240,6 +15546,47 @@ class BibleSearchPlugin extends Plugin {
         try { await reopen(); } catch (e) { console.error('[Bible] 刷新弹窗注解失败:', e); }
     }
 
+    // 三旧一新页同理：注解上标是渲染正文时写进去的，必须重画正文才能看到变化。
+    // 逐个标签页刷新（正常情况下只有一个），并保留各自的滚动位置。
+    async refreshDailyNotes() {
+        let leaves = [];
+        try { leaves = this.app.workspace.getLeavesOfType(BIBLE_DAILY_VIEW_TYPE) || []; }
+        catch (e) { leaves = []; }
+        for (const leaf of leaves) {
+            const view = leaf && leaf.view;
+            if (!view || typeof view.refreshNotesAtPosition !== 'function') continue;
+            try { await view.refreshNotesAtPosition(); }
+            catch (e) { console.error('[Bible] 刷新三旧一新注解失败:', e); }
+        }
+    }
+
+    // 主版本 / 对照版本变了：三旧一新里的经文与对照行都来自 allItems，必须就地重画
+    // （否则要切一天再切回来才看到新版本，看起来像「设置没生效」）。同样保留滚动位置。
+    async refreshDailyContent() {
+        let leaves = [];
+        try { leaves = this.app.workspace.getLeavesOfType(BIBLE_DAILY_VIEW_TYPE) || []; }
+        catch (e) { leaves = []; }
+        for (const leaf of leaves) {
+            const view = leaf && leaf.view;
+            const fn = view && (view.refreshContentAtPosition || view.refreshNotesAtPosition);
+            if (typeof fn !== 'function') continue;
+            try { await fn.call(view); }
+            catch (e) { console.error('[Bible] 刷新三旧一新内容失败:', e); }
+        }
+    }
+
+    // 设置页调完字号：开着的三旧一新页立刻套用（只改 CSS 变量，不重画正文，位置不跳）
+    refreshDailyFontViews() {
+        let leaves = [];
+        try { leaves = this.app.workspace.getLeavesOfType(BIBLE_DAILY_VIEW_TYPE) || []; }
+        catch (e) { leaves = []; }
+        for (const leaf of leaves) {
+            const view = leaf && leaf.view;
+            if (!view || typeof view.applyFontSize !== 'function') continue;
+            try { view.applyFontSize(); } catch (e) { /* 忽略 */ }
+        }
+    }
+
     async refreshNotesViews() {
         await this.loadNotesData();
         this._notesAttached = false;
@@ -12247,6 +15594,8 @@ class BibleSearchPlugin extends Plugin {
         // 投影与经文弹窗不依赖检索视图是否存在，必须在这里一并刷新（快捷键 A 也要生效）
         this.refreshProjectionNotes();
         await this.refreshTooltipNotes();
+        // 三旧一新标签页：按当前设置重画正文，滚动位置留在原处
+        await this.refreshDailyNotes();
         const view = this.getSearchView ? this.getSearchView() : null;
         if (!view) return;
         // 注解 / 串珠上标是「渲染正文时」写进去的，只刷新卡片状态不会改变正文，
@@ -13072,6 +16421,363 @@ class BibleSearchPlugin extends Plugin {
         }
     }
 
+    // 打开三旧一新：**只允许一个标签页**（已经开着就把它调到前台，不再新建），
+    // 也不再往侧边栏塞——它是一整页的读经内容，跟侧边栏的宽度合不来。
+    async activateDailyView(date) {
+        const { workspace } = this.app;
+        const apply = (leaf) => {
+            const view = leaf && leaf.view;
+            if (view && typeof view.setDate === 'function' && date) view.setDate(date);
+        };
+        const existing = workspace.getLeavesOfType(BIBLE_DAILY_VIEW_TYPE);
+        if (existing.length > 0) {
+            // 极端情况下（重启恢复了两个）多出来的关掉，保证「不能多开」
+            for (let i = 1; i < existing.length; i++) {
+                try { existing[i].detach(); } catch (e) { /* 忽略 */ }
+            }
+            const leaf = existing[0];
+            try { workspace.revealLeaf(leaf); } catch (e) { /* 忽略 */ }
+            apply(leaf);
+            return leaf;
+        }
+        let leaf = null;
+        try { leaf = workspace.getLeaf('tab'); } catch (e) { leaf = null; }
+        if (!leaf) { try { leaf = workspace.getLeaf(true); } catch (e) { leaf = null; } }
+        if (!leaf) return null;
+        await leaf.setViewState({ type: BIBLE_DAILY_VIEW_TYPE, active: true });
+        try { workspace.revealLeaf(leaf); } catch (e) { /* 忽略 */ }
+        apply(leaf);
+        return leaf;
+    }
+
+    // ========== 三旧一新 MP3：按 MMDD.mp3 识别（可在设置里限定文件夹） ==========
+    // 思路与 Hymns 一致：不猜目录，遍历 vault.getFiles() 只看文件名；
+    // 设置里填了「MP3 文件夹」就只在这个目录（含子目录）里找，留空 = 整个仓库。
+    // 同一天可能有多份（备份目录、旧副本），优先「三旧一新」目录、其次路径更浅的。
+    dailyAudioScore(file) {
+        const p = String((file && file.path) || '').toLowerCase();
+        let score = 0;
+        if (p.indexOf('三旧一新') >= 0) score += 100;
+        if (p.indexOf('mp3') >= 0) score += 10;
+        score -= Math.min(40, p.split('/').length);
+        return score;
+    }
+
+    // 设置里的 MP3 文件夹（去掉首尾斜杠，空串 = 整个仓库）
+    dailyMp3Folder() {
+        return String((this.settings && this.settings.dailyMp3Folder) || '').replace(/^\/+|\/+$/g, '');
+    }
+
+    // 路径是否落在 root 目录（含子目录）；root 为空一律放行
+    dailyMp3InFolder(path, root) {
+        const p = String(path == null ? '' : path).toLowerCase();
+        const r = String(root == null ? '' : root).toLowerCase().replace(/^\/+|\/+$/g, '');
+        if (!r) return true;
+        return p === r || p.indexOf(r + '/') === 0;
+    }
+
+    // 仓库里所有文件夹（由文件路径反推，天然只含「里面有东西」的目录）
+    allVaultFolders() {
+        const set = new Set();
+        let files = [];
+        try { files = this.app.vault.getFiles() || []; } catch (e) { files = []; }
+        for (const f of files) {
+            const parts = String((f && f.path) || '').split('/');
+            parts.pop();
+            let cur = '';
+            for (const seg of parts) {
+                if (!seg) continue;
+                cur = cur ? cur + '/' + seg : seg;
+                set.add(cur);
+            }
+        }
+        return Array.from(set).sort((a, b) => (a < b ? -1 : (a > b ? 1 : 0)));
+    }
+
+    // 统计 root（含子目录）里能识别成三旧一新音频的文件：个数 / 覆盖天数 / 每月明细
+    scanDailyMp3(root) {
+        const r = root === undefined ? this.dailyMp3Folder() : String(root || '');
+        let files = [];
+        try { files = this.app.vault.getFiles() || []; } catch (e) { files = []; }
+        let count = 0;
+        const days = new Set();
+        const byMonth = new Map();
+        for (const f of files) {
+            if (!this.dailyMp3InFolder(f && f.path, r)) continue;
+            const key = dailyMp3KeyOf(f && f.name);
+            if (!key) continue;
+            count += 1;
+            days.add(key);
+            const mon = Number(key.slice(0, 2));
+            byMonth.set(mon, (byMonth.get(mon) || 0) + 1);
+        }
+        return { files: count, days: days.size, byMonth };
+    }
+
+    // 自动检测：按「含全部子目录」聚合每个目录的命中数，推荐覆盖 ≥90% 里最深的一层
+    detectDailyMp3Folder() {
+        let files = [];
+        try { files = this.app.vault.getFiles() || []; } catch (e) { files = []; }
+        const hits = [];
+        const folders = new Set();
+        for (const f of files) {
+            if (!dailyMp3KeyOf(f && f.name)) continue;
+            const p = String((f && f.path) || '');
+            hits.push(p.toLowerCase());
+            let cur = p;
+            for (;;) {
+                const i = cur.lastIndexOf('/');
+                if (i <= 0) break;
+                cur = cur.slice(0, i);
+                folders.add(cur);
+            }
+        }
+        const total = hits.length;
+        const counts = [];
+        for (const dir of folders) {
+            const pre = dir.toLowerCase() + '/';
+            let c = 0;
+            for (const hp of hits) if (hp.indexOf(pre) === 0) c += 1;
+            if (c > 0) counts.push({ path: dir, total: c });
+        }
+        counts.sort((a, b) => (b.total - a.total) || (a.path < b.path ? -1 : 1));
+        const cands = counts.filter(c => c.total >= Math.max(1, Math.floor(total * 0.9)));
+        let best = null;
+        for (const c of cands) {
+            const depth = c.path.split('/').length;
+            if (!best || depth > best.depth || (depth === best.depth && c.total > best.total)) {
+                best = { path: c.path, total: c.total, depth: depth };
+            }
+        }
+        return { total: total, counts: counts, best: best };
+    }
+
+    // 设置页改动目录后：存盘 → 清索引缓存 → 让开着的三旧一新页重新找当天的文件
+    async applyDailyMp3Folder(value) {
+        this.settings.dailyMp3Folder = String(value == null ? '' : value).trim().replace(/^\/+|\/+$/g, '');
+        this._dailyAudioIndex = null;
+        await this.saveSettings();
+        this.refreshDailyAudioViews();
+    }
+
+    // 目录换了，当前播放的可能已经不是同一天的那个文件：停掉并重画播放区
+    refreshDailyAudioViews() {
+        let leaves = [];
+        try { leaves = this.app.workspace.getLeavesOfType(BIBLE_DAILY_VIEW_TYPE) || []; } catch (e) { leaves = []; }
+        for (const leaf of leaves) {
+            const view = leaf && leaf.view;
+            if (!view) continue;
+            try { if (typeof view.resetAudio === 'function') view.resetAudio(); } catch (e) { /* 忽略 */ }
+            try { if (typeof view.updatePlayButton === 'function') view.updatePlayButton(); } catch (e) { /* 忽略 */ }
+        }
+    }
+
+    getDailyAudioIndex() {
+        if (this._dailyAudioIndex) return this._dailyAudioIndex;
+        const map = new Map();
+        const root = this.dailyMp3Folder();
+        let files = [];
+        try { files = this.app.vault.getFiles() || []; } catch (e) { files = []; }
+        for (const f of files) {
+            if (!this.dailyMp3InFolder(f && f.path, root)) continue;
+            const key = dailyMp3KeyOf(f && f.name);
+            if (!key) continue;
+            const prev = map.get(key);
+            if (!prev || this.dailyAudioScore(f) > this.dailyAudioScore(prev)) map.set(key, f);
+        }
+        this._dailyAudioIndex = map;
+        return map;
+    }
+
+    findDailyAudioFile(date) {
+        if (!date || typeof date.getMonth !== 'function') return null;
+        const key = String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+        return this.getDailyAudioIndex().get(key) || null;
+    }
+
+    dailyAudioSrc(file) {
+        if (!file) return '';
+        try {
+            const adapter = this.app.vault.adapter;
+            if (adapter && typeof adapter.getResourcePath === 'function') return adapter.getResourcePath(file.path);
+        } catch (e) { /* 忽略，退回下一个取法 */ }
+        try {
+            if (typeof this.app.vault.getResourcePath === 'function') return this.app.vault.getResourcePath(file);
+        } catch (e) { /* 忽略 */ }
+        return '';
+    }
+
+    // ==================== 圣经音频（整章 MP3） ====================
+    // 设置里的 MP3 文件夹（去掉首尾斜杠，空串 = 整个仓库）；与三旧一新各自独立
+    bibleMp3Folder() {
+        return String((this.settings && this.settings.bibleMp3Folder) || '').replace(/^\/+|\/+$/g, '');
+    }
+
+    bibleMp3InFolder(path, root) {
+        return this.dailyMp3InFolder(path, root);
+    }
+
+    // 'bookId:chapter' -> TFile。首次用时扫一遍 vault，增删改名就清缓存
+    getBibleAudioIndex() {
+        if (this._bibleAudioIndex) return this._bibleAudioIndex;
+        const map = new Map();
+        const root = this.bibleMp3Folder();
+        let files = [];
+        try { files = this.app.vault.getFiles() || []; } catch (e) { files = []; }
+        for (const f of files) {
+            if (!this.bibleMp3InFolder(f && f.path, root)) continue;
+            const key = bibleAudioKeyOf(f && f.name);
+            if (!key) continue;
+            const k = key.bookId + ':' + key.chapter;
+            const prev = map.get(k);
+            // 同一章有多份时挑路径更浅、目录里带「圣经」的那份（见 dailyAudioScore）
+            if (!prev || this.dailyAudioScore(f) > this.dailyAudioScore(prev)) map.set(k, f);
+        }
+        this._bibleAudioIndex = map;
+        return map;
+    }
+
+    findBibleAudio(bookId, chapter) {
+        return this.getBibleAudioIndex().get(bookId + ':' + chapter) || null;
+    }
+
+    countBibleAudioChapters(bookId) {
+        const index = this.getBibleAudioIndex();
+        let n = 0;
+        const book = BIBLE_BOOKS.find(b => b.id === bookId);
+        if (!book) return 0;
+        for (let ch = 1; ch <= book.maxChapters; ch++) if (index.has(bookId + ':' + ch)) n += 1;
+        return n;
+    }
+
+    bibleAudioSrc(file) {
+        return this.dailyAudioSrc(file);
+    }
+
+    // 统计 root（含子目录）里能识别的整章 MP3：文件数 / 章数 / 卷数 / 缺章明细
+    scanBibleMp3(root) {
+        const r = root === undefined ? this.bibleMp3Folder() : String(root || '');
+        let files = [];
+        try { files = this.app.vault.getFiles() || []; } catch (e) { files = []; }
+        const chapters = new Set();
+        const books = new Map();
+        for (const f of files) {
+            if (!this.bibleMp3InFolder(f && f.path, r)) continue;
+            const key = bibleAudioKeyOf(f && f.name);
+            if (!key) continue;
+            chapters.add(key.bookId + ':' + key.chapter);
+            books.set(key.bookId, (books.get(key.bookId) || 0) + 1);
+        }
+        const total = BIBLE_BOOKS.reduce((sum, b) => sum + b.maxChapters, 0);
+        const missing = [];
+        for (const b of BIBLE_BOOKS) {
+            const have = books.get(b.id) || 0;
+            if (have < b.maxChapters) missing.push(b.shortName + ' 缺 ' + (b.maxChapters - have) + ' 章');
+        }
+        return {
+            files: chapters.size,
+            chapters: chapters.size,
+            books: books.size,
+            total: total,
+            missing: missing
+        };
+    }
+
+    // 自动检测：按命中数聚合目录，推荐覆盖 ≥90% 里最深的一层（与三旧一新同一套算法）
+    detectBibleMp3Folder() {
+        let files = [];
+        try { files = this.app.vault.getFiles() || []; } catch (e) { files = []; }
+        const hits = [];
+        const folders = new Set();
+        for (const f of files) {
+            if (!bibleAudioKeyOf(f && f.name)) continue;
+            const p = String((f && f.path) || '');
+            hits.push(p.toLowerCase());
+            let cur = p;
+            for (;;) {
+                const i = cur.lastIndexOf('/');
+                if (i <= 0) break;
+                cur = cur.slice(0, i);
+                folders.add(cur);
+            }
+        }
+        const total = hits.length;
+        const counts = [];
+        for (const dir of folders) {
+            const pre = dir.toLowerCase() + '/';
+            let c = 0;
+            for (const hp of hits) if (hp.indexOf(pre) === 0) c += 1;
+            if (c > 0) counts.push({ path: dir, total: c });
+        }
+        counts.sort((a, b) => (b.total - a.total) || (a.path < b.path ? -1 : 1));
+        const cands = counts.filter(c => c.total >= Math.max(1, Math.floor(total * 0.9)));
+        let best = null;
+        for (const c of cands) {
+            const depth = c.path.split('/').length;
+            if (!best || depth > best.depth || (depth === best.depth && c.total > best.total)) {
+                best = { path: c.path, total: c.total, depth: depth };
+            }
+        }
+        return { total: total, counts: counts, best: best };
+    }
+
+    // 改目录：清索引 → 存盘 → 让开着的播放器丢掉已失效的曲目（不硬停，停下由用户决定）
+    async applyBibleMp3Folder(value) {
+        this.settings.bibleMp3Folder = String(value == null ? '' : value).trim().replace(/^\/+|\/+$/g, '');
+        this._bibleAudioIndex = null;
+        await this.saveSettings();
+        if (this._audioPlayer && this._audioPlayer.panel) {
+            try { this._audioPlayer.render(); } catch (e) { /* 忽略 */ }
+        }
+    }
+
+    // ---------- 播放器接线 ----------
+    audioPlayer() {
+        if (!this._audioPlayer) this._audioPlayer = new BibleAudioPlayer(this);
+        return this._audioPlayer;
+    }
+
+    toggleAudioPanel() {
+        this.audioPlayer().togglePanel();
+    }
+
+    closeAudioPanel() {
+        if (this._audioPlayer) this._audioPlayer.close();
+    }
+
+    // 阅读页翻章 / 换页后调用：面板上的「转播」标签要跟着阅读位置变
+    refreshAudioReaderHint() {
+        if (this._audioPlayer) {
+            try { this._audioPlayer.refreshSwitch(); } catch (e) { /* 忽略 */ }
+        }
+    }
+
+    audioButtonEl() {
+        return this._audioButton || null;
+    }
+
+    isAudioButtonTarget(node) {
+        const btn = this._audioButton;
+        if (!btn || !node) return false;
+        if (btn === node) return true;
+        try { return !!(btn.contains && btn.contains(node)); } catch (e) { return false; }
+    }
+
+    // 耳机按钮的状态：面板开着显示激活态，正在播放时加一个「播」标记
+    syncAudioButton() {
+        const btn = this._audioButton;
+        if (!btn) return;
+        const open = !!(this._audioPlayer && this._audioPlayer.isOpen && this._audioPlayer.isOpen());
+        const playing = !!(this._audioPlayer && this._audioPlayer.isPlaying && this._audioPlayer.isPlaying());
+        try {
+            if (btn.classList && typeof btn.classList.toggle === 'function') {
+                btn.classList.toggle('active', open);
+                btn.classList.toggle('is-playing', playing);
+            }
+        } catch (e) { /* 忽略 */ }
+        try { btn.setAttribute('title', '圣经音频' + (playing ? '（播放中）' : '')); } catch (e) { /* 忽略 */ }
+    }
+
     // ==================== 更新说明：无论用哪种方式安装 / 更新都显示 ====================
     // 插件可能被插件自带的更新功能更新，也可能是 Obsidian 第三方插件市场、BRAT
     // 或手动覆盖安装更新的。这里只在启动时比对「上次记录的版本」与「当前版本号」，
@@ -13299,6 +17005,8 @@ class BibleSearchPlugin extends Plugin {
         // 重载数据
         if (bibleReload) {
             try { await this.loadBibleData(); } catch (e) { console.error('[Bible] 重载经文数据失败:', e); }
+            // 新数据到位后，已打开的三旧一新页立刻换成新版本内容
+            try { await this.refreshDailyContent(); } catch (e) { /* 忽略 */ }
         }
         if (notesReload) {
             try {
@@ -15291,7 +18999,12 @@ class BibleSearchPlugin extends Plugin {
             shell._navStack = [];
             shell._levels = [];
             shell._anchor = targetEl;
-            document.body.appendChild(shell);
+            // 经文投影整屏时覆盖层在浏览器 top layer 里，挂在 body 上的弹窗会被整块盖住。
+            // 有全屏元素就挂进全屏元素内部（.bible-inline-tooltip 是 position:fixed，
+            // 定位仍按视口坐标，不受影响）。
+            const tooltipMount = (typeof document !== 'undefined' && document.fullscreenElement)
+                ? document.fullscreenElement : document.body;
+            tooltipMount.appendChild(shell);
             // 按住标题行可以把这个弹窗拖到别处（层切换 / 重建内容时外壳不变，不会失效）
             this.enableTooltipDrag(shell);
             // 记住「用同一锚点重开弹窗」的入口：切换注解时正文要重新渲染，且保持当前所在的层级

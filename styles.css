@@ -28,10 +28,14 @@
 /* ===== 选项卡 ===== */
 .bible-tab-bar {
     display: flex;
+    align-items: center;
     gap: 4px;
     margin-bottom: 12px;
     border-bottom: 2px solid var(--bible-card-border);
     padding-bottom: 2px;
+    /* 标签栏统一高度：左侧「搜索 / 阅读」与右侧「三旧一新 / 音频 / 对照 / 专注」
+       全部按这一个值取高，两边不会再一高一低（图标按钮同时按它取宽，保持方形）。 */
+    --bible-tab-h: 34px;
     /* 专注模式会隐藏下方大量区块，标签栏不允许被 flex 压缩，
        否则右侧「对照 / 专注」会跟着布局塌陷被挤出可见区域 */
     flex-shrink: 0;
@@ -45,7 +49,9 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    padding: 8px 12px;
+    box-sizing: border-box;
+    height: var(--bible-tab-h, 34px);
+    padding: 0 12px;
     border: none;
     border-radius: 6px 6px 0 0;
     background: transparent;
@@ -65,7 +71,7 @@
     gap: 3px;
 }
 .bible-tab-bar.compact .bible-tab {
-    padding: 8px 8px;
+    padding: 0 8px;
 }
 .bible-tab-bar.compact .bible-tab-text {
     display: none;
@@ -293,15 +299,6 @@
 }
 .bible-input-btn:hover {
     background: var(--background-modifier-hover);
-}
-.bible-search-btn {
-    background: var(--bible-accent);
-    color: var(--text-on-accent);
-    border-color: var(--bible-accent);
-    font-weight: 600;
-}
-.bible-search-btn:hover {
-    background: var(--bible-accent-hover);
 }
 
 /* ===== 提示文字 ===== */
@@ -1537,26 +1534,27 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
     color: var(--text-muted);
 }
 
-/* ===== 标签栏右侧「对照 / 专注」按钮 =====
-   移动端 WebView 点击 button 后，:hover / :focus 会「粘住」直到下一次触摸别处；
-   而激活态过去靠「翻转成白底浅字」表达，视觉上就像按钮整个消失，
-   要到再点一次屏幕、伪类被清掉才回来。这里改成：
-   1) 常态 / 激活态都是实心高对比色块，绝不出现白底或透明底；
-   2) 所有悬停 / 按下变化只在真正有鼠标的设备生效，触屏端完全没有伪类可粘；
-   3) 尺寸、可见性、flex 收缩全部显式写死，专注模式隐藏大量区块后也挤不掉。 */
+/* ===== 标签栏右侧「对照 / 专注 / 三旧一新 / 圣经音频」按钮 =====
+   与「搜索 / 阅读」标签同一套状态语言，四种按钮不再一律是实心色块：
+     常态   = 透明底 + 次要文字色（等同未选中的 .bible-tab）；
+     悬停   = 浅色底 + 正常文字色（只在真正有鼠标的设备上给，触屏不会粘住）；
+     选中   = 实心主色块 + 深墨字（等同 .bible-tab.active）。
+   移动端 WebView 点完 button 后 :hover / :focus 会粘在按钮上直到下一次触摸别处，
+   所以改变底色的伪类规则全部关在 @media (hover: hover) 里。
+   尺寸、可见性、flex 收缩仍显式写死，专注模式隐藏大量区块后也挤不掉。 */
 .bible-focus-mode-btn,
 .bible-compare-toggle-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    min-width: 52px;
-    min-height: 32px;
-    padding: 3px 10px;
-    border: 1px solid var(--bible-accent);
-    border-radius: 4px;
-    background: var(--bible-accent);
-    color: var(--bible-on-accent);
+    min-width: var(--bible-tab-h, 34px);
+    min-height: var(--bible-tab-h, 34px);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
     font-size: 11px;
     font-weight: 600;
     line-height: 1.2;
@@ -1578,13 +1576,48 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
 .bible-compare-toggle-btn {
     margin-left: 0;
 }
-/* 激活态只换略深的底色 + 内描边，文字与底色始终高对比，不会出现「只剩一个空框」 */
+/* 标签栏右侧的符号按钮（三旧一新 / 圣经音频 / 对照 / 专注）统一成方形按钮：
+   文字按钮时代它们各占 52px，窄侧边栏里会把「搜索 / 阅读」挤出去。
+   边长取 --bible-tab-h（与「搜索 / 阅读」标签等高，方形），图标统一 15px 线性，
+   尺寸固定，不随主题字号变化。
+   配色刻意与「搜索 / 阅读」两个标签保持一致：未选中＝透明底 + 次要文字色，
+   选中＝实心主色块 + 深墨字（见下方 .active 规则）。 */
+.bible-tab-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: var(--bible-tab-h, 34px);
+    height: var(--bible-tab-h, 34px);
+    min-width: var(--bible-tab-h, 34px);
+    min-height: var(--bible-tab-h, 34px);
+    padding: 0;
+    gap: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 1;
+    visibility: visible;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+.bible-tab-icon-btn .svg-icon {
+    width: 15px;
+    height: 15px;
+}
+.bible-tab-icon-btn:focus-visible {
+    outline: 2px solid var(--text-normal);
+    outline-offset: 1px;
+}
+/* 选中态＝「搜索 / 阅读」标签选中时的那块实心主色，一字不差 */
 .bible-focus-mode-btn.active,
-.bible-compare-toggle-btn.active {
-    background: var(--bible-accent-hover);
+.bible-compare-toggle-btn.active,
+.bible-daily-open-btn.active,
+.bible-audio-open-btn.active {
+    background: var(--bible-accent);
     color: var(--bible-on-accent);
-    border-color: var(--bible-on-accent);
-    box-shadow: inset 0 0 0 1px var(--bible-on-accent);
+    border-color: var(--bible-accent);
     opacity: 1;
     visibility: visible;
 }
@@ -1593,23 +1626,41 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
     outline: 2px solid var(--text-normal);
     outline-offset: 1px;
 }
-/* 悬停 / 按下只给鼠标；触屏设备的按钮不存在任何会改变可见性的伪类规则 */
+/* 悬停 / 按下只给鼠标；触屏设备的按钮不存在任何会改变底色的伪类规则 */
 @media (hover: hover) and (pointer: fine) {
     .bible-focus-mode-btn:hover,
-    .bible-compare-toggle-btn:hover {
-        background: var(--bible-accent-hover);
+    .bible-compare-toggle-btn:hover,
+    .bible-daily-open-btn:hover,
+    .bible-audio-open-btn:hover {
+        background: var(--background-modifier-hover);
+        color: var(--text-normal);
         opacity: 1;
     }
     .bible-focus-mode-btn:active,
-    .bible-compare-toggle-btn:active {
-        background: var(--bible-accent-hover);
-        color: var(--bible-on-accent);
+    .bible-compare-toggle-btn:active,
+    .bible-daily-open-btn:active,
+    .bible-audio-open-btn:active {
+        background: var(--background-modifier-hover);
+        color: var(--text-normal);
         opacity: 1;
         transform: translateY(1px);
     }
+    /* 选中的按钮悬停 / 按下都保持主色块，只稍微压暗一点 */
+    .bible-focus-mode-btn.active:hover,
+    .bible-compare-toggle-btn.active:hover,
+    .bible-daily-open-btn.active:hover,
+    .bible-audio-open-btn.active:hover,
+    .bible-focus-mode-btn.active:active,
+    .bible-compare-toggle-btn.active:active,
+    .bible-daily-open-btn.active:active,
+    .bible-audio-open-btn.active:active {
+        background: var(--bible-accent);
+        color: var(--bible-on-accent);
+        filter: brightness(0.94);
+    }
 }
 /* 触屏兜底：即便主题或 WebView 偷偷注入了 :hover / :focus 规则，
-   也把两个按钮的背景、文字、可见性锁回实心色块（放在最后以覆盖上面的常态规则）。 */
+   也把背景 / 文字 / 可见性锁回「透明底 + 次要文字色」，别让粘住的伪类把按钮变成实心块。 */
 @media (hover: none) {
     .bible-tab-bar > .bible-focus-mode-btn,
     .bible-tab-bar > .bible-focus-mode-btn:hover,
@@ -1618,18 +1669,28 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
     .bible-tab-bar > .bible-compare-toggle-btn,
     .bible-tab-bar > .bible-compare-toggle-btn:hover,
     .bible-tab-bar > .bible-compare-toggle-btn:active,
-    .bible-tab-bar > .bible-compare-toggle-btn:focus {
+    .bible-tab-bar > .bible-compare-toggle-btn:focus,
+    .bible-tab-bar > .bible-daily-open-btn,
+    .bible-tab-bar > .bible-daily-open-btn:hover,
+    .bible-tab-bar > .bible-daily-open-btn:active,
+    .bible-tab-bar > .bible-daily-open-btn:focus,
+    .bible-tab-bar > .bible-audio-open-btn,
+    .bible-tab-bar > .bible-audio-open-btn:hover,
+    .bible-tab-bar > .bible-audio-open-btn:active,
+    .bible-tab-bar > .bible-audio-open-btn:focus {
         display: inline-flex;
-        background: var(--bible-accent);
-        color: var(--bible-on-accent);
+        background: transparent;
+        color: var(--text-muted);
         opacity: 1;
         visibility: visible;
-        min-width: 52px;
-        min-height: 32px;
+        min-width: var(--bible-tab-h, 34px);
+        min-height: var(--bible-tab-h, 34px);
     }
     .bible-tab-bar > .bible-focus-mode-btn.active,
-    .bible-tab-bar > .bible-compare-toggle-btn.active {
-        background: var(--bible-accent-hover);
+    .bible-tab-bar > .bible-compare-toggle-btn.active,
+    .bible-tab-bar > .bible-daily-open-btn.active,
+    .bible-tab-bar > .bible-audio-open-btn.active {
+        background: var(--bible-accent);
         color: var(--bible-on-accent);
         opacity: 1;
         visibility: visible;
@@ -1837,6 +1898,20 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
 }
 .bible-proj-ref {
     color: #a0a0a0;
+}
+
+/* 简介 / 纲目正文里的经文出处：投影层里没有侧边栏那份 --bible-accent，
+   按当前投影主题的强调色显示，保持可点（虚线下划线）与可辨认 */
+.bible-projection-fullscreen .bible-inline-ref {
+    color: var(--bp-accent);
+    border-bottom: 1px dashed var(--bp-accent);
+    cursor: pointer;
+    padding: 0 1px;
+    border-radius: 2px;
+}
+.bible-projection-fullscreen .bible-inline-ref:hover {
+    background: rgba(127, 127, 127, 0.25);
+    border-bottom-style: solid;
 }
 
 /* 投影文字允许被选中与复制（显式开启，避免被外层继承的 user-select 影响） */
@@ -3083,52 +3158,81 @@ button.bible-notes-toggle-btn,
     z-index: 2;
 }
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn,
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:hover,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:hover,
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:active,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:active,
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:focus,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:focus {
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:hover,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:active,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:focus,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn:hover,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn:active,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn:focus,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn:hover,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn:active,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn:focus {
     display: inline-flex;
     visibility: visible;
     opacity: 1;
-    background-color: #4ecdc4;
+    /* 未选中＝和「搜索 / 阅读」标签一样的透明底 + 次要文字色 */
+    background-color: transparent;
     background-image: none;
-    color: #0b2b29;
-    -webkit-text-fill-color: #0b2b29;
-    border: 1px solid #3dbdb4;
+    color: var(--text-muted);
+    -webkit-text-fill-color: var(--text-muted);
+    border: 1px solid transparent;
     box-shadow: none;
     transform: none;
     filter: none;
-    min-width: 52px;
-    min-height: 32px;
+    width: var(--bible-tab-h, 34px);
+    min-width: var(--bible-tab-h, 34px);
+    height: var(--bible-tab-h, 34px);
+    min-height: var(--bible-tab-h, 34px);
+    padding: 0;
+    border-radius: 6px;
 }
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active,
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active:hover,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:hover,
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active:active,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:active,
 .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn.active:focus,
-.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:focus {
-    background-color: #3dbdb4;
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:hover,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:active,
+.bible-search-container .bible-tab-bar > button.bible-focus-mode-btn.active:focus,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn.active,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn.active:hover,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn.active:active,
+.bible-search-container .bible-tab-bar > button.bible-daily-open-btn.active:focus,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn.active,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn.active:hover,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn.active:active,
+.bible-search-container .bible-tab-bar > button.bible-audio-open-btn.active:focus {
+    /* 选中＝和 .bible-tab.active 同一块实心主色 */
+    background-color: var(--bible-accent);
     background-image: none;
-    color: #0b2b29;
-    -webkit-text-fill-color: #0b2b29;
-    border-color: #0b2b29;
-    box-shadow: inset 0 0 0 1px #0b2b29;
+    color: var(--bible-on-accent);
+    -webkit-text-fill-color: var(--bible-on-accent);
+    border-color: var(--bible-accent);
+    box-shadow: none;
+    filter: none;
     visibility: visible;
     opacity: 1;
 }
 @media (hover: hover) and (pointer: fine) {
     .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:hover,
-    .bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:hover {
-        filter: brightness(0.94);
+    .bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:hover,
+    .bible-search-container .bible-tab-bar > button.bible-daily-open-btn:hover,
+    .bible-search-container .bible-tab-bar > button.bible-audio-open-btn:hover {
+        background-color: var(--background-modifier-hover);
+        color: var(--text-normal);
+        -webkit-text-fill-color: var(--text-normal);
     }
     .bible-search-container .bible-tab-bar > button.bible-compare-toggle-btn:active,
-    .bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:active {
-        filter: brightness(0.88);
+    .bible-search-container .bible-tab-bar > button.bible-focus-mode-btn:active,
+    .bible-search-container .bible-tab-bar > button.bible-daily-open-btn:active,
+    .bible-search-container .bible-tab-bar > button.bible-audio-open-btn:active {
+        filter: brightness(0.94);
     }
 }
 
@@ -3149,6 +3253,10 @@ button.bible-notes-toggle-btn,
     /* 挂在 body 上，取不到容器里那份主色变量，这里单独补一份（与顶部定义保持一致） */
     --bible-accent: #4ecdc4;
     --bible-on-accent: #0b2b29;
+    /* ⚠️ 投影顶栏是 Electron 拖动区；下拉顶部会压在顶栏提示行上，
+       不显式 no-drag 的话首项上半部分的 pointerdown 会被系统当成拖窗口吞掉。 */
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
     position: fixed;
     z-index: 10002;
     display: none;
@@ -3176,8 +3284,12 @@ button.bible-notes-toggle-btn,
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
 }
 .bible-abbr-suggestion-item {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -3207,6 +3319,8 @@ button.bible-notes-toggle-btn,
     -webkit-text-fill-color: var(--bible-on-accent);
 }
 .bible-abbr-suggestion-foot {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
     flex: 0 0 auto;
     padding: 4px 8px 2px;
     font-size: 10px;
@@ -3287,8 +3401,7 @@ body > .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
     border-color: #4ecdc4;
     background: rgba(0, 0, 0, 0.5);
 }
-.bible-projection-fullscreen .bible-proj-quick-search-clear,
-.bible-projection-fullscreen .bible-proj-quick-search-go {
+.bible-projection-fullscreen .bible-proj-quick-search-clear {
     flex: 0 0 auto;
     height: 30px;
     border-radius: 6px;
@@ -3303,20 +3416,9 @@ body > .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
     background: rgba(255, 255, 255, 0.1);
     color: #ffffff;
 }
-.bible-projection-fullscreen .bible-proj-quick-search-go {
-    padding: 0 12px;
-    border: 1px solid #4ecdc4;
-    background: #4ecdc4;
-    color: #0b2b29;
-    font-weight: 600;
-    -webkit-text-fill-color: #0b2b29;
-}
 @media (hover: hover) and (pointer: fine) {
     .bible-projection-fullscreen .bible-proj-quick-search-clear:hover {
         background: rgba(255, 255, 255, 0.22);
-    }
-    .bible-projection-fullscreen .bible-proj-quick-search-go:hover {
-        background: #6ee0d8;
     }
 }
 .bible-projection-fullscreen .bible-proj-tophint {
@@ -3379,8 +3481,7 @@ body > .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
         height: 34px;
         font-size: 14px;
     }
-    .bible-projection-fullscreen .bible-proj-quick-search-clear,
-    .bible-projection-fullscreen .bible-proj-quick-search-go {
+    .bible-projection-fullscreen .bible-proj-quick-search-clear {
         height: 34px;
         min-width: 34px;
         font-size: 13px;
@@ -3484,16 +3585,13 @@ body .bible-projection-fullscreen.light-mode .bible-abbr-suggestion .bible-abbr-
     border-top-color: rgba(0, 0, 0, 0.12);
 }
 
-/* 末尾高特异性兜底：无论弹层挂在 body 还是被搬进标签页，投影按钮都不许被主题伪类改透明 */
-body .bible-projection-fullscreen .bible-proj-quick-search-go,
-body .bible-projection-fullscreen .bible-proj-quick-search-go:hover,
-body .bible-projection-fullscreen .bible-proj-quick-search-go:active,
-body .bible-projection-fullscreen .bible-proj-quick-search-go:focus {
+/* 末尾高特异性兜底：无论弹层挂在 body 还是被搬进标签页，投影搜索框里的按钮都不许被主题伪类改透明 */
+body .bible-projection-fullscreen .bible-proj-quick-search-clear,
+body .bible-projection-fullscreen .bible-proj-quick-search-clear:hover,
+body .bible-projection-fullscreen .bible-proj-quick-search-clear:active,
+body .bible-projection-fullscreen .bible-proj-quick-search-clear:focus {
     visibility: visible;
     opacity: 1;
-    background-color: #4ecdc4;
-    color: #0b2b29;
-    -webkit-text-fill-color: #0b2b29;
     background-image: none;
 }
 
@@ -3692,6 +3790,85 @@ body .bible-projection-fullscreen .bible-proj-theme-menu-item.is-current {
 .bible-proj-theme-swatch[data-theme-swatch="blue"]     { background: linear-gradient(135deg, #001a52 0 40%, #003399 40% 72%, #ffff66 72% 100%); }
 @media (max-width: 600px) {
     body .bible-projection-fullscreen .bible-proj-theme-menu-item { padding: 11px 10px; font-size: 14px; }
+}
+
+/* ===== 投影历史列表：底栏「历史」按钮弹出，最近 → 最早 =====
+   挂在投影覆盖层内部（全屏 top layer 才看得见），配色统一走 --bp-* 六套主题自动换肤。
+   列表只显示查询串与首次打开时间，点一条直接投影且不改列表顺序。 */
+.bible-projection-fullscreen .bible-proj-history-menu {
+    position: absolute;
+    left: 16px;
+    bottom: 52px;
+    width: min(460px, calc(100vw - 32px));
+    max-height: min(66vh, 560px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    -webkit-text-fill-color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 12px;
+    box-shadow: 0 18px 46px rgba(0,0,0,0.45);
+    z-index: 70;
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-history-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 4px 6px 8px;
+}
+body .bible-projection-fullscreen .bible-proj-history-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--bp-menu-fg);
+    -webkit-text-fill-color: var(--bp-menu-fg);
+    font-family: inherit;
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+}
+.bible-projection-fullscreen .bible-proj-history-item:hover { background: var(--bp-menu-hover); }
+/* 上次点选过的那一条：左侧色条 + 加粗，再次打开历史时一眼看到自己刚才停在哪 */
+body .bible-projection-fullscreen .bible-proj-history-item.is-active {
+    background: var(--bp-menu-hover);
+    box-shadow: inset 2px 0 0 var(--bp-accent, currentColor);
+    font-weight: 600;
+}
+.bible-proj-history-q {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.bible-proj-history-time {
+    flex: 0 0 auto;
+    font-size: 11px;
+    opacity: 0.72;
+    white-space: nowrap;
+}
+body .bible-projection-fullscreen .bible-proj-history-empty {
+    padding: 18px 12px 22px;
+    font-size: 12px;
+    line-height: 1.6;
+    opacity: 0.78;
+}
+@media (max-width: 600px) {
+    .bible-projection-fullscreen .bible-proj-history-menu { left: 8px; bottom: 48px; width: calc(100vw - 16px); }
+    body .bible-projection-fullscreen .bible-proj-history-item { padding: 11px 10px; font-size: 14px; }
 }
 
 /* ===== 移动端安全区：避开状态栏 / 灵动岛 / home indicator =====
@@ -4290,19 +4467,6 @@ body .bible-projection-fullscreen.bp-theme-yellow:not(.bp-theme-cream) .bible-pr
 .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-clear:hover {
     background: var(--bp-btn-hover-bg);
 }
-body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go,
-body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go:hover,
-body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go:active,
-body .bible-projection-fullscreen.bp-theme-blue .bible-proj-quick-search-go:focus,
-body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go,
-body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go:hover,
-body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go:active,
-body .bible-projection-fullscreen.bp-theme-yellow .bible-proj-quick-search-go:focus {
-    background-color: var(--bp-go-bg);
-    border-color: var(--bp-go-bg);
-    color: var(--bp-go-fg);
-    -webkit-text-fill-color: var(--bp-go-fg);
-}
 /* 短拼补全下拉（挂在投影层内部，整屏时必须跟着主题走） */
 body .bible-projection-fullscreen.bp-theme-blue .bible-abbr-suggestion,
 body .bible-projection-fullscreen.bp-theme-yellow .bible-abbr-suggestion {
@@ -4816,6 +4980,1052 @@ body .bible-projection-fullscreen.bp-theme-blue .bible-proj-note-ref-text sup.bi
 @media (max-width: 600px) {
     .bible-result-intro-row { flex-direction: column; gap: 0; }
     .bible-result-intro-label { white-space: normal; }
+}
+
+
+/* ==================== 三旧一新：每日读经进度页 ====================
+   独立标签页视图（F 键 / 标签栏日历按钮打开）。顶部导航固定，正文铺满
+   整个视图宽度，按「新约 → 旧约」滚动。
+   ⚠️ 全页只有一个字号基准 --daily-font-size（导航「字」按钮写在这里），
+   经文、节号、书卷名、范围说明、简介、纲目、对照全部按它 calc() 换算，
+   所以调字号时整页一起放大，不会出现「正文变大了、节号还是 11px」。 */
+.view-content.bible-daily-view {
+    /* Obsidian 给 view-content 默认带内边距和自己的滚动条，这里全部让给内层，
+       否则窗口放大后正文两边永远留着一条白边，看起来「没有铺满」 */
+    padding: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+.bible-daily-view {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    /* 字号基准（会被 JS 的内联样式覆盖为设置值） */
+    --daily-font-size: 17px;
+    /* 分割线 / 边框：浅色主题下 Obsidian 的 --background-modifier-border 几乎看不见，
+       单独留一个变量，浅色时加深（见下方 body.theme-light），暗色仍用主题色。 */
+    --daily-divider: var(--background-modifier-border);
+    /* 节号列宽 / 列间距；纲目行的左缩进＝两者之和，才能和经文正文左边缘对齐 */
+    --daily-ref-col: calc(var(--daily-font-size, 17px) * 2.9);
+    --daily-gap: calc(var(--daily-font-size, 17px) * 0.6);
+    --daily-indent: calc(var(--daily-ref-col) + var(--daily-gap));
+}
+
+/* 浅色模式：默认边框线太淡，经文之间的分隔几乎看不出，这里加深到能勾勒层次、
+   又不至于像表格线那样抢眼。 */
+body.theme-light .bible-daily-view {
+    --daily-divider: rgba(0, 0, 0, 0.26);
+}
+
+/* 字号浮层：「字」按钮弹出，调完立即写回设置 */
+.bible-daily-font-pop {
+    min-width: 168px;
+}
+/* 浮层里的开关行（对照版背景框）：左边说明、右边勾选框 */
+.bible-daily-pop-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 2px;
+    padding: 8px 10px 2px;
+    border-top: 1px solid var(--daily-divider, var(--background-modifier-border));
+    color: var(--text-normal);
+    font-size: 13px;
+    cursor: pointer;
+}
+.bible-daily-pop-toggle-label {
+    flex: 1 1 auto;
+    white-space: nowrap;
+}
+.bible-daily-pop-checkbox {
+    flex: 0 0 auto;
+    margin: 0;
+    cursor: pointer;
+}
+.bible-daily-font-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 4px 8px;
+}
+.bible-daily-font-step {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--bible-card-border, var(--background-modifier-border));
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+.bible-daily-font-step:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-daily-font-value {
+    min-width: 50px;
+    color: var(--text-normal);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-align: center;
+}
+.bible-daily-font-reset {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* ----- 顶部导航（固定不动，正文单独滚动） ----- */
+.bible-daily-nav {
+    flex: 0 0 auto;
+    padding: 8px 10px 6px;
+    border-bottom: 1px solid var(--daily-divider);
+    background: var(--background-primary);
+}
+.bible-daily-nav-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    /* 宽度不够就换行：宁可两行，也不把按钮压成看不清的小方块 */
+    flex-wrap: wrap;
+}
+.bible-daily-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    gap: 4px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--bible-card-border, var(--background-modifier-border));
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    flex: 0 0 auto;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.bible-daily-btn:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-daily-btn:focus-visible {
+    outline: 2px solid var(--bible-accent);
+    outline-offset: 1px;
+}
+.bible-daily-btn .svg-icon {
+    width: 15px;
+    height: 15px;
+}
+.bible-daily-date {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    padding: 0 10px;
+}
+.bible-daily-spacer {
+    flex: 1 1 0;
+    min-width: 0;
+}
+/* 「回到今天」：固定符号 ◉，比图标更直观 */
+.bible-daily-today {
+    color: var(--bible-accent);
+    font-size: 13px;
+    line-height: 1;
+}
+/* 投影按钮：与强调色一致，和其他导航按钮区分开 */
+.bible-daily-project {
+    color: var(--bible-accent);
+}
+/* 字号按钮：和投影按钮并排，同用强调色 */
+.bible-daily-font {
+    color: var(--bible-accent);
+}
+
+/* 播放器：播放键 + 进度条 + 时间合成一个药丸形整体，不再散落成一排独立控件 */
+.bible-daily-player {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 240px;
+    min-width: 190px;
+    max-width: 430px;
+    padding: 3px 12px 3px 3px;
+    border: 1px solid var(--bible-card-border, var(--background-modifier-border));
+    border-radius: 999px;
+    background: var(--background-secondary);
+}
+.bible-daily-player .bible-daily-btn {
+    border: none;
+    background: transparent;
+}
+.bible-daily-player .bible-daily-play {
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--bible-accent);
+}
+.bible-daily-player .bible-daily-play:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-daily-play.is-playing {
+    color: var(--bible-accent-hover);
+}
+.bible-daily-play.is-missing {
+    opacity: 0.55;
+}
+.bible-daily-time {
+    flex: 0 0 auto;
+    min-width: 76px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+/* 进度条：4px 细轨 + 圆滑块，已播部分用强调色填充（--daily-progress 由 JS 写入） */
+.bible-daily-progress {
+    flex: 1 1 auto;
+    min-width: 60px;
+    height: 14px;
+    margin: 0;
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 100% 4px;
+    background-image: linear-gradient(to right,
+        var(--bible-accent) 0,
+        var(--bible-accent) var(--daily-progress, 0%),
+        var(--background-modifier-border) var(--daily-progress, 0%),
+        var(--background-modifier-border) 100%);
+    border-radius: 999px;
+    cursor: pointer;
+}
+.bible-daily-progress::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 10px;
+    height: 10px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bible-accent);
+}
+.bible-daily-progress::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bible-accent);
+}
+.bible-daily-progress::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: transparent;
+}
+.bible-daily-audio {
+    display: none;
+}
+
+/* ----- 正文：铺满整个视图宽度，两侧只留一点点呼吸位 ----- */
+.bible-daily-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+    padding: 0 clamp(10px, 2.4vw, 44px) 120px;
+}
+/* 不再限宽居中：窗口多大，正文就多宽 */
+.bible-daily-section {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+}
+.bible-daily-section + .bible-daily-section {
+    margin-top: 44px;
+}
+/* 「新约 / 旧约 + 范围」吸在滚动区顶部：读到很远也知道自己在哪一段 */
+.bible-daily-section-head {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 4px;
+    padding: 12px 2px 10px;
+    background: var(--background-primary);
+    border-bottom: 1px solid var(--daily-divider);
+}
+.bible-daily-section-badge {
+    flex: 0 0 auto;
+    padding: 1px 10px;
+    border-radius: 999px;
+    background: var(--bible-accent);
+    color: var(--bible-on-accent);
+    font-size: calc(var(--daily-font-size, 17px) * 0.72);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+}
+.bible-daily-section-range {
+    color: var(--text-muted);
+    font-size: calc(var(--daily-font-size, 17px) * 0.76);
+    font-variant-numeric: tabular-nums;
+    word-break: break-word;
+}
+.bible-daily-chapter {
+    margin-top: 30px;
+}
+/* 书卷名 + 章号：左边一道强调色短竖线，视觉上把整章框起来 */
+.bible-daily-chapter-title {
+    margin: 0 0 10px;
+    padding: 1px 0 1px 9px;
+    border-left: 3px solid var(--bible-accent);
+    color: var(--text-normal);
+    font-size: calc(var(--daily-font-size, 17px) * 0.84);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    line-height: 1.35;
+}
+
+/* ----- 书卷简介 / 主题 / 纲目（书卷级信息） ----- */
+.bible-daily-intro {
+    margin: 0 0 calc(var(--daily-font-size, 17px) * 0.8);
+    padding: calc(var(--daily-font-size, 17px) * 0.62) calc(var(--daily-font-size, 17px) * 0.8);
+    border: 1px solid var(--daily-divider);
+    border-radius: 10px;
+    background: var(--background-secondary);
+}
+.bible-daily-intro-title {
+    margin-bottom: calc(var(--daily-font-size, 17px) * 0.34);
+    color: var(--text-normal);
+    font-size: calc(var(--daily-font-size, 17px) * 0.9);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+.bible-daily-intro-body {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--daily-font-size, 17px) * 0.2);
+}
+.bible-daily-intro-row {
+    display: flex;
+    gap: 2px;
+    font-size: calc(var(--daily-font-size, 17px) * 0.84);
+    line-height: 1.75;
+}
+.bible-daily-intro-label {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.bible-daily-intro-value {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-normal);
+    font-size: inherit;
+    line-height: 1.75;
+    word-break: break-word;
+}
+.bible-daily-block {
+    display: flex;
+    align-items: flex-start;
+    gap: calc(var(--daily-font-size, 17px) * 0.5);
+    margin: 0 0 calc(var(--daily-font-size, 17px) * 0.7);
+    padding: calc(var(--daily-font-size, 17px) * 0.44) calc(var(--daily-font-size, 17px) * 0.72);
+    border-left: 3px solid var(--daily-divider);
+    border-radius: 0 8px 8px 0;
+    background: var(--background-secondary);
+}
+.bible-daily-block-badge {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: calc(var(--daily-font-size, 17px) * 0.68);
+    line-height: calc(var(--daily-font-size, 17px) * 1.08);
+}
+.bible-daily-block-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: calc(var(--daily-font-size, 17px) * 0.9);
+    line-height: 1.75;
+    word-break: break-word;
+}
+.bible-daily-theme {
+    border-left-color: var(--bible-accent);
+}
+/* 纲目：原文里的一行，按行序插在它领起的经节之前。斜体 + 左侧竖线弱化，
+   与正文一眼分开；缩进对齐经文正文列（宽度随字号变） */
+.bible-daily-outline-line {
+    margin: calc(var(--daily-font-size, 17px) * 0.36) 0 2px var(--daily-indent);
+    padding: 1px 0 1px 10px;
+    border-left: 2px solid var(--daily-divider);
+    color: var(--text-muted);
+    font-size: calc(var(--daily-font-size, 17px) * 0.84);
+    font-style: italic;
+    line-height: 1.7;
+    word-break: break-word;
+}
+/* 纲目和它领起的经节是一段：中间不再画分隔线，看起来是连着读下来的 */
+.bible-daily-outline-line + .bible-daily-verse {
+    border-top: none;
+}
+
+/* ----- 经文：一节一行，行间一道细线，长段落不会糊成一片 ----- */
+.bible-daily-verse {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--daily-gap);
+    padding: calc(var(--daily-font-size, 17px) * 0.55) 8px;
+    border-top: 1px solid var(--daily-divider);
+    border-radius: 8px;
+}
+.bible-daily-chapter-title + .bible-daily-verse {
+    border-top: none;
+}
+@media (hover: hover) {
+    .bible-daily-verse:hover {
+        background: var(--background-modifier-hover);
+    }
+}
+.bible-daily-verse-head {
+    flex: 0 0 auto;
+    width: var(--daily-ref-col);
+    padding-top: calc(var(--daily-font-size, 17px) * 0.24);
+    text-align: right;
+}
+.bible-daily-verse-ref {
+    color: var(--bible-accent);
+    font-size: calc(var(--daily-font-size, 17px) * 0.72);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.bible-daily-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.bible-daily-verse-text {
+    /* 字号由导航栏「字」按钮控制（--daily-font-size，默认 17px） */
+    font-size: var(--daily-font-size, 17px);
+    line-height: 1.95;
+    letter-spacing: 0.02em;
+    text-align: justify;
+    word-break: break-word;
+}
+/* 注 / 串上标在三旧一新里统一用红色：这一页是「读」，注解标记要一眼看见 */
+.bible-daily-verse-text sup.bible-note-mark,
+.bible-daily-verse-text sup.bible-note-mark-note,
+.bible-daily-verse-text sup.bible-note-mark-ref {
+    color: var(--color-red, #e93147);
+    background-color: rgba(233, 49, 71, 0.12);
+}
+.bible-daily-verse-text sup.bible-note-mark:hover,
+.bible-daily-verse-text sup.bible-note-mark-note:hover,
+.bible-daily-verse-text sup.bible-note-mark-ref:hover {
+    background-color: rgba(233, 49, 71, 0.22);
+}
+/* 对照版：只给一句「另一种译法」，不标版本名；左侧细线表明从属关系 */
+.bible-daily-compare {
+    margin-top: calc(var(--daily-font-size, 17px) * 0.4);
+    padding: calc(var(--daily-font-size, 17px) * 0.28) calc(var(--daily-font-size, 17px) * 0.6);
+    border-left: 2px solid var(--daily-divider);
+    border-radius: 0 6px 6px 0;
+    background: var(--background-secondary);
+}
+/* 「字」按钮里关掉「对照版背景框」后：不留底色、竖线与内缩，
+   直接排在主版本正文下方，左边缘与主版本严格对齐（只靠字号 + 颜色区分）。 */
+.bible-daily-compare.is-plain {
+    margin-top: calc(var(--daily-font-size, 17px) * 0.24);
+    padding: 0;
+    border-left: none;
+    border-radius: 0;
+    background: none;
+}
+.bible-daily-compare-text {
+    color: var(--text-muted);
+    font-size: calc(var(--daily-font-size, 17px) * 0.88);
+    line-height: 1.8;
+}
+.bible-daily-note-panel.bible-note-panel {
+    /* 注解 / 串珠面板跟着全页字号走：它挂在 .bible-daily-body 上，
+       父节点没有字号基准，靠 1em 继承只会拿到默认 16px，放大字号时它不跟着变。 */
+    margin-top: calc(var(--daily-font-size, 17px) * 0.42);
+    font-size: calc(var(--daily-font-size, 17px) * 0.9);
+    line-height: 1.75;
+}
+.bible-daily-empty {
+    padding: 60px 8px;
+    color: var(--text-muted);
+    font-size: calc(var(--daily-font-size, 17px) * 0.84);
+    text-align: center;
+}
+
+/* ----- 设置页：三旧一新 MP3 识别提示 ----- */
+.bible-daily-mp3-hint {
+    margin: -2px 0 14px;
+    padding: 2px;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+    word-break: break-word;
+}
+.bible-daily-mp3-hint.is-error {
+    color: var(--text-error, #e93147);
+}
+.bible-daily-mp3-note {
+    margin-top: 2px;
+    color: var(--text-faint);
+}
+
+/* ----- 文件夹选择弹窗（浏览… / 自动检测） ----- */
+.bible-folder-pick-input {
+    width: 100%;
+    margin-bottom: 10px;
+}
+.bible-folder-pick-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 52vh;
+    overflow-y: auto;
+}
+.bible-folder-pick-item {
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 13px;
+    text-align: left;
+    word-break: break-all;
+    cursor: pointer;
+}
+.bible-folder-pick-item:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-folder-pick-empty {
+    padding: 14px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+/* ----- 浮层（纲目 / 日历） ----- */
+.bible-daily-popover {
+    position: absolute;
+    z-index: 60;
+    min-width: 120px;
+    padding: 6px;
+    border: 1px solid var(--bible-card-border, var(--background-modifier-border));
+    border-radius: 8px;
+    background: var(--background-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+.bible-daily-pop-title {
+    padding: 2px 6px 6px;
+    color: var(--text-faint);
+    font-size: 11px;
+}
+.bible-daily-pop-item {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+.bible-daily-pop-item:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-daily-cal {
+    width: 246px;
+}
+.bible-daily-cal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 0 2px 6px;
+}
+.bible-daily-cal-title {
+    font-size: 12px;
+    font-weight: 600;
+}
+.bible-daily-cal-nav {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+.bible-daily-cal-nav:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-daily-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+.bible-daily-cal-week {
+    padding: 2px 0;
+    color: var(--text-faint);
+    font-size: 10px;
+    text-align: center;
+}
+.bible-daily-cal-cell {
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+.bible-daily-cal-cell:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-daily-cal-cell.is-blank {
+    pointer-events: none;
+}
+.bible-daily-cal-cell.is-empty {
+    opacity: 0.3;
+}
+.bible-daily-cal-cell.is-today {
+    box-shadow: inset 0 0 0 1px var(--bible-accent);
+}
+.bible-daily-cal-cell.is-active {
+    background: var(--bible-accent);
+    color: var(--bible-on-accent);
+    font-weight: 700;
+}
+.bible-daily-cal-cell.is-active:hover {
+    background: var(--bible-accent-hover);
+}
+
+/* ----- 窄屏：播放器独占一行，两侧留白收紧，节号列跟着字号缩一点 ----- */
+@media (max-width: 560px) {
+    .bible-daily-view {
+        /* 节号列宽 / 列间距同样由字号推导，这里只是比例收紧，绝不写死 px */
+        --daily-ref-col: calc(var(--daily-font-size, 17px) * 2.5);
+        --daily-gap: calc(var(--daily-font-size, 17px) * 0.5);
+    }
+    .bible-daily-nav {
+        padding: 6px 8px 4px;
+    }
+    .bible-daily-nav-row {
+        gap: 4px;
+    }
+    .bible-daily-date {
+        font-size: 11px;
+        padding: 0 7px;
+    }
+    .bible-daily-player {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+    .bible-daily-scroll {
+        padding: 0 10px 80px;
+    }
+    .bible-daily-section + .bible-daily-section {
+        margin-top: 30px;
+    }
+    .bible-daily-chapter {
+        margin-top: 24px;
+    }
+    .bible-daily-intro {
+        padding: calc(var(--daily-font-size, 17px) * 0.5) calc(var(--daily-font-size, 17px) * 0.6);
+    }
+    .bible-daily-block {
+        padding: calc(var(--daily-font-size, 17px) * 0.4) calc(var(--daily-font-size, 17px) * 0.55);
+    }
+    .bible-daily-outline-line {
+        padding-left: 8px;
+    }
+    .bible-daily-verse {
+        padding: calc(var(--daily-font-size, 17px) * 0.5) 4px;
+    }
+}
+
+/* ==================== 圣经音频：临时播放窗 ====================
+   侧边栏「耳机」按钮弹出；点窗外即收起（JS 负责），<audio> 不在面板里，所以播放不中断。
+   版式：书卷 + 章名居中、副标题一行、左「播放模式」/ 中 上一章·播放·下一章 / 右「播放列表」、
+   底部进度条与两端时间。 */
+.bible-audio-panel {
+    position: fixed;
+    z-index: 2200;
+    box-sizing: border-box;
+    width: 340px;
+    padding: 14px 14px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 14px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+    /* 浮层挂在 body 上，取不到 .bible-search-container 里那份主色变量，这里单独补一份 */
+    --bible-accent: #4ecdc4;
+    --bible-on-accent: #0b2b29;
+    --audio-progress: 0%;
+}
+.bible-audio-panel.is-hidden {
+    display: none;
+}
+/* 播放器里打开「圣经选择 / 播放列表」弹窗时面板让位：面板是 fixed + z-index 2200，
+   压在弹窗上面会把底部几行书卷 / 章节挡掉。这里只是隐形（不是收起）——收起会改
+   标题栏按钮状态、也会断开「点外面就关」的监听；关窗后原样回来。 */
+.bible-audio-panel.is-dimmed {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+/* <audio> 只负责出声，不参与排版 */
+.bible-audio-el {
+    display: none;
+}
+
+/* ----- 标题区 ----- */
+.bible-audio-head {
+    position: relative;
+    min-height: 54px;
+    padding: 0 42px;
+    text-align: center;
+}
+.bible-audio-book {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+.bible-audio-titles {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.bible-audio-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.bible-audio-title {
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.3;
+}
+/* 「转播创 13」：阅读页正看着别的章时才出现 */
+.bible-audio-switch {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--color-red, #e93147);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.5;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.bible-audio-switch.is-hidden {
+    display: none;
+}
+.bible-audio-sub {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* ----- 控制区 ----- */
+.bible-audio-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin: 12px 0 4px;
+}
+.bible-audio-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-normal);
+    cursor: pointer;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.bible-audio-btn:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-audio-btn .svg-icon {
+    width: 18px;
+    height: 18px;
+}
+.bible-audio-transport {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.bible-audio-play {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border-radius: 50%;
+    background: var(--background-secondary);
+}
+.bible-audio-play .svg-icon {
+    width: 22px;
+    height: 22px;
+}
+/* 播放模式：图标 + 下面一行小字（5 种模式只看图标分不清） */
+.bible-audio-mode {
+    flex-direction: column;
+    gap: 1px;
+    height: auto;
+    padding: 3px 6px;
+}
+.bible-audio-mode-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.bible-audio-mode-name {
+    color: var(--text-muted);
+    font-size: 9px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+/* 最右侧的播放列表键：与其他控制键同尺寸，单独留个类名方便挂样式 / 测试 */
+.bible-audio-list {
+    min-width: 34px;
+}
+
+/* ----- 进度条 ----- */
+.bible-audio-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+.bible-audio-time {
+    flex: 0 0 auto;
+    min-width: 38px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.bible-audio-dur {
+    text-align: right;
+}
+/* 已播部分用强调色填充：--audio-progress 由 JS 按播放进度写入 */
+.bible-audio-bar {
+    flex: 1 1 auto;
+    min-width: 60px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 100% 4px;
+    background-image: linear-gradient(to right,
+        var(--bible-accent) 0,
+        var(--bible-accent) var(--audio-progress, 0%),
+        var(--background-modifier-border) var(--audio-progress, 0%),
+        var(--background-modifier-border) 100%);
+    border-radius: 999px;
+    cursor: pointer;
+}
+.bible-audio-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px;
+    height: 11px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bible-accent);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.bible-audio-bar::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border: none;
+    border-radius: 50%;
+    background: var(--bible-accent);
+}
+.bible-audio-bar::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: transparent;
+}
+.bible-audio-hint {
+    margin-top: 6px;
+    color: var(--text-faint);
+    font-size: 10px;
+    line-height: 1.5;
+    text-align: center;
+    word-break: break-word;
+}
+
+/* 耳机按钮：正在播放时右下角一个红点（按钮本体沿用 .bible-tab-icon-btn 的方按钮样式） */
+.bible-audio-open-btn {
+    position: relative;
+}
+.bible-audio-open-btn.is-playing::after {
+    content: '';
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #e93147;
+}
+
+/* ----- 圣经选择弹窗 ----- */
+.bible-audio-picker {
+    padding-top: 2px;
+}
+.bible-audio-picker-body {
+    max-height: 62vh;
+    overflow-y: auto;
+}
+.bible-audio-picker-chapters {
+    /* 章号只有一两位数字，格子比书卷紧凑一点 */
+    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+}
+.bible-audio-picker-label {
+    margin: 8px 0 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+}
+.bible-audio-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    gap: 6px;
+}
+.bible-audio-picker-book,
+.bible-audio-picker-chapter {
+    height: 32px;
+    padding: 0 4px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+.bible-audio-picker-book:hover,
+.bible-audio-picker-chapter:hover {
+    background: var(--background-modifier-hover);
+}
+/* 没有 MP3 的书卷 / 章节标灰：仍可点，播放器会落到最近能播的一章 */
+.bible-audio-picker-book.is-empty,
+.bible-audio-picker-chapter.is-empty {
+    opacity: 0.45;
+}
+.bible-audio-picker-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.bible-audio-picker-back {
+    padding: 2px 4px;
+    border: none;
+    background: transparent;
+    color: var(--bible-accent, #4ecdc4);
+    font-size: 12px;
+    cursor: pointer;
+}
+.bible-audio-picker-name {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* ----- 播放列表弹窗 ----- */
+.bible-audio-playlist {
+    padding-top: 2px;
+}
+.bible-audio-playlist-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 62vh;
+    overflow-y: auto;
+}
+.bible-audio-playlist-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-normal);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+.bible-audio-playlist-row:hover {
+    background: var(--background-modifier-hover);
+}
+.bible-audio-playlist-row.is-active {
+    color: var(--bible-accent, #4ecdc4);
+    font-weight: 600;
+}
+.bible-audio-playlist-idx {
+    flex: 0 0 auto;
+    min-width: 24px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+}
+.bible-audio-playlist-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
+}
+.bible-audio-playlist-now {
+    flex: 0 0 auto;
+    color: var(--text-faint);
+    font-size: 10px;
 }
 
 /* （注：内容由AI生成） */
