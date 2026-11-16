@@ -1044,6 +1044,10 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.0.2': `## [6.0.2] - 2026-11-16
+
+### 修复
+- **「复制群号」按钮不再报错**：设置页和右上角 MP3 下载提醒里的「复制群号」原先调用了只存在于检索视图上的方法，在设置页点击会抛「is not a function」。现在两处统一走通用复制函数，优先用系统剪贴板，失败自动退回兼容方式，一键复制群号 1128049033。`,
     '6.0.1': `## [6.0.1] - 2026-11-16
 
 ### 新增
@@ -2209,7 +2213,7 @@ class BibleSettingTab extends PluginSettingTab {
                 .setButtonText('复制群号')
                 .onClick(async () => {
                     try {
-                        await this.plugin.copyToClipboard(MP3_QQ_GROUP);
+                        await copyTextToClipboard(MP3_QQ_GROUP, this.plugin);
                         new Notice('已复制群号 ' + MP3_QQ_GROUP);
                     } catch (e) { new Notice('复制失败：' + ((e && e.message) || '未知错误')); }
                 }));
@@ -3580,6 +3584,38 @@ function showHymnsRequiredNotice(fromEl, forceNotice) {
 const MP3_QQ_GROUP = '1128049033';
 const MP3_DOWNLOAD_NOTICE = '本插件的播放功能需要三旧一新MP3和圣经MP3。由于文件较大，请加QQ群1128049033下载压缩包，下载好后请解压至Obsidian仓库中的任意位置，插件重启后会自动扫描全库。';
 
+// 复制群号：不能调用视图实例上的 copyToClipboard（插件类没有这个方法，设置页里会报错）。
+// 调用方若提供了复制方法就用它，否则走原生剪贴板，最后退回 execCommand。
+async function copyTextToClipboard(text, plugin) {
+    const value = String(text == null ? '' : text);
+    try {
+        if (plugin && typeof plugin.copyToClipboard === 'function') {
+            await plugin.copyToClipboard(value);
+            return;
+        }
+    } catch (e) { /* 继续走原生实现 */ }
+    try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(value);
+            return;
+        }
+    } catch (e) { /* 继续走 execCommand */ }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+        if (!document.execCommand('copy')) throw new Error('execCommand failed');
+    } finally {
+        document.body.removeChild(ta);
+    }
+}
+
 function showMp3DownloadNotice(plugin, onCancel, detail) {
     let notice = null;
     try { notice = new Notice(MP3_DOWNLOAD_NOTICE, 0); } catch (e) { return null; }
@@ -3613,13 +3649,8 @@ function showMp3DownloadNotice(plugin, onCancel, detail) {
                 setTimeout(() => { try { notice.hide(); } catch (e) { /* 忽略 */ } }, 700);
             };
             const fail = () => { copyBtn.textContent = '复制失败'; };
-            try {
-                let p = null;
-                if (plugin && typeof plugin.copyToClipboard === 'function') p = plugin.copyToClipboard(MP3_QQ_GROUP);
-                else if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') p = navigator.clipboard.writeText(MP3_QQ_GROUP);
-                if (p && typeof p.then === 'function') p.then(done).catch(fail);
-                else fail();
-            } catch (e) { fail(); }
+            try { copyTextToClipboard(MP3_QQ_GROUP, plugin).then(done).catch(fail); }
+            catch (e) { fail(); }
         });
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'bible-mp3-notice-btn is-secondary';
