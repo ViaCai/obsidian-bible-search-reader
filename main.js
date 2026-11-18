@@ -559,6 +559,18 @@ function normalizeProjectionClockFontSize(value) {
     if (!isFinite(n)) return 40;
     return Math.max(16, Math.min(96, n));
 }
+// 顶栏时钟收起策略：按「放下时钟后还剩多少空位」判断，而不是按搜索框自身宽度。
+// free = 顶栏宽度 − 模式按钮 − 搜索框 − 页码 − 两个间距 − 时钟宽度 − 一个间距；
+// 也就是把时钟放回去之后还能剩多少余量。free >= 0 就一定显示时钟（左侧空白够用），
+// free < 0 才视觉隐藏；去秒能让时钟窄约 30px，所以 free < 40 先收秒，回到 80 以上再恢复。
+function projectionClockSpaceFlags(free, prevHideSeconds) {
+    const f = Number(free);
+    const usable = isFinite(f);
+    return {
+        hideClock: usable && f < 0,
+        hideSeconds: usable && (f < 40 || (!!prevHideSeconds && f < 80))
+    };
+}
 
 // ===== 主题 / 纲目 / 简介：全局显示开关 =====
 // G 键与对照页的三项勾选共用同一份设置；检索 / 阅读 / 投影 / 三旧一新都按它过滤。
@@ -619,8 +631,9 @@ const PROJECTION_CUSTOM_COLOR_FIELDS = [
     { key: 'introBorder', label: '简介框边框', css: '--bp-intro-border',  group: '经文' },
     { key: 'mark',        label: '标注文字',   css: '--bp-mark-fg',       group: '标记' },
     { key: 'markBg',      label: '标注底色',   css: '--bp-mark-bg',       group: '标记' },
+    // 串珠文字 / 串珠背景只管点开串珠后的内容；正文里的注 / 串上标统一归标注文字 / 标注底色。
     { key: 'chain',       label: '串珠文字',   css: '--bp-chain-fg',      group: '标记' },
-    { key: 'chainBg',     label: '串珠底色',   css: '--bp-chain-bg',      group: '标记' },
+    { key: 'chainBg',     label: '串珠背景',   css: '--bp-chain-bg',      group: '标记' },
     { key: 'note',        label: '注解文字',   css: '--bp-custom-note-fg',     group: '标记' },
     { key: 'noteBg',      label: '注解背景',   css: '--bp-custom-note-bg',     group: '标记' },
     { key: 'noteBorder',  label: '注解边框',   css: '--bp-custom-note-border', group: '标记' },
@@ -644,6 +657,33 @@ const PROJECTION_CUSTOM_BOX_BG_STYLES = [
     { value: 'glass',       label: '磨砂背景' },
     { value: 'none',        label: '无背景' }
 ];
+// 边框线型：内容框（经文 / 主题 / 简介框）与纲目框各自独立选择。
+const PROJECTION_CUSTOM_BORDER_STYLES = [
+    { value: 'none',   label: '无边框' },
+    { value: 'solid',  label: '实线' },
+    { value: 'dashed', label: '虚线' },
+    { value: 'dotted', label: '点线' },
+    { value: 'double', label: '双线' }
+];
+function normalizeCustomBorderStyle(value) {
+    return PROJECTION_CUSTOM_BORDER_STYLES.some(s => s.value === value) ? value : 'solid';
+}
+// 内置主题色表（取自 styles.css 的真实变量值），供「以现有主题为模板新建」使用。
+// 每个键对应一个 30 色字段；rgba 用等效实色便于原生取色器编辑。缺项落回 defaults。
+const BUILTIN_THEME_COLOR_TEMPLATES = {
+    dark:      { bg:'#1a1a2e', boxBg:'#24244a', boxBorder:'#3a3a63', barBg:'#101020', barBorder:'#3a3a63', text:'#ffffff', ref:'#a0a0a0', theme:'#ffd700', outline:'#a0c4ff', outlineRef:'#7aa0d0', intro:'#ffffff', introBg:'#24244a', introBorder:'#3a3a63', mark:'#a0c4ff', markBg:'#2f2f55', chain:'#a0a0a0', chainBg:'#2f2f55', note:'#ffffff', noteBg:'#24244a', noteBorder:'#3a3a63', buttonBg:'#3a3a63', buttonText:'#ffffff', navBg:'#3b82f6', navText:'#ffffff', menuBg:'#211d38', menuText:'#f3f4f6', menuBorder:'#3a3a63', inputBg:'#111122', inputText:'#ffffff', inputBorder:'#5a5a80' },
+    light:     { bg:'#f5f5f5', boxBg:'#ffffff', boxBorder:'#d0d0d0', barBg:'#ececec', barBorder:'#cccccc', text:'#333333', ref:'#666666', theme:'#7a7495', outline:'#2f5c2f', outlineRef:'#5a805a', intro:'#333333', introBg:'#ffffff', introBorder:'#cccccc', mark:'#333333', markBg:'#e8e8e8', chain:'#666666', chainBg:'#e8e8e8', note:'#333333', noteBg:'#ffffff', noteBorder:'#cccccc', buttonBg:'#e0e0e0', buttonText:'#232340', navBg:'#7a7495', navText:'#ffffff', menuBg:'#ffffff', menuText:'#232340', menuBorder:'#cccccc', inputBg:'#ffffff', inputText:'#232340', inputBorder:'#cccccc' },
+    yellow:    { bg:'#e5f2e5', boxBg:'#dce8dc', boxBorder:'#8fae8f', barBg:'#d3e6d3', barBorder:'#8fae8f', text:'#000000', ref:'#436b43', theme:'#1f4d28', outline:'#2f5c2f', outlineRef:'#5a805a', intro:'#12301a', introBg:'#dce8dc', introBorder:'#8fae8f', mark:'#2f5c2f', markBg:'#c8ddc8', chain:'#436b43', chainBg:'#c8ddc8', note:'#12301a', noteBg:'#dce8dc', noteBorder:'#8fae8f', buttonBg:'#c8ddc8', buttonText:'#12301a', navBg:'#2f5c2f', navText:'#ffffff', menuBg:'#f4faf4', menuText:'#10240f', menuBorder:'#8fae8f', inputBg:'#f7fbf7', inputText:'#000000', inputBorder:'#8fae8f' },
+    cream:     { bg:'#fff0c2', boxBg:'#fff6dc', boxBorder:'#c9a94a', barBg:'#f5e2a8', barBorder:'#c9a94a', text:'#1a1a1a', ref:'#6b5a2a', theme:'#8a2b2b', outline:'#6b4f14', outlineRef:'#7a6a3a', intro:'#1a1a1a', introBg:'#fff6dc', introBorder:'#c9a94a', mark:'#6b4f14', markBg:'#f5e2a8', chain:'#6b5a2a', chainBg:'#f5e2a8', note:'#1a1a1a', noteBg:'#fff6dc', noteBorder:'#c9a94a', buttonBg:'#f5e2a8', buttonText:'#1a1a1a', navBg:'#3b3220', navText:'#fff0c2', menuBg:'#fff8e2', menuText:'#1a1a1a', menuBorder:'#c9a94a', inputBg:'#fffaf0', inputText:'#1a1a1a', inputBorder:'#c9a94a' },
+    blue:      { bg:'#001a52', boxBg:'#003399', boxBorder:'#4a6fc0', barBg:'#001338', barBorder:'#4a6fc0', text:'#ffff66', ref:'#e8dc7a', theme:'#ffffff', outline:'#fff2a8', outlineRef:'#d9cf6a', intro:'#ffff66', introBg:'#003399', introBorder:'#4a6fc0', mark:'#ff6b6b', markBg:'#123a7a', chain:'#ff9d9d', chainBg:'#123a7a', note:'#ffffff', noteBg:'#2a2a70', noteBorder:'#ff6b6b', buttonBg:'#003399', buttonText:'#ffff66', navBg:'#003399', navText:'#ffff66', menuBg:'#002b85', menuText:'#ffff66', menuBorder:'#4a6fc0', inputBg:'#001f66', inputText:'#ffff66', inputBorder:'#4a6fc0' },
+    sapphire:  { bg:'#3a5fcd', boxBg:'#4a6ad6', boxBorder:'#cfe0ff', barBg:'#2b4bac', barBorder:'#cfe0ff', text:'#ffffff', ref:'#cfe0ff', theme:'#ffffff', outline:'#ffff36', outlineRef:'#e8e878', intro:'#ffffff', introBg:'#4a6ad6', introBorder:'#cfe0ff', mark:'#ffd0d0', markBg:'#5a3a9a', chain:'#ffdede', chainBg:'#5a3a9a', note:'#ffd0d0', noteBg:'#7a2020', noteBorder:'#ffb0b0', buttonBg:'#4a6ad6', buttonText:'#ffffff', navBg:'#24419e', navText:'#ffffff', menuBg:'#24419e', menuText:'#ffffff', menuBorder:'#cfe0ff', inputBg:'#2a4bb0', inputText:'#ffffff', inputBorder:'#cfe0ff' },
+    crystal:   { bg:'#4e6fd2', boxBg:'#3a5fcd', boxBorder:'#cfe0ff', barBg:'#2b4bac', barBorder:'#cfe0ff', text:'#ffffff', ref:'#cfe0ff', theme:'#ffffff', outline:'#ffff36', outlineRef:'#e8e878', intro:'#ffffff', introBg:'#3a5fcd', introBorder:'#cfe0ff', mark:'#ffd0d0', markBg:'#5a3a9a', chain:'#ffdede', chainBg:'#5a3a9a', note:'#ffd0d0', noteBg:'#7a2020', noteBorder:'#ffb0b0', buttonBg:'#3a5fcd', buttonText:'#ffffff', navBg:'#24419e', navText:'#ffffff', menuBg:'#24419e', menuText:'#ffffff', menuBorder:'#cfe0ff', inputBg:'#2a4bb0', inputText:'#ffffff', inputBorder:'#cfe0ff' }
+};
+function builtinThemeColors(id) {
+    const tpl = BUILTIN_THEME_COLOR_TEMPLATES[id];
+    if (!tpl) return null;
+    return normalizeCustomColors(tpl);
+}
 const PROJECTION_CUSTOM_DEFAULTS = {
     bg: '#1a1a2e', boxBg: '#24244a', boxBorder: '#3a3a63',
     barBg: '#101020', barBorder: '#3a3a63',
@@ -681,6 +721,15 @@ function boxBgStyleOf(raw) {
     if (raw && Object.prototype.hasOwnProperty.call(raw, 'boxBgStyle')) return normalizeCustomBoxBgStyle(raw.boxBgStyle);
     return normalizeCustomBoxBgStyle(raw && raw.borderStyle);
 }
+// 边框线型：新数据直接读；旧数据没有这两个字段时按旧的 borderStyle 迁移（none→无边框，其余→实线）。
+function boxBorderStyleOf(raw) {
+    if (raw && Object.prototype.hasOwnProperty.call(raw, 'boxBorderStyle')) return normalizeCustomBorderStyle(raw.boxBorderStyle);
+    return normalizeCustomBorderStyle(raw && raw.borderStyle === 'none' ? 'none' : 'solid');
+}
+function outlineBorderStyleOf(raw) {
+    if (raw && Object.prototype.hasOwnProperty.call(raw, 'outlineBorderStyle')) return normalizeCustomBorderStyle(raw.outlineBorderStyle);
+    return 'solid';
+}
 function normalizeCustomProjectionThemes(raw) {
     const list = Array.isArray(raw) ? raw : [];
     const seen = Object.create(null);
@@ -693,7 +742,9 @@ function normalizeCustomProjectionThemes(raw) {
         seen[id] = 1;
         const name = String(item.name || '').trim().slice(0, 40) || ('自定义主题 ' + (out.length + 1));
         out.push({ id, name, colors: normalizeCustomColors(item.colors),
-            boxBgStyle: boxBgStyleOf(item) });
+            boxBgStyle: boxBgStyleOf(item),
+            boxBorderStyle: boxBorderStyleOf(item),
+            outlineBorderStyle: outlineBorderStyleOf(item) });
     }
     return out;
 }
@@ -703,12 +754,14 @@ function setCustomProjectionThemes(list) {
 function getCustomProjectionThemes() {
     return CUSTOM_PROJECTION_THEMES.map(t => ({
         id: t.id, name: t.name, boxBgStyle: t.boxBgStyle,
+        boxBorderStyle: t.boxBorderStyle, outlineBorderStyle: t.outlineBorderStyle,
         colors: Object.assign({}, t.colors)
     }));
 }
 function getCustomProjectionTheme(id) {
     const hit = CUSTOM_PROJECTION_THEMES.find(t => t.id === id);
     return hit ? { id: hit.id, name: hit.name, boxBgStyle: hit.boxBgStyle,
+        boxBorderStyle: hit.boxBorderStyle, outlineBorderStyle: hit.outlineBorderStyle,
         colors: Object.assign({}, hit.colors) } : null;
 }
 function allProjectionThemes() {
@@ -723,6 +776,16 @@ function newCustomProjectionThemeId() {
     const suffix = Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
     return 'custom-' + suffix;
 }
+// 拖拽排序：把 fromId 移到 toId 原来的位置，返回新数组（不改入参）。
+function moveCustomProjectionTheme(list, fromId, toId) {
+    const arr = Array.isArray(list) ? list.slice() : [];
+    const from = arr.findIndex(t => t && t.id === fromId);
+    const to = arr.findIndex(t => t && t.id === toId);
+    if (from < 0 || to < 0 || from === to) return arr;
+    const moved = arr.splice(from, 1)[0];
+    arr.splice(to, 0, moved);
+    return arr;
+}
 function isLightHexColor(value) {
     const hex = String(value || '').trim();
     if (!isHexColor(hex)) return false;
@@ -731,7 +794,7 @@ function isLightHexColor(value) {
     const b = parseInt(hex.slice(5, 7), 16);
     return (r * 299 + g * 587 + b * 114) / 1000 > 150;
 }
-function applyCustomThemeVars(el, colors, boxBgStyle) {
+function applyCustomThemeVars(el, colors, boxBgStyle, boxBorderStyle, outlineBorderStyle) {
     if (!el || !el.style) return;
     const custom = !!(colors && typeof colors === 'object');
     for (const f of PROJECTION_CUSTOM_COLOR_FIELDS) {
@@ -749,6 +812,10 @@ function applyCustomThemeVars(el, colors, boxBgStyle) {
             el.style.removeProperty('--bp-box-bg');
             el.style.removeProperty('--bp-intro-bg');
             el.style.removeProperty('--bp-box-backdrop');
+            el.style.removeProperty('--bp-box-border-style');
+            el.style.removeProperty('--bp-outline-border-style');
+            el.style.removeProperty('--bp-box-border-width');
+            el.style.removeProperty('--bp-outline-border-width');
             return;
         }
     } catch (e) { /* 忽略 */ }
@@ -765,6 +832,14 @@ function applyCustomThemeVars(el, colors, boxBgStyle) {
     applyBoxBg('introBg', '--bp-intro-bg');
     try { el.style.setProperty('--bp-box-backdrop', style === 'glass' ? 'blur(8px)' : 'none'); }
     catch (e) { /* 忽略 */ }
+    try {
+        const bs = normalizeCustomBorderStyle(boxBorderStyle);
+        const os = normalizeCustomBorderStyle(outlineBorderStyle);
+        el.style.setProperty('--bp-box-border-style', bs);
+        el.style.setProperty('--bp-outline-border-style', os);
+        el.style.setProperty('--bp-box-border-width', bs === 'none' ? '0' : '1px');
+        el.style.setProperty('--bp-outline-border-width', os === 'none' ? '0' : '3px');
+    } catch (e) { /* 忽略 */ }
 }
 function normalizeProjectionTheme(id) {
     const hit = getProjectionThemeById(id);
@@ -1246,6 +1321,21 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.1.1': `## [6.1.1] - 2026-11-18
+
+### 新增
+- **自定义主题模板新建**：主题编辑面板新增「＋以模板新建」，可基于空白或任意内置 / 已有自定义主题快速复制一套再改，自动填好该主题的完整配色并起名「XX 副本」。
+- **自定义主题多选批量删除**：编辑面板左侧每个主题带勾选框，可一次勾选多套，底栏「删除所选 (n)」确认后批量删除。
+- **自定义主题拖拽排序**：主题行新增拖拽手柄，拖动即可调整先后顺序，立即写回设置；主题菜单与 \`T\` 键循环同步按新顺序走。
+- **内容框 / 纲目框边框线型**：自定义主题可分别为「经文 / 主题 / 简介框」和「纲目框」选择边框线型（无 / 实线 / 虚线 / 点线 / 双线），互不影响。
+
+### 改进
+- **串珠与注解配色分离**：「串珠文字 / 串珠背景」现在只控制点击串珠后弹出浮层的内容文字与背景；「标注文字 / 标注底色」同时管注解与串珠的角标，「注解背景」只作用于注解面板，不再串色。
+- **投影时钟按剩余空位收起**：不再按搜索框自身宽度或窗口断点提前藏时钟——只有顶栏放下时钟后没有余量时才视觉隐藏，余量不足 40px 时先收起秒数；搜索框在空间足够时始终保持原有宽度，真被挤到才连续收缩。
+- **主题名称输入框固定深底**：编辑面板的名称输入框在任何预览主题（含亮色 / 翠绿 / 浅黄等浅色模板）下都保持深底浅字，文字、占位符与光标清晰可读。
+
+### 修复
+- **搜索框宽度不再提前缩水**：取消按窗口宽度分档压低搜索框上限的做法，宽屏下恢复 620px / 检索模式 480px，只有两侧按钮真的碰到搜索框时它才随 flex 收缩。`,
     '6.1.0': `## [6.1.0] - 2026-11-18
 
 ### 新增
@@ -4075,6 +4165,13 @@ class BibleProjectionOverlay {
         this._quickSearchTimer = null;
         this._quickSearchSeq = 0;
         this._projComposing = false;
+        // 顶栏空间不足时时钟的收起状态，由「放下时钟后的剩余空位」决定
+        this._clockSpaceHideSeconds = false;
+        this._clockSpaceHidden = false;
+        this.quickSearchEl = null;
+        this.topRowEl = null;
+        this._clockResizeObserver = null;
+        this._clockResizeHandler = null;
         this.buildSlides();
     }
 
@@ -4220,6 +4317,8 @@ class BibleProjectionOverlay {
         });
         qsInput.placeholder = '投影经文：太1、太1-3、csj1:1、恩典…（输入即投影 · 长按选书卷）';
         this.quickSearchInput = qsInput;
+        this.quickSearchEl = quick;
+        this.topRowEl = topRow;
         const qsClear = quick.createEl('button', { cls: 'bible-proj-quick-search-clear', text: '✕', attr: { type: 'button', title: '清空搜索框' } });
         // 「投影」按钮已去掉：搜索框本身就是输入即投影，回车只是「确认 + 交还焦点」，
         // 多一个按钮既占地方又容易让人以为必须点它才会投影。
@@ -4242,6 +4341,39 @@ class BibleProjectionOverlay {
         hintRow.setText(this.buildHintText(false));
         this.overlay.appendChild(topBar);
         this.setupQuickSearch(qsInput, qsClear);
+
+        // 时钟按「放回去之后还剩多少空位」收起：左侧空白处够用就一直显示，
+        // 不再因为搜索框自身较短就提前隐藏。用 ResizeObserver 观察搜索框与顶栏，
+        // 没有 ResizeObserver 的老宿主退化为 resize 监听。
+        const measureClockSpace = () => {
+            if (this._closed || !this.quickSearchEl) return;
+            const row = this.topRowEl;
+            const clock = this.clockEl;
+            const rowW = row ? (row.clientWidth || (row.getBoundingClientRect && row.getBoundingClientRect().width) || 0) : 0;
+            const gap = row && typeof getComputedStyle === 'function'
+                ? (parseFloat(getComputedStyle(row).gap) || 10) : 10;
+            const px = (el) => el ? (el.offsetWidth || (el.getBoundingClientRect && el.getBoundingClientRect().width) || 0) : 0;
+            const modeW = row && row.firstElementChild ? px(row.firstElementChild) : 0;
+            const pageW = row && row.lastElementChild ? px(row.lastElementChild) : 0;
+            const quickW = px(this.quickSearchEl);
+            const clockW = px(clock) + gap;
+            // 三个按钮（模式 / 搜索 / 页码）只占两个间距；多放回时钟要多占一个间距。
+            const free = rowW - (modeW + quickW + pageW + 2 * gap) - clockW;
+            this.updateProjectionClockSpace(free);
+        };
+        this._measureClockSpace = measureClockSpace;
+        if (typeof ResizeObserver !== 'undefined') {
+            try {
+                this._clockResizeObserver = new ResizeObserver(measureClockSpace);
+                this._clockResizeObserver.observe(quick);
+                this._clockResizeObserver.observe(topRow);
+            } catch (e) { this._clockResizeObserver = null; }
+        }
+        if (!this._clockResizeObserver && typeof window !== 'undefined' && window.addEventListener) {
+            this._clockResizeHandler = measureClockSpace;
+            window.addEventListener('resize', measureClockSpace);
+        }
+        measureClockSpace();
 
         this.contentArea = document.createElement('div');
         this.contentArea.className = 'bible-proj-content';
@@ -4317,6 +4449,8 @@ class BibleProjectionOverlay {
         this.overlay.appendChild(bottomBar);
 
         document.body.appendChild(this.overlay);
+        // 挂载后才量得到搜索框真实宽度，补一次以免无 ResizeObserver 的宿主停留在默认态
+        if (this._measureClockSpace) this._measureClockSpace();
         // 挂载后立刻套用上次记住的主题：类名决定 CSS 变量，内联样式里的 var(...) 随之解析
         this.applyTheme(this.themeId, true);
         // 安卓状态栏兜底必须在挂载后调用（要读宿主的 computed 变量）
@@ -5557,7 +5691,8 @@ class BibleProjectionOverlay {
         // 自定义主题不挂任何内置族类，颜色全部由下面写在覆盖层上的内联变量接管。
         o.classList.toggle('bp-theme-custom', !!t.custom);
         const custom = t.custom ? getCustomProjectionTheme(t.id) : null;
-        applyCustomThemeVars(o, custom ? custom.colors : null, custom ? custom.boxBgStyle : 'solid');
+        applyCustomThemeVars(o, custom ? custom.colors : null, custom ? custom.boxBgStyle : 'solid',
+            custom ? custom.boxBorderStyle : 'solid', custom ? custom.outlineBorderStyle : 'solid');
         const btn = o.querySelector('[data-action="toggle-theme"]');
         if (btn) {
             if (typeof btn.empty === 'function') btn.empty();
@@ -5746,8 +5881,42 @@ class BibleProjectionOverlay {
         const current = selectedId ? getCustomProjectionTheme(selectedId) : null;
         let draftColors = current ? Object.assign({}, current.colors) : Object.assign({}, PROJECTION_CUSTOM_DEFAULTS);
         let draftBoxBg = current ? current.boxBgStyle : 'solid';
+        let draftBoxBorder = current ? current.boxBorderStyle : 'solid';
+        let draftOutlineBorder = current ? current.outlineBorderStyle : 'solid';
         let draftName = current ? current.name : '';
         let deleteArmed = false;
+        // 多选只用于批量删除；点主题条目仍是「载入编辑」，两者互不干扰。
+        const checked = Object.create(null);
+        let templatePickerOpen = false;
+        // 以某个现有主题为模板开始新建：内置主题读色表，自定义主题读其已存配色。
+        const startNewFrom = (source) => {
+            selectedId = '';
+            if (source && typeof source === 'object' && source.colors) {
+                draftColors = Object.assign({}, source.colors);
+                draftBoxBg = source.boxBgStyle || 'solid';
+                draftBoxBorder = source.boxBorderStyle || 'solid';
+                draftOutlineBorder = source.outlineBorderStyle || 'solid';
+                draftName = (source.name ? source.name : '') + ' 副本';
+            } else if (source && builtinThemeColors(source)) {
+                draftColors = builtinThemeColors(source);
+                draftBoxBg = 'solid';
+                draftBoxBorder = 'solid';
+                draftOutlineBorder = 'solid';
+                const t = PROJECTION_THEMES.find(x => x.id === source);
+                draftName = (t ? t.label : '主题') + ' 副本';
+            } else {
+                draftColors = Object.assign({}, PROJECTION_CUSTOM_DEFAULTS);
+                draftBoxBg = 'solid';
+                draftBoxBorder = 'solid';
+                draftOutlineBorder = 'solid';
+                draftName = '';
+            }
+            deleteArmed = false;
+            for (const k of Object.keys(checked)) delete checked[k];
+            templatePickerOpen = false;
+            render();
+            preview();
+        };
 
         const make = (tag, cls, text) => {
             const node = document.createElement(tag);
@@ -5771,7 +5940,7 @@ class BibleProjectionOverlay {
 
         // 编辑时直接把草稿变量写到覆盖层上，所见即所得；取消时恢复打开前的主题。
         const preview = () => {
-            applyCustomThemeVars(self.overlay, draftColors, draftBoxBg);
+            applyCustomThemeVars(self.overlay, draftColors, draftBoxBg, draftBoxBorder, draftOutlineBorder);
             self.overlay.classList.remove('bp-theme-blue', 'bp-theme-yellow',
                 'bp-theme-sapphire', 'bp-theme-crystal', 'bp-theme-cream', 'light-mode');
             self.overlay.classList.add('bp-theme-custom');
@@ -5804,22 +5973,69 @@ class BibleProjectionOverlay {
             const body = make('div', 'bible-proj-theme-editor-body');
             const side = make('div', 'bible-proj-theme-editor-side');
             side.appendChild(make('div', 'bible-proj-theme-editor-subtitle', '我的主题'));
-            const newBtn = make('button', 'bible-proj-theme-editor-new', '＋ 新建主题');
+            const newBtn = make('button', 'bible-proj-theme-editor-new',
+                templatePickerOpen ? '＋ 收起模板' : '＋ 以模板新建');
             newBtn.type = 'button';
             newBtn.addEventListener('click', () => {
-                selectedId = '';
-                draftColors = Object.assign({}, PROJECTION_CUSTOM_DEFAULTS);
-                draftBoxBg = 'solid';
-                draftName = '';
-                deleteArmed = false;
+                templatePickerOpen = !templatePickerOpen;
                 render();
-                preview();
             });
             side.appendChild(newBtn);
+            if (templatePickerOpen) {
+                const picker = make('div', 'bible-proj-theme-editor-template');
+                picker.appendChild(make('div', 'bible-proj-theme-editor-template-hint', '选择模板后在其基础上修改：'));
+                const blank = make('button', 'bible-proj-theme-editor-template-item', '空白主题');
+                blank.type = 'button';
+                blank.addEventListener('click', () => startNewFrom(null));
+                picker.appendChild(blank);
+                for (const t of PROJECTION_THEMES) {
+                    const opt = make('button', 'bible-proj-theme-editor-template-item',
+                        '内置：' + t.label);
+                    opt.type = 'button';
+                    opt.setAttribute('data-template-theme', t.id);
+                    opt.addEventListener('click', () => startNewFrom(t.id));
+                    picker.appendChild(opt);
+                }
+                for (const t of getCustomProjectionThemes()) {
+                    const opt = make('button', 'bible-proj-theme-editor-template-item',
+                        '我的：' + t.name);
+                    opt.type = 'button';
+                    opt.setAttribute('data-template-custom', t.id);
+                    opt.addEventListener('click', () => startNewFrom(t));
+                    picker.appendChild(opt);
+                }
+                side.appendChild(picker);
+            }
             const list = make('div', 'bible-proj-theme-editor-list');
             const themes = getCustomProjectionThemes();
             if (!themes.length) list.appendChild(make('div', 'bible-proj-theme-editor-empty', '还没有自定义主题'));
+            let draggingId = '';
+            const clearDragClasses = () => {
+                for (const el of list.children) {
+                    if (el && el.classList) {
+                        el.classList.remove('is-dragging');
+                        el.classList.remove('is-drop-target');
+                    }
+                }
+            };
             for (const t of themes) {
+                const row = make('div', 'bible-proj-theme-editor-item-row');
+                row.setAttribute('data-custom-theme-row', t.id);
+                row.setAttribute('draggable', 'true');
+                // 自绘勾选框：WebView 里原生 checkbox 的 change / 勾选状态不稳定。
+                const check = make('button', 'bible-proj-theme-editor-check' +
+                    (checked[t.id] ? ' is-checked' : ''), checked[t.id] ? '✓' : '');
+                check.type = 'button';
+                check.setAttribute('role', 'checkbox');
+                check.setAttribute('aria-checked', checked[t.id] ? 'true' : 'false');
+                check.setAttribute('aria-label', '选择主题 ' + t.name);
+                check.addEventListener('click', (ev) => {
+                    if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+                    if (checked[t.id]) delete checked[t.id];
+                    else checked[t.id] = true;
+                    deleteArmed = false;
+                    render();
+                });
                 const item = make('button', 'bible-proj-theme-editor-item' +
                     (t.id === selectedId ? ' is-active' : ''), t.name);
                 item.type = 'button';
@@ -5829,12 +6045,49 @@ class BibleProjectionOverlay {
                     const hit = getCustomProjectionTheme(t.id);
                     draftColors = hit ? Object.assign({}, hit.colors) : Object.assign({}, PROJECTION_CUSTOM_DEFAULTS);
                     draftBoxBg = hit ? hit.boxBgStyle : 'solid';
+                    draftBoxBorder = hit ? hit.boxBorderStyle : 'solid';
+                    draftOutlineBorder = hit ? hit.outlineBorderStyle : 'solid';
                     draftName = hit ? hit.name : '';
                     deleteArmed = false;
                     render();
                     preview();
                 });
-                list.appendChild(item);
+                const handle = make('span', 'bible-proj-theme-editor-drag', '⠿');
+                handle.setAttribute('title', '拖动调整顺序');
+                row.appendChild(check);
+                row.appendChild(item);
+                row.appendChild(handle);
+                row.addEventListener('dragstart', (ev) => {
+                    draggingId = t.id;
+                    row.classList.add('is-dragging');
+                    if (ev && ev.dataTransfer) {
+                        try {
+                            ev.dataTransfer.setData('text/plain', t.id);
+                            ev.dataTransfer.effectAllowed = 'move';
+                        } catch (e) { /* 老宿主不支持 */ }
+                    }
+                });
+                row.addEventListener('dragover', (ev) => {
+                    if (!draggingId || draggingId === t.id) return;
+                    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+                    row.classList.add('is-drop-target');
+                });
+                row.addEventListener('dragleave', () => row.classList.remove('is-drop-target'));
+                row.addEventListener('drop', (ev) => {
+                    if (!draggingId || draggingId === t.id) return;
+                    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+                    if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+                    const next = moveCustomProjectionTheme(getCustomProjectionThemes(), draggingId, t.id);
+                    persist(next, self.themeId);
+                    draggingId = '';
+                    render();
+                    self.showInlineNotice('已调整主题顺序', 1800);
+                });
+                row.addEventListener('dragend', () => {
+                    draggingId = '';
+                    clearDragClasses();
+                });
+                list.appendChild(row);
             }
             side.appendChild(list);
             body.appendChild(side);
@@ -5845,6 +6098,16 @@ class BibleProjectionOverlay {
             const nameInput = document.createElement('input');
             nameInput.type = 'text';
             nameInput.className = 'bible-proj-theme-editor-name';
+            // 预览浅色模板时，宿主 App 的 input 规则（含 -webkit-text-fill-color）会压过
+            // 普通的类选择器，把名称框画成浅底浅字 / 浅光标。内联固定深底浅字再兜一层，
+            // 保证任意模板下都能看清正在输入的主题名。
+            nameInput.style.setProperty('color-scheme', 'dark');
+            nameInput.style.setProperty('background-color', '#1f2430');
+            nameInput.style.setProperty('background-image', 'none');
+            nameInput.style.setProperty('color', '#f8fafc');
+            nameInput.style.setProperty('-webkit-text-fill-color', '#f8fafc');
+            nameInput.style.setProperty('caret-color', '#f8fafc');
+            nameInput.style.setProperty('border-color', '#64748b');
             nameInput.maxLength = 40;
             nameInput.placeholder = '例如：主日敬拜';
             nameInput.value = draftName;
@@ -5852,45 +6115,59 @@ class BibleProjectionOverlay {
             nameRow.appendChild(nameInput);
             main.appendChild(nameRow);
 
-            const bgRow = make('div', 'bible-proj-theme-editor-row');
-            bgRow.appendChild(make('span', 'bible-proj-theme-editor-label', '内容框背景样式'));
             // 原生 <select> 的弹层在 WebView 里不继承投影主题变量，会出现白底白字 / 一片空白；
             // 这里用自绘选项层，颜色完全由编辑器固定，跟当前预览主题无关。
-            const bgWrap = make('div', 'bible-proj-theme-editor-select-wrap');
-            const bgBtn = make('button', 'bible-proj-theme-editor-select');
-            bgBtn.type = 'button';
-            const bgLabelOf = (value) => {
-                const hit = PROJECTION_CUSTOM_BOX_BG_STYLES.find(s => s.value === value);
-                return hit ? hit.label : PROJECTION_CUSTOM_BOX_BG_STYLES[0].label;
-            };
-            bgBtn.textContent = bgLabelOf(draftBoxBg);
-            const bgPopup = make('div', 'bible-proj-theme-editor-select-popup');
-            bgPopup.style.display = 'none';
-            for (const s of PROJECTION_CUSTOM_BOX_BG_STYLES) {
-                const opt = make('button', 'bible-proj-theme-editor-select-option' +
-                    (s.value === draftBoxBg ? ' is-active' : ''), s.label);
-                opt.type = 'button';
-                opt.setAttribute('data-value', s.value);
-                opt.addEventListener('click', (ev) => {
+            const popups = [];
+            const addSelectRow = (labelText, options, getValue, setValue) => {
+                const row = make('div', 'bible-proj-theme-editor-row');
+                row.appendChild(make('span', 'bible-proj-theme-editor-label', labelText));
+                const wrap = make('div', 'bible-proj-theme-editor-select-wrap');
+                const btn = make('button', 'bible-proj-theme-editor-select');
+                btn.type = 'button';
+                const labelOf = (value) => {
+                    const hit = options.find(s => s.value === value);
+                    return hit ? hit.label : options[0].label;
+                };
+                btn.textContent = labelOf(getValue());
+                const popup = make('div', 'bible-proj-theme-editor-select-popup');
+                popup.style.display = 'none';
+                for (const s of options) {
+                    const opt = make('button', 'bible-proj-theme-editor-select-option' +
+                        (s.value === getValue() ? ' is-active' : ''), s.label);
+                    opt.type = 'button';
+                    opt.setAttribute('data-value', s.value);
+                    opt.addEventListener('click', (ev) => {
+                        if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+                        setValue(s.value);
+                        btn.textContent = s.label;
+                        popup.style.display = 'none';
+                        preview();
+                    });
+                    popup.appendChild(opt);
+                }
+                btn.addEventListener('click', (ev) => {
                     if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
-                    draftBoxBg = s.value;
-                    bgBtn.textContent = s.label;
-                    bgPopup.style.display = 'none';
-                    preview();
+                    const willOpen = popup.style.display === 'none';
+                    for (const p of popups) p.popup.style.display = 'none';
+                    popup.style.display = willOpen ? 'block' : 'none';
                 });
-                bgPopup.appendChild(opt);
-            }
-            bgBtn.addEventListener('click', (ev) => {
-                if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
-                bgPopup.style.display = (bgPopup.style.display === 'none') ? 'block' : 'none';
-            });
-            hideBgPopup = (ev) => {
-                if (!ev || !bgPopup.contains(ev.target) && ev.target !== bgBtn) bgPopup.style.display = 'none';
+                popups.push({ btn, popup });
+                wrap.appendChild(btn);
+                wrap.appendChild(popup);
+                row.appendChild(wrap);
+                main.appendChild(row);
             };
-            bgWrap.appendChild(bgBtn);
-            bgWrap.appendChild(bgPopup);
-            bgRow.appendChild(bgWrap);
-            main.appendChild(bgRow);
+            addSelectRow('内容框背景样式', PROJECTION_CUSTOM_BOX_BG_STYLES,
+                () => draftBoxBg, (v) => { draftBoxBg = v; });
+            addSelectRow('内容框边框样式', PROJECTION_CUSTOM_BORDER_STYLES,
+                () => draftBoxBorder, (v) => { draftBoxBorder = v; });
+            addSelectRow('纲目框边框样式', PROJECTION_CUSTOM_BORDER_STYLES,
+                () => draftOutlineBorder, (v) => { draftOutlineBorder = v; });
+            hideBgPopup = (ev) => {
+                for (const p of popups) {
+                    if (!ev || !p.popup.contains(ev.target) && ev.target !== p.btn) p.popup.style.display = 'none';
+                }
+            };
 
             let lastGroup = '';
             let groupBox = null;
@@ -5920,29 +6197,43 @@ class BibleProjectionOverlay {
             panel.appendChild(body);
 
             const foot = make('div', 'bible-proj-theme-editor-foot');
-            const delBtn = make('button', 'bible-proj-theme-editor-danger', deleteArmed ? '确认删除' : '删除所选');
+            // 勾选了多个就批量删；一个都没勾时退回旧行为（删正在编辑的那一个）。
+            const deleteIds = () => {
+                const ids = Object.keys(checked).filter(k => checked[k]);
+                return ids.length ? ids : (selectedId ? [selectedId] : []);
+            };
+            const delCount = deleteIds().length;
+            const delLabel = (deleteArmed ? '确认删除' : '删除所选') + (delCount ? ' (' + delCount + ')' : '');
+            const delBtn = make('button', 'bible-proj-theme-editor-danger', delLabel);
             delBtn.type = 'button';
             delBtn.addEventListener('click', () => {
-                if (!selectedId) {
-                    self.showInlineNotice('请先选择一个自定义主题', 2200);
+                const ids = deleteIds();
+                if (!ids.length) {
+                    self.showInlineNotice('请先勾选要删除的自定义主题', 2200);
                     return;
                 }
                 if (!deleteArmed) {
                     deleteArmed = true;
-                    delBtn.textContent = '确认删除';
+                    delBtn.textContent = '确认删除 (' + ids.length + ')';
                     setTimeout(() => {
                         if (!deleteArmed) return;
                         deleteArmed = false;
-                        if (delBtn.parentNode) delBtn.textContent = '删除所选';
+                        if (delBtn.parentNode) delBtn.textContent = '删除所选 (' + ids.length + ')';
                     }, 3000);
                     return;
                 }
-                const rest = getCustomProjectionThemes().filter(t => t.id !== selectedId);
-                persist(rest, 'dark');
-                self._themeEditorRestoreId = 'dark';
-                self.applyTheme('dark', true);
+                const rest = getCustomProjectionThemes().filter(t => ids.indexOf(t.id) < 0);
+                const activeRemoved = ids.indexOf(self.themeId) >= 0;
+                const activeId = activeRemoved ? 'dark' : self.themeId;
+                persist(rest, activeId);
+                if (activeRemoved) {
+                    self._themeEditorRestoreId = 'dark';
+                    self.applyTheme('dark', true);
+                }
+                for (const k of Object.keys(checked)) delete checked[k];
+                if (ids.indexOf(selectedId) >= 0) selectedId = '';
                 self.closeThemeEditor(false);
-                self.showInlineNotice('已删除自定义主题', 2200);
+                self.showInlineNotice('已删除 ' + ids.length + ' 个自定义主题', 2200);
             });
             const cancelBtn = make('button', 'bible-proj-theme-editor-cancel', '取消');
             cancelBtn.type = 'button';
@@ -5962,7 +6253,9 @@ class BibleProjectionOverlay {
                     id,
                     name,
                     colors: normalizeCustomColors(draftColors),
-                    boxBgStyle: normalizeCustomBoxBgStyle(draftBoxBg)
+                    boxBgStyle: normalizeCustomBoxBgStyle(draftBoxBg),
+                    boxBorderStyle: normalizeCustomBorderStyle(draftBoxBorder),
+                    outlineBorderStyle: normalizeCustomBorderStyle(draftOutlineBorder)
                 };
                 const idx = themes.findIndex(t => t.id === id);
                 if (idx >= 0) themes[idx] = rec;
@@ -6393,14 +6686,29 @@ class BibleProjectionOverlay {
         const tick = () => {
             if (this._closed || !this.clockEl) return;
             const s = (this.plugin && this.plugin.settings) || {};
-            const on = s.projectionClockEnabled !== false;
-            this.clockEl.classList.toggle('is-hidden', !on);
+            const enabled = s.projectionClockEnabled !== false;
+            const spaceHidden = !!this._clockSpaceHidden;
+            const on = enabled && !spaceHidden;
+            this.clockEl.classList.toggle('is-hidden', !enabled);
+            // 空间不足用 visibility 隐藏：时钟仍占位，搜索框宽度不会因此反弹造成来回跳。
+            this.clockEl.classList.toggle('is-space-hidden', spaceHidden);
             this.clockEl.style.fontSize = normalizeProjectionClockFontSize(s.projectionClockFontSize) + 'px';
             if (!on) { this._clockTimer = null; return; }
-            this.clockEl.textContent = formatProjectionClock(new Date(), !!s.projectionClockSeconds);
+            const withSeconds = !!s.projectionClockSeconds && !this._clockSpaceHideSeconds;
+            this.clockEl.textContent = formatProjectionClock(new Date(), withSeconds);
             this._clockTimer = setTimeout(tick, 1000);
         };
         tick();
+    }
+
+    // 搜索框宽度变化后重算时钟收起策略；状态没变就不重排、不重启定时器。
+    updateProjectionClockSpace(width) {
+        const flags = projectionClockSpaceFlags(width, this._clockSpaceHideSeconds);
+        if (flags.hideClock === !!this._clockSpaceHidden &&
+            flags.hideSeconds === !!this._clockSpaceHideSeconds) return;
+        this._clockSpaceHidden = flags.hideClock;
+        this._clockSpaceHideSeconds = flags.hideSeconds;
+        this.refreshProjectionClock();
     }
 
     // 底栏设置按钮：面板必须挂在投影覆盖层内部，整屏时才能显示在 top layer 之上。
@@ -6769,6 +7077,14 @@ class BibleProjectionOverlay {
     // depth：串珠经文里再展开注 / 串的层级（各级均保留 ¹ ᵃ 上标，可继续向下钻取，无限嵌套由每节只保留一个子面板兜底）
     fillProjNotePanel(panel, nd, kind, label, pk, ctx, depth) {
         panel.empty();
+        // 注解 / 串珠共用 .bible-proj-notes 面板；这里打上类型类，让自定义主题能把
+        // 「注解背景」与「串珠背景」分开上色，互不串色。直接改 className 而不是
+        // classList.toggle，兼容测试桩 / 老宿主里只有 className 没有 classList 的元素。
+        const panelCls = String(panel.className || '').split(/\s+/).filter(Boolean);
+        const refClsAt = panelCls.indexOf('bible-proj-notes-ref');
+        if (kind !== 'n' && refClsAt < 0) panelCls.push('bible-proj-notes-ref');
+        if (kind === 'n' && refClsAt >= 0) panelCls.splice(refClsAt, 1);
+        panel.className = panelCls.join(' ');
         // 顶部收起按钮：面板内部已改为「选字时不关闭」，这里给一个显式的收起入口
         const dismiss = panel.createDiv({ cls: 'bible-proj-note-dismiss', text: '✕ 收起' });
         dismiss.addEventListener('click', (e) => {
@@ -6890,6 +7206,17 @@ class BibleProjectionOverlay {
             clearTimeout(this._clockTimer);
             this._clockTimer = null;
         }
+        if (this._clockResizeObserver) {
+            try { this._clockResizeObserver.disconnect(); } catch (e) { /* 忽略 */ }
+            this._clockResizeObserver = null;
+        }
+        if (this._clockResizeHandler && typeof window !== 'undefined' && window.removeEventListener) {
+            window.removeEventListener('resize', this._clockResizeHandler);
+            this._clockResizeHandler = null;
+        }
+        this._measureClockSpace = null;
+        this.quickSearchEl = null;
+        this.topRowEl = null;
         this.clockEl = null;
         if (this._enterLongPressTimer) {
             clearTimeout(this._enterLongPressTimer);

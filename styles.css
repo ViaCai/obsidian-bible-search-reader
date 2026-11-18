@@ -3508,6 +3508,9 @@ body > .bible-abbr-suggestion .bible-abbr-suggestion-item:focus {
 .bible-projection-fullscreen .bible-proj-toprow > div:last-child {
     flex: 0 0 auto;
 }
+/* 搜索框保留原始上限（620px；检索模式 480px），顶部留白由 margin:auto 承担。
+   空间不足时靠 flex-shrink 自然收缩：只有在真的挤到时钟时才开始变小，
+   不做固定宽度的提前缩档。 */
 .bible-projection-fullscreen .bible-proj-quick-search {
     flex: 1 1 auto;
     min-width: 0;
@@ -3768,7 +3771,7 @@ body .bible-projection-fullscreen .bible-proj-quick-search-clear:focus {
 
 /* ===== 左上角时钟 =====
    24 小时制、默认 40px；跟随主题前景色。设置里关掉时加 .is-hidden；
-   窄屏由下面的媒体查询自动隐藏（顶栏还要放模式按钮 / 搜索框 / 页码）。 */
+   窄屏优先压缩搜索框，只有到手机宽度（420px 以下）才自动隐藏时钟。 */
 .bible-proj-clock {
     flex: 0 0 auto;
     font-size: 40px;
@@ -3782,7 +3785,11 @@ body .bible-projection-fullscreen .bible-proj-quick-search-clear:focus {
     user-select: none;
 }
 .bible-proj-clock.is-hidden { display: none; }
-@media (max-width: 1080px) {
+/* 顶栏连时钟的空位都放不下时只做视觉隐藏：保留占位，避免搜索框宽度来回跳。 */
+.bible-proj-clock.is-space-hidden { visibility: hidden; }
+/* 时钟不参与压缩（flex: 0 0 auto）；顶栏空间不足时先由搜索框 flex-shrink 让位。
+   只有到手机宽度（420px 以下）才自动隐藏时钟；设置里的开关另由 .is-hidden 控制。 */
+@media (max-width: 420px) {
     .bible-proj-clock { display: none; }
 }
 /* ===== 模式菜单：与 Hymns 诗歌投影菜单同款 =====
@@ -6543,7 +6550,8 @@ body .bible-projection-fullscreen.bp-theme-custom .bible-proj-parallel-intro-tex
     -webkit-text-fill-color: var(--bp-intro-fg);
 }
 /* 内容方框：背景样式由 --bp-box-bg / --bp-intro-bg 的值决定（纯色 / 半透明 / 磨砂 / 透明），
-   边框固定 1px 实线，只由取色器控制颜色。 */
+   边框线型由 --bp-box-border-style / --bp-outline-border-style 决定（无 / 实线 / 虚线 / 点线 / 双线），
+   颜色由取色器控制；none 时边框宽度为 0，其余线型为 1px。 */
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-verse-box,
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-intro-box,
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-theme-box,
@@ -6553,36 +6561,38 @@ body .bible-projection-fullscreen.bp-theme-custom .bible-proj-outline-box {
 }
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-verse-box {
     background: var(--bp-box-bg);
-    border: 1px solid var(--bp-box-border);
+    border: var(--bp-box-border-width, 1px) var(--bp-box-border-style, solid) var(--bp-box-border);
     border-radius: 8px;
 }
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-intro-box {
     background: var(--bp-intro-bg);
-    border: 1px solid var(--bp-intro-border);
+    border: var(--bp-box-border-width, 1px) var(--bp-box-border-style, solid) var(--bp-intro-border);
     border-radius: 8px;
 }
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-theme-box {
     background: var(--bp-box-bg);
-    border-bottom: 1px solid var(--bp-box-border);
+    border-bottom: var(--bp-box-border-width, 1px) var(--bp-box-border-style, solid) var(--bp-box-border);
     border-radius: 8px;
 }
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-outline-box {
     background: var(--bp-box-bg);
-    border-left: 1px solid var(--bp-box-border);
+    border-left: var(--bp-outline-border-width, 3px) var(--bp-outline-border-style, solid) var(--bp-box-border);
     border-radius: 8px;
 }
-/* 标注 / 串珠 / 注解 */
+/* 标注 / 串珠 / 注解
+   「标注文字 / 标注底色」统一管注解与串珠的上标和类型徽标；
+   「串珠文字 / 串珠背景」只管点开串珠后显示的内容文字与底色；
+   「注解背景」只管注解面板，不再影响串珠面板。 */
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-text sup.bible-note-mark-note,
-body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-ref-text sup.bible-note-mark-note {
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-ref-text sup.bible-note-mark-note,
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-text sup.bible-note-mark-ref,
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-ref-text sup.bible-note-mark-ref,
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-label-note,
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-label-ref {
     color: var(--bp-mark-fg);
     -webkit-text-fill-color: var(--bp-mark-fg);
     background-color: var(--bp-mark-bg);
-}
-body .bible-projection-fullscreen.bp-theme-custom .bible-proj-text sup.bible-note-mark-ref,
-body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-ref-text sup.bible-note-mark-ref {
-    color: var(--bp-chain-fg);
-    -webkit-text-fill-color: var(--bp-chain-fg);
-    background-color: var(--bp-chain-bg);
+    border-color: var(--bp-custom-note-border);
 }
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-text.bible-proj-item-note {
     color: var(--bp-custom-note-fg);
@@ -6596,23 +6606,25 @@ body .bible-projection-fullscreen.bp-theme-custom .bible-proj-text.bible-proj-it
     background-color: var(--bp-chain-bg);
     border-left-color: var(--bp-custom-note-border);
 }
-body .bible-projection-fullscreen.bp-theme-custom .bible-proj-notes {
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-notes:not(.bible-proj-notes-ref) {
     color: var(--bp-custom-note-fg);
     -webkit-text-fill-color: var(--bp-custom-note-fg);
     background-color: var(--bp-custom-note-bg);
     border-color: var(--bp-custom-note-border);
 }
-body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-label-note {
-    color: var(--bp-mark-fg);
-    -webkit-text-fill-color: var(--bp-mark-fg);
-    background-color: var(--bp-mark-bg);
-    border-color: var(--bp-custom-note-border);
-}
-body .bible-projection-fullscreen.bp-theme-custom .bible-proj-note-label-ref {
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-notes.bible-proj-notes-ref {
     color: var(--bp-chain-fg);
     -webkit-text-fill-color: var(--bp-chain-fg);
     background-color: var(--bp-chain-bg);
     border-color: var(--bp-custom-note-border);
+}
+/* 串珠浮层里的出处、被引经文与出处标记：跟随「串珠文字」而不是「经文出处」 */
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-notes-ref .bible-proj-note-refs,
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-notes-ref .bible-proj-note-ref-verse,
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-notes-ref .bible-proj-note-ref-addr,
+body .bible-projection-fullscreen.bp-theme-custom .bible-proj-notes-ref .bible-proj-note-ref-text {
+    color: var(--bp-chain-fg);
+    -webkit-text-fill-color: var(--bp-chain-fg);
 }
 /* 菜单 / 输入框 / 滚动条 */
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-mode-menu,
@@ -6742,6 +6754,88 @@ body .bible-projection-fullscreen.bp-theme-custom .bible-proj-slide-wrapper::-we
     gap: 5px;
     overflow-y: auto;
 }
+/* 自定义主题：勾选框多选 + 拖拽手柄排序 */
+.bible-proj-theme-editor-item-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+}
+.bible-proj-theme-editor-item-row.is-dragging { opacity: 0.45; }
+.bible-proj-theme-editor-item-row.is-drop-target {
+    border-color: var(--bp-accent, #4ecdc4);
+}
+.bible-proj-theme-editor-check {
+    box-sizing: border-box;
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--bp-menu-border, #555555);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--bp-menu-fg, #f3f4f6);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 18px;
+    text-align: center;
+    cursor: pointer;
+}
+.bible-proj-theme-editor-check.is-checked {
+    border-color: var(--bp-accent, #4ecdc4);
+    background: var(--bp-nav-bg, #3b82f6);
+    color: var(--bp-nav-fg, #ffffff);
+}
+.bible-proj-theme-editor-item {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.bible-proj-theme-editor-drag {
+    flex: 0 0 auto;
+    padding: 0 2px;
+    color: var(--bp-menu-hint, #9ca3af);
+    cursor: grab;
+    user-select: none;
+}
+/* 以模板新建：自绘模板列表，颜色固定，不跟随预览主题 */
+.bible-proj-theme-editor-template {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 190px;
+    overflow-y: auto;
+    padding: 8px 6px;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+    background: #1f2430;
+}
+.bible-proj-theme-editor-template-hint {
+    color: #9ca3af;
+    font-size: 11px;
+    line-height: 1.4;
+    margin-bottom: 2px;
+}
+.bible-proj-theme-editor-template-item {
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid #4b5563;
+    border-radius: 5px;
+    background: #2b3242;
+    color: #f8fafc;
+    font-family: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+.bible-proj-theme-editor-template-item:hover {
+    border-color: #3b82f6;
+    background: #3b82f6;
+    color: #ffffff;
+}
 .bible-proj-theme-editor-empty {
     padding: 8px 4px;
     color: var(--bp-ref, #a0a0a0);
@@ -6776,7 +6870,43 @@ body .bible-projection-fullscreen.bp-theme-custom .bible-proj-slide-wrapper::-we
     font-family: inherit;
     font-size: 13px;
 }
-/* 内容框背景样式用自绘下拉：原生弹层在 WebView 里不继承主题变量，会出现白底白字 / 一片空白。 */
+/* 主题名称输入框：编辑面板配色固定，绝不跟随预览主题——预览浅色主题时
+   --bp-input-bg / --bp-input-fg 会变成浅底深字甚至深底深字，导致名称看不清。 */
+.bible-proj-theme-editor-name {
+    color-scheme: dark;
+    background: #1f2430;
+    color: #f8fafc;
+    border-color: #4b5563;
+    -webkit-text-fill-color: #f8fafc;
+}
+/* 以亮色 / 翠绿 / 浅黄等浅色主题为模板预览时，宿主 App 的 input 规则（含
+   -webkit-text-fill-color 与浅色 background）会压过上面的普通类选择器，把名称框
+   画成浅底浅字 / 浅底浅光标。这里带上实际 DOM 链提高优先级，把输入框的文字、
+   占位符、光标与选中态全部钉成固定的深底浅字，跟当前预览主题彻底无关。 */
+body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-editor-name,
+body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-editor-name:hover,
+body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-editor-name:focus {
+    color-scheme: dark;
+    background-color: #1f2430;
+    background-image: none;
+    color: #f8fafc;
+    -webkit-text-fill-color: #f8fafc;
+    caret-color: #f8fafc;
+    border-color: #64748b;
+    box-shadow: none;
+    outline: none;
+}
+body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-editor-name::placeholder {
+    color: #cbd5e1;
+    -webkit-text-fill-color: #cbd5e1;
+    opacity: 1;
+}
+body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-editor-name::selection {
+    background: #3b82f6;
+    color: #ffffff;
+    -webkit-text-fill-color: #ffffff;
+}
+/* 内容框背景样式 / 边框样式用自绘下拉：原生弹层在 WebView 里不继承主题变量，会出现白底白字 / 一片空白。 */
 .bible-proj-theme-editor-select-wrap {
     position: relative;
     flex: 1 1 auto;
