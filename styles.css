@@ -1055,10 +1055,12 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
     left: 50%;
     transform: translateX(-50%);
     z-index: 46;
-    width: 280px;
+    width: 380px;
     max-width: calc(100vw - 32px);
+    max-height: 80vh;
+    overflow-y: auto;
     box-sizing: border-box;
-    padding: 10px 12px 12px;
+    padding: 0;
     background: var(--bp-menu-bg);
     color: var(--bp-menu-fg);
     border: 1px solid var(--bp-menu-border);
@@ -1067,39 +1069,84 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
     pointer-events: auto;
     -webkit-app-region: no-drag;
     app-region: no-drag;
+    /* 面板嵌在按钮元素里：按钮的 UA 默认 text-align:center 会让所有标题居中，
+       必须显式左对齐，才能让每行的标签与控件排成整齐的两列。 */
+    text-align: left;
+    /* 原生控件配色继承投影层根级的 color-scheme（由 applyTheme 按投影主题明暗写入），
+       不跟随 Obsidian 明暗模式；这里不重复写死，自定义浅色主题才能正确继承。 */
 }
 .bible-proj-settings-panel input,
 .bible-proj-settings-panel button {
     -webkit-app-region: no-drag;
     app-region: no-drag;
 }
+/* 投影内所有文本输入控件统一走主题的 --bp-input-* 配色。
+   宿主 App 在浅色主题给 input 写了 -webkit-text-fill-color，普通类选择器压不住，
+   所以这里用 body + 投影根级前缀提高优先级（页码框 / 主题名称框各有专门规则，排除掉）。 */
+body .bible-projection-fullscreen input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not(.bible-proj-quick-search-input):not(.bible-proj-theme-editor-name),
+body .bible-projection-fullscreen textarea {
+    background-color: var(--bp-input-bg);
+    background-image: none;
+    color: var(--bp-input-fg);
+    -webkit-text-fill-color: var(--bp-input-fg);
+    caret-color: var(--bp-input-fg);
+    border-color: var(--bp-input-border);
+}
+body .bible-projection-fullscreen input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not(.bible-proj-quick-search-input):not(.bible-proj-theme-editor-name)::placeholder,
+body .bible-projection-fullscreen textarea::placeholder {
+    color: var(--bp-placeholder, var(--bp-input-fg));
+    -webkit-text-fill-color: var(--bp-placeholder, var(--bp-input-fg));
+    opacity: 1;
+}
 .bible-proj-settings-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--bp-menu-border);
 }
 .bible-proj-settings-title {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
-    color: var(--bp-menu-title);
+    color: var(--bp-menu-fg);
 }
 .bible-proj-settings-close {
-    background: transparent;
-    color: var(--bp-menu-fg);
-    border: none;
-    padding: 2px 6px;
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border: 1px solid var(--bp-btn-border);
+    border-radius: 5px;
+    padding: 2px 8px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
+    line-height: 1.2;
+}
+.bible-proj-settings-close:hover { background: var(--bp-btn-hover-bg); }
+.bible-proj-settings-body { padding: 4px 14px 12px; }
+.bible-proj-settings-group { padding: 4px 0; }
+.bible-proj-settings-group + .bible-proj-settings-group {
+    border-top: 1px solid var(--bp-menu-border);
+    margin-top: 4px;
+    padding-top: 8px;
+}
+.bible-proj-settings-group-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--bp-menu-hint);
+    padding: 2px 0 4px;
+    text-align: left;
 }
 .bible-proj-settings-row {
     display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 6px 2px;
-    cursor: pointer;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 30px;
+    padding: 4px 0;
+    cursor: default;
     font-size: 13px;
 }
+.bible-proj-settings-clickable { cursor: pointer; }
 .bible-proj-settings-check {
     flex: 0 0 auto;
     margin: 2px 0 0;
@@ -1110,19 +1157,17 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
 .bible-proj-settings-row-text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
+    min-width: 0;
+    flex: 1 1 auto;
 }
-.bible-proj-settings-row-label { font-size: 13px; }
-.bible-proj-settings-row-desc {
-    font-size: 11px;
-    color: var(--bp-menu-hint);
-    line-height: 1.4;
+.bible-proj-settings-row-label {
+    font-size: 13px;
+    color: var(--bp-menu-fg);
+    line-height: 1.3;
+    text-align: left;
 }
-.bible-proj-settings-size-row {
-    align-items: center;
-    justify-content: space-between;
-    cursor: default;
-}
+.bible-proj-settings-size-row { cursor: default; }
 .bible-proj-settings-size-ctrl {
     flex: 0 0 auto;
     display: inline-flex;
@@ -1153,13 +1198,532 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
     font-variant-numeric: tabular-nums;
     color: var(--bp-menu-fg);
 }
-.bible-proj-settings-note {
-    margin-top: 4px;
+/* 投影通告设置（在投影设置面板里）*/
+.bible-proj-settings-section {
+    margin: 10px 0 4px;
     padding-top: 8px;
     border-top: 1px solid var(--bp-menu-border);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--bp-menu-title, var(--bp-menu-fg));
+}
+.bible-proj-settings-column { flex-direction: column; align-items: stretch; }
+.bible-proj-settings-mode-ctrl {
+    flex: 0 0 auto;
+    display: inline-flex;
+    gap: 4px;
+}
+.bible-proj-settings-mode-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border: 1px solid var(--bp-btn-border);
+    border-radius: 5px;
+    cursor: pointer;
+}
+.bible-proj-settings-mode-btn.is-active {
+    background: var(--bp-menu-current, var(--bp-btn-hover-bg));
+    color: var(--bp-menu-fg);
+    font-weight: 700;
+}
+.bible-proj-notice-folder-wrap {
+    position: relative;
+    margin-top: 6px;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+/* 文件夹输入 + 确定/取消：输入框占满剩余宽度，按钮固定在右侧 */
+.bible-proj-notice-folder-line { display: flex; align-items: flex-start; gap: 6px; }
+.bible-proj-notice-folder-line .bible-proj-notice-folder-wrap { flex: 1 1 auto; min-width: 0; }
+.bible-proj-notice-folder-btns { display: flex; gap: 4px; flex: 0 0 auto; margin-top: 6px; }
+.bible-proj-notice-folder-btns button {
+    padding: 5px 10px;
+    font-family: inherit;
+    font-size: 12px;
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border: 1px solid var(--bp-btn-border);
+    border-radius: 5px;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-folder-btns button:hover { background: var(--bp-btn-hover-bg); }
+/* 「确定」是主按钮：用当前主题的强调色描边，避免和「取消」看成一个东西 */
+.bible-proj-notice-folder-btns .bible-proj-notice-folder-ok {
+    border-color: var(--bp-outline, var(--bp-btn-border));
+    color: var(--bp-outline, var(--bp-btn-fg));
+    font-weight: 600;
+}
+/* 点「确定」后的回执：移动中 → ✓ 已保存 / ✗ 失败，1.6 秒后自动回「确定」 */
+.bible-proj-notice-folder-btns button:disabled { opacity: 0.65; cursor: default; }
+.bible-proj-notice-folder-btns .bible-proj-notice-folder-ok.is-busy { opacity: 0.75; }
+.bible-proj-notice-folder-btns .bible-proj-notice-folder-ok.is-ok {
+    border-color: #46c46a;
+    color: #46c46a;
+    background: rgba(70, 196, 106, 0.18);
+}
+.bible-proj-notice-folder-btns .bible-proj-notice-folder-ok.is-fail {
+    border-color: #ff7b72;
+    color: #ff7b72;
+    background: rgba(255, 123, 114, 0.18);
+}
+.bible-proj-notice-folder-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    background: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    -webkit-text-fill-color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 5px;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+/* 输入框右端的一键清空：只清值（＝仓库根目录），还要按「确定」才生效 */
+.bible-proj-notice-folder-wrap .bible-proj-notice-folder-input { padding-right: 28px; }
+.bible-proj-notice-folder-clear {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 26px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    color: var(--bp-menu-fg, #ddd);
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    opacity: 0.65;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-folder-clear:hover { opacity: 1; background: var(--bp-btn-hover-bg); }
+.bible-proj-notice-folder-clear .svg-icon { width: 14px; height: 14px; }
+.bible-proj-notice-folder-clear.is-hidden { display: none; }
+.bible-proj-notice-folder-suggest {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    max-height: 168px;
+    overflow-y: auto;
+    background: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 5px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+.bible-proj-notice-folder-suggest.is-hidden { display: none; }
+.bible-proj-notice-folder-option {
+    padding: 6px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.bible-proj-notice-folder-option:hover { background: var(--bp-btn-hover-bg); }
+
+/* ===== 投影通告：常驻条 + 面板（经文 / 诗歌共用同一份 md） =====
+   常驻条挂在投影层内部、贴底栏上方；面板挂在工具区、绝对定位于底栏上方。
+   颜色一律走 --bp-* 变量，跟随七套内置主题与自定义主题，不写死明暗。 */
+.bible-proj-notice-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 46px;
+    z-index: 30;
+    margin: 0 auto;
+    max-width: min(90%, 960px);
+    box-sizing: border-box;
+    padding: 10px 18px;
+    text-align: center;
+    background: var(--bp-box-bg, var(--bp-panel-bg, rgba(0,0,0,0.72)));
+    color: var(--bp-fg, #fff);
+    border: 1px solid var(--bp-outline, rgba(255,255,255,0.35));
+    border-radius: 8px;
+    pointer-events: none;
+}
+.bible-proj-notice-bar.is-hidden { display: none; }
+
+/* 顶部通告区（zone 模式）：在 flex column 里占位，contentArea 的 flex:1 自动下移；
+   高度由设置 / 拖动条写入内联 style，颜色全走 --bp-* 跟随主题。 */
+.bible-proj-notice-zone {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding: 12px 24px;
+    overflow: auto;
+    text-align: center;
+    background: var(--bp-box-bg, var(--bp-panel-bg, rgba(0,0,0,0.72)));
+    color: var(--bp-fg, #fff);
+    border-bottom: 1px solid var(--bp-outline, rgba(255,255,255,0.35));
+}
+.bible-proj-notice-zone.is-hidden,
+.bible-proj-notice-zone-resizer.is-hidden,
+.bible-proj-notice-float.is-hidden { display: none; }
+.bible-proj-notice-zone .bible-proj-notice-title,
+.bible-proj-notice-float .bible-proj-notice-title {
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--bp-outline, #ffe);
+}
+.bible-proj-notice-zone .bible-proj-notice-body,
+.bible-proj-notice-float .bible-proj-notice-body {
+    font-size: 26px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+/* 通告区与投影内容的分界：10px 可拖区域 + 一条亮线；
+   亮线粗细由设置面板滑条写进 --bp-notice-divider-w（1–12px，默认 2）。 */
+.bible-proj-notice-zone-resizer {
+    flex: 0 0 auto;
+    height: 10px;
+    cursor: row-resize;
+    touch-action: none;
+    background: var(--bp-bar-bg, rgba(0,0,0,0.2));
+    border-bottom: var(--bp-notice-divider-w, 2px) solid var(--bp-outline, rgba(255,255,255,0.35));
+    box-sizing: border-box;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-zone-resizer:hover,
+.bible-proj-notice-zone-resizer:active { background: var(--bp-btn-hover-bg); }
+/* 顶部浮窗（float 模式）：切换条目时弹出，到时收起；z 低于面板，不挡编辑 */
+.bible-proj-notice-float {
+    position: absolute;
+    top: 76px;
+    left: 0;
+    right: 0;
+    z-index: 28;
+    margin: 0 auto;
+    max-width: min(90%, 960px);
+    box-sizing: border-box;
+    padding: 14px 20px;
+    text-align: center;
+    background: var(--bp-box-bg, var(--bp-panel-bg, rgba(0,0,0,0.85)));
+    color: var(--bp-fg, #fff);
+    border: 1px solid var(--bp-outline, rgba(255,255,255,0.35));
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+    pointer-events: none;
+}
+.bible-proj-notice-bar .bible-proj-notice-title {
+    font-size: 30px; /* 回退值；投影里由 applyNoticeFontSize() 按投影字号覆盖，避免继承小字号 */
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--bp-outline, #ffe);
+}
+.bible-proj-notice-bar .bible-proj-notice-body {
+    font-size: 26px; /* 回退值；运行时跟随投影字号并设下限，保证投影看得清 */
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.bible-proj-notice-panel {
+    position: absolute;
+    bottom: calc(100% + 14px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 46;
+    width: 400px;
+    max-width: calc(100vw - 32px);
+    max-height: 70vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 10px 12px 12px;
+    background: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-panel input,
+.bible-proj-notice-panel button {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+.bible-proj-notice-head .bible-proj-notice-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--bp-menu-title, var(--bp-menu-fg));
+}
+.bible-proj-notice-close {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    box-sizing: border-box;
+    font-size: 12px;
+    line-height: 1;
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border: 1px solid var(--bp-btn-border);
+    border-radius: 5px;
+    cursor: pointer;
+}
+.bible-proj-notice-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 13px;
+}
+.bible-proj-notice-clickable { cursor: pointer; }
+.bible-proj-notice-row-label { flex: 1; }
+.bible-proj-notice-list {
+    margin-top: 6px;
+    border-top: 1px solid var(--bp-menu-border);
+    padding-top: 6px;
+    font-size: 12px;
+    color: var(--bp-menu-hint);
+}
+.bible-proj-notice-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--bp-menu-border);
+    cursor: pointer;
+    color: var(--bp-menu-fg);
+}
+.bible-proj-notice-item:last-child { border-bottom: none; }
+.bible-proj-notice-item:hover { background: var(--bp-btn-hover-bg); }
+.bible-proj-notice-item.is-active {
+    background: var(--bp-menu-current, var(--bp-btn-hover-bg));
+    color: var(--bp-menu-fg);
+    font-weight: 700;
+}
+/* 顺序编号：与标题、行尾按钮同一行，右对齐保证数字位数对齐 */
+.bible-proj-notice-item-index {
+    flex: 0 0 26px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--bp-menu-hint);
+}
+.bible-proj-notice-item.is-active .bible-proj-notice-item-index { color: var(--bp-menu-fg); }
+/* 就地编辑：编号 + 标题 + 保存/取消同一行，正文与换行提示在下方 */
+.bible-proj-notice-item-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.bible-proj-notice-item-form .bible-proj-notice-item-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-bottom: 0;
+}
+.bible-proj-notice-item-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.bible-proj-notice-item-edit,
+.bible-proj-notice-item-del,
+.bible-proj-notice-save,
+.bible-proj-notice-cancel,
+.bible-proj-notice-add {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    min-width: 24px;
+    font-size: 12px;
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border: 1px solid var(--bp-btn-border);
+    border-radius: 5px;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-item-edit,
+.bible-proj-notice-item-del { padding: 3px 6px; }
+.bible-proj-notice-item-edit:hover,
+.bible-proj-notice-item-del:hover,
+.bible-proj-notice-save:hover,
+.bible-proj-notice-cancel:hover,
+.bible-proj-notice-add:hover { background: var(--bp-btn-hover-bg); border-color: var(--bp-btn-hover-border); }
+.bible-proj-notice-item-form {
+    padding: 8px;
+    margin: 6px 0;
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 6px;
+}
+.bible-proj-notice-item-form input,
+.bible-proj-notice-item-form textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 6px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    background: var(--bp-menu-bg);
+    color: var(--bp-menu-fg);
+    -webkit-text-fill-color: var(--bp-menu-fg);  /* WebView 下输入框要显式指定，否则可能继承成看不见的颜色 */
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 5px;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-item-form textarea { min-height: 120px; resize: vertical; }
+.bible-proj-notice-edit-hint {
+    margin: -2px 0 6px;
     font-size: 11px;
     color: var(--bp-menu-hint);
+}
+.bible-proj-notice-form-btns { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 6px; }
+/* 管理面板顶部的「正在显示」预览：单击列表条目即时更新，文字沿用投影通告变量 */
+.bible-proj-notice-preview {
+    margin: 2px 0 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--bp-menu-border);
+    border-radius: 6px;
+    background: var(--bp-box-bg, var(--bp-panel-bg, transparent));
+    color: var(--bp-fg, var(--bp-menu-fg));
+    text-align: center;
+}
+.bible-proj-notice-preview-title { font-size: 14px; font-weight: 700; line-height: 1.4; }
+.bible-proj-notice-preview-body {
+    margin-top: 3px;
+    font-size: 12px;
     line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 64px;
+    overflow-y: auto;
+}
+.bible-proj-notice-foot {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--bp-menu-border);
+    text-align: right;
+}
+/* 旧 foot 布局与「打开 md」按钮均已移除：头部 actions 只留新增 / 完成，间距由 flex gap 控制 */
+
+/* 通告区高度 ± 按钮：外观与时钟字号按钮一致，独立类名避免污染既有断言 */
+.bible-proj-notice-height-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    box-sizing: border-box;
+    font-size: 14px;
+    line-height: 1;
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border: 1px solid var(--bp-btn-border);
+    border-radius: 5px;
+    cursor: pointer;
+}
+.bible-proj-notice-height-btn:hover { background: var(--bp-btn-hover-bg); border-color: var(--bp-btn-hover-border); }
+.bible-proj-notice-height-value { min-width: 48px; text-align: center; font-size: 12px; }
+/* 分界线粗细滑条：原生 range 的配色跟随投影层根级 color-scheme */
+.bible-proj-settings-divider-ctrl {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.bible-proj-settings-divider-range {
+    width: 96px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--bp-accent, #4ecdc4);
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+/* 时间字号 / 通告区高度也走同一套滑条布局，控件宽度保持一致 */
+.bible-proj-settings-clock-range,
+.bible-proj-settings-height-range { width: 96px; }
+/* 公告标题 / 正文字号滑条：与分界线滑条同列，「自动」按钮可恢复跟随投影字号 */
+.bible-proj-settings-font-range { width: 78px; }
+.bible-proj-settings-font-value {
+    min-width: 82px;
+    text-align: right;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--bp-menu-fg);
+}
+.bible-proj-settings-divider-value {
+    min-width: 40px;
+    text-align: right;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--bp-menu-fg);
+}
+/* 点通告区本体内展开的内容管理：覆盖菜单变量让控件跟随通告区配色 */
+.bible-proj-notice-manage {
+    --bp-menu-bg: transparent;
+    --bp-menu-fg: var(--bp-fg, #fff);
+    --bp-menu-border: var(--bp-outline, rgba(255,255,255,0.4));
+    --bp-menu-current: var(--bp-btn-hover-bg);
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: left;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-manage-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.bible-proj-notice-manage-title { font-weight: 700; flex: 0 0 auto; }
+/* 「＋ 新增通告 / 完成」统一在头部右侧，完成在最右（打开 md 已取消） */
+.bible-proj-notice-manage-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+.bible-proj-notice-manage-done,
+.bible-proj-notice-manage-actions .bible-proj-notice-add {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: var(--bp-btn-bg);
+    color: var(--bp-btn-fg);
+    border: 1px solid var(--bp-btn-border);
+    border-radius: 5px;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+.bible-proj-notice-manage-done:hover,
+.bible-proj-notice-manage-actions .bible-proj-notice-add:hover { background: var(--bp-btn-hover-bg); }
+.bible-proj-notice-manage-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+/* 底部区的边框方向与顶部区相反 */
+.bible-proj-notice-zone-bottom { border-bottom: none; border-top: 1px solid var(--bp-outline, rgba(255,255,255,0.35)); }
+.bible-proj-notice-zone-resizer-bottom {
+    border-bottom: none;
+    border-top: var(--bp-notice-divider-w, 2px) solid var(--bp-outline, rgba(255,255,255,0.35));
 }
 
 @media (max-width: 600px) {
@@ -1245,6 +1809,18 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
     background: #2563eb;
     border-color: #1d4ed8;
     color: #fff;
+}
+/* 顶栏正文字号滑轨：取代旧 −/+ 按钮，宽度收紧以免挤掉搜索框 */
+.bible-proj-font-range {
+    width: 84px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    accent-color: var(--bp-accent, #4ecdc4);
+    cursor: pointer;
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
 }
 .bible-proj-font-size {
     font-size: 12px;
@@ -1351,6 +1927,7 @@ body .bible-projection-fullscreen .bible-proj-page-jump-input::selection {
         width: 13px;
         height: 13px;
     }
+    .bible-proj-font-range { width: 64px; }
     .bible-proj-font-size {
         font-size: 11px;
         min-width: 34px;
@@ -6632,13 +7209,13 @@ body .bible-projection-fullscreen.bp-theme-custom .bible-proj-theme-menu,
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-history-menu,
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-picker {
     background: var(--bp-menu-bg);
-    color: var(--bp-menu-text);
+    color: var(--bp-menu-fg);
     border-color: var(--bp-menu-border);
 }
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-theme-menu-item,
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-mode-menu-item {
-    color: var(--bp-menu-text);
-    -webkit-text-fill-color: var(--bp-menu-text);
+    color: var(--bp-menu-fg);
+    -webkit-text-fill-color: var(--bp-menu-fg);
 }
 body .bible-projection-fullscreen.bp-theme-custom .bible-proj-quick-search-input {
     background: var(--bp-input-bg);

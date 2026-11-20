@@ -572,6 +572,160 @@ function projectionClockSpaceFlags(free, prevHideSeconds) {
     };
 }
 
+// ==================== 投影通告：跨插件共享的 md 文档 ====================
+// 经文投影（BSAR）与诗歌投影（Hymns）共用同一份 md 文件：路径写进 settings.noticeDocPath，
+// 两端都从这份文件读写内容与显示状态，因此切投影时「开/关、当前第几条」天然延续。
+// 文件格式（人可在 Obsidian 里直接编辑）：
+//   <!-- bible-proj-notice-state
+//   enabled: true
+//   active: 0
+//   activeTop: 0
+//   activeBottom: 1
+//   -->
+//   ## 第一条标题
+//   正文，可多行……
+//   ## 第二条标题
+//   ……
+// activeTop / activeBottom 是上下两个通告区各自显示的第几条；active 保留为旧版单序号，
+// 供尚未支持双区的插件（例如旧版 Hymns）读取，写入时取最近一次选择的条号。
+// 状态只认这段固定标记里的字段，正文任意改都不影响；解析容错，坏文件按「全关、第一条」处理。
+// 通告文件名固定，设置里只改所在文件夹；两种投影共用同一份文档。
+const NOTICE_FILENAME = 'bible-notice.md';
+const NOTICE_DOC_DEFAULT_PATH = NOTICE_FILENAME;   // 兼容旧引用
+const NOTICE_STATE_RE = /<!--\s*bible-proj-notice-state\s*([\s\S]*?)\s*-->/;
+const NOTICE_STATE_EVENT = 'bible-notice:changed';
+// 通告文档位置变更时广播，供另一端插件（Hymns）跟进改共享路径
+const NOTICE_PATH_EVENT = 'bible-notice:pathchanged';
+// 通告显示设置（模式 / 上下区高度 / 标题字号 / 正文字号 / 分界线粗细）变更广播：
+// 两端各存各的 data.json，改动时把快照发给另一端，保证「一端改顶部，另一端也顶部」。
+const NOTICE_SETTINGS_EVENT = 'bible-notice:settings';
+// 三种公告模式：top=顶部区、bottom=底部区、all=上下同时显示（设置里叫「全选」）。
+// 旧值 zone / top-zone 归到 top，旧的 bottom 常驻条 / float 浮窗归到 bottom，both→all。
+const NOTICE_MODES = ['top', 'bottom', 'all'];
+function normalizeProjNoticeMode(value) {
+    if (value === 'top' || value === 'top-zone' || value === 'zone') return 'top';
+    if (value === 'bottom' || value === 'bottom-zone' || value === 'bar' || value === 'float') return 'bottom';
+    if (value === 'all' || value === 'both') return 'all';
+    return 'top';
+}
+// 分界线亮线粗细：1–12px，默认 2；非法回退 2。
+function normalizeProjNoticeDividerWidth(value) {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n) || n < 1) return 2;
+    return Math.min(12, n);
+}
+// 通告标题 / 正文字号：12–96px；留空 / null 表示自动跟随投影字号。
+// 返回 null = 自动，非法值也回自动，避免一份坏设置把字缩到看不见。
+function normalizeProjNoticeFontSize(value) {
+    if (value == null || value === '') return null;
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n) || n < 12) return null;
+    return Math.min(96, n);
+}
+// 通告区高度：40~360px，非法回退 120（顶部区 / 底部区共用同一套归一化）
+function normalizeProjNoticeZoneHeight(value) {
+    const n = parseInt(value, 10);
+    if (!Number.isFinite(n) || n < 40) return 120;
+    return Math.min(360, n);
+}
+// 通告所在文件夹（相对 vault 根），'' = 根目录。文件名固定，不接受用户输入文件名。
+function normalizeProjNoticeFolder(value) {
+    if (typeof value !== 'string') return '';
+    return value.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').replace(/^\.\//, '');
+}
+function noticeFolderPath(folder) {
+    const f = normalizeProjNoticeFolder(folder);
+    return f ? f + '/' + NOTICE_FILENAME : NOTICE_FILENAME;
+}
+// 兼容旧数据：旧版 settings.noticeDocPath 存的是完整 .md 路径，取目录 + 固定文件名；
+// 非 md 的异常值一律兜回根目录默认文件，绝不把文件名误当成文件夹。
+function normalizeProjNoticePath(value) {
+    const raw = typeof value === 'string' ? value.trim().replace(/\\/g, '/') : '';
+    if (!raw || !/\.md$/i.test(raw)) return NOTICE_FILENAME;
+    const slash = raw.lastIndexOf('/');
+    const folder = normalizeProjNoticeFolder(slash >= 0 ? raw.slice(0, slash) : '');
+    return folder ? folder + '/' + NOTICE_FILENAME : NOTICE_FILENAME;
+}
+// 把 md 文本解析成 { enabled, active, activeTop, activeBottom, items:[{title, body}] }。
+// 标题取 `## ` 行，正文是标题到下一条 `## ` 之间的内容（去掉状态标记块）。
+function parseNoticeDoc(text) {
+    const src = typeof text === 'string' ? text : '';
+    const state = { enabled: false, active: 0, activeTop: 0, activeBottom: 0 };
+    const m = src.match(NOTICE_STATE_RE);
+    if (m) {
+        const em = m[1].match(/^\s*enabled\s*:\s*(true|false|1|0|on|off)\s*$/im);
+        if (em) state.enabled = /^(true|1|on)$/i.test(em[1]);
+        const am = m[1].match(/^\s*active\s*:\s*(-?\d+)\s*$/im);
+        if (am) state.active = Math.max(0, parseInt(am[1], 10) || 0);
+        // 旧文件只有 active：上下两区都沿用它，升级后不会突然换条。
+        for (const key of ['activeTop', 'activeBottom']) {
+            const re = new RegExp('^\\s*' + key + '\\s*:\\s*(-?\\d+)\\s*$', 'im');
+            const mm = m[1].match(re);
+            if (mm) state[key] = Math.max(0, parseInt(mm[1], 10) || 0);
+            else state[key] = state.active;
+        }
+    }
+    const body = src.replace(NOTICE_STATE_RE, '');
+    const items = [];
+    let cur = null;
+    for (const line of body.split(/\r?\n/)) {
+        const h = line.match(/^\s*##\s+(.+?)\s*$/);
+        if (h) {
+            cur = { title: h[1], body: '' };
+            items.push(cur);
+        } else if (cur) {
+            cur.body += (cur.body ? '\n' : '') + line;
+        }
+    }
+    for (const it of items) it.body = it.body.replace(/^\s*\n+|\n+\s*$/g, '');
+    state.items = items;
+    const last = Math.max(0, items.length - 1);
+    state.active = Math.min(state.active, last);
+    state.activeTop = Math.min(state.activeTop, last);
+    state.activeBottom = Math.min(state.activeBottom, last);
+    return state;
+}
+// 把状态 + 条目序列化回 md。每次整体重写，两份文件谁后写谁生效（写前先重读合并，见插件层）。
+function serializeNoticeDoc(state, items) {
+    const s = state || {};
+    const list = Array.isArray(items) ? items : (Array.isArray(s.items) ? s.items : []);
+    const enabled = !!s.enabled ? 'true' : 'false';
+    const active = Math.max(0, parseInt(s.active, 10) || 0);
+    const idxOf = (key) => {
+        const v = s[key] != null ? parseInt(s[key], 10) : NaN;
+        return Number.isFinite(v) && v >= 0 ? v : active;
+    };
+    const activeTop = idxOf('activeTop');
+    const activeBottom = idxOf('activeBottom');
+    const head = '<!-- bible-proj-notice-state\nenabled: ' + enabled +
+        '\nactive: ' + active + '\nactiveTop: ' + activeTop +
+        '\nactiveBottom: ' + activeBottom + '\n-->\n\n';
+    const parts = list.map(it => {
+        const title = String((it && it.title) || '').replace(/\s+/g, ' ').trim() || '未命名通告';
+        const body = String((it && it.body) || '').replace(/^\s*\n+|\n+\s*$/g, '');
+        return '## ' + title + '\n\n' + (body ? body + '\n' : '');
+    });
+    return head + parts.join('\n') + (parts.length ? '' : '## 未命名通告\n\n在这里写通告内容。\n');
+}
+// 新建文档的初始内容：一份「通告操作说明」，一条要点占一行。
+// 仍然是一条合法通告（## 标题 + 多行正文），默认关闭，避免刚生成就挡住投影。
+function buildNoticeDoc() {
+    const lines = [
+        '1.第一次使用公告，会自动在根目录生成bible-notice.md文档。',
+        '2.该文件是投影通告的数据源，文件名不可更改，作为BSAR和Hymns插件共用文件。',
+        '3.不可擅自移动该文件位置，可通过投影设置里“通告文件夹”设置来更改存储位置。',
+        '4.每个 ## 标题是一条通告，下面的文字是正文，可在md文档或在插件里直接修改。',
+        '5.正文按 Enter 换行；再加一个 ## 标题就多一条通告。',
+        '6.投影时双击通告区打开通告管理，双击条目编辑，单击条目立即显示。',
+        '7.投影时按喇叭按钮或 N 键开关通告，其它设置都在 ⚙ 投影设置里。',
+        '8.选通告模式选「全选」时，上下两区可以各显示一条不同的通告。',
+        '9.修改完通告内容，保存后公告画面自动更新。'
+    ];
+    return serializeNoticeDoc({ enabled: false, active: 0 }, [
+        { title: '通告操作说明', body: lines.join('\n') }
+    ]);
+}
+
 // ===== 主题 / 纲目 / 简介：全局显示开关 =====
 // G 键与对照页的三项勾选共用同一份设置；检索 / 阅读 / 投影 / 三旧一新都按它过滤。
 const CONTENT_TYPE_SETTING_KEYS = { theme: 'showThemes', outline: 'showOutlines', intro: 'showIntros' };
@@ -1321,6 +1475,23 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.2.0': `## [6.2.0] - 2026-11-21
+
+### 新增
+- **投影通告（顶部 / 底部）**：投影顶栏新增喇叭按钮，按 \`N\` 也能开关。通告可只显示在顶部（经文自动下移）、只显示在底部（贴在底栏上方），也可以选「全选」让上下两区各显示一条不同的通告；拖两区之间的分界线可实时改区高（40–360px）。
+- **共享通告文件 bible-notice.md**：第一次使用时自动在仓库根目录生成，是本插件与 Hymns 共用的数据源。每个 \`## 标题\` 是一条通告，下面的文字就是正文，正文里按 Enter 换行；在 md 文档里直接改并保存，投影画面自动更新。新文件自带一份「通告操作说明」，把用法和注意事项写在里面。
+- **通告管理就地编辑**：投影里双击通告区打开管理界面，可新增、编辑、删除条目，单击条目立即切换显示，双击某一条直接进入该条编辑，点「完成」或按 Esc 收起。
+- **投影设置新增「投影通告」一节**：公告模式（顶部 / 底部 / 全选）、通告文件夹、顶部区高度、底部区高度、公告标题字号、公告正文字号（12–96px，可点「自动」跟随投影字号）、分界线粗细（1–12px）全部就地可调，滑条拖动即时生效。
+- **通告文件夹可搬移**：输入框右端带一键清空（清空＝仓库根目录），改完按「确定」才真的搬文件，并按「移动中… / ✓ 已保存 / ✗ 失败」给出回执；「取消」保持原位置。目标处若已有同名文件，会先备份再覆盖，不丢内容。
+
+### 改进
+- **与 Hymns 通告双向同步**：一端改了通告模式、上下区高度、字号或分界线，另一端的投影即时跟上；一端改了通告文件夹，另一端读文件前会先找现有的 \`bible-notice.md\` 跟过去，不会在旧目录再生一份。
+
+### 修复
+- **拉选文字不再误关面板**：在通告文件夹输入框里按住鼠标拖到面板外再松手，投影设置面板与文件夹候选列表都不会被当成「点了外面」而关闭。
+
+### 小提示
+- 通告是经文投影与诗歌投影共用的一份文件，搭配「Hymns」2.8.0 或更新版使用最省心。`,
     '6.1.1': `## [6.1.1] - 2026-11-18
 
 ### 新增
@@ -2779,6 +2950,8 @@ class BibleSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // 投影通告的设置已全部移到「投影设置」面板（底栏 ⚙ 按钮）里。
+
         // ===== 三旧一新：每日读经进度（正文字号 + MP3 识别） =====
         containerEl.createEl('h3', { text: '三旧一新（每日读经进度）', cls: 'setting-item-name', attr: { style: 'margin-top:24px;' } });
         this.renderDailySettings(containerEl);
@@ -4172,6 +4345,15 @@ class BibleProjectionOverlay {
         this.topRowEl = null;
         this._clockResizeObserver = null;
         this._clockResizeHandler = null;
+        // 投影通告：状态来自共享 md，切到诗歌投影再切回来时重新读文件即延续。
+        this._notice = { enabled: false, active: 0, items: [] };
+        this._noticePanelsOpen = false;
+        this._noticeOutside = null;
+        this._noticeOutsideEvents = null;
+        this._noticeOutsideToken = null;
+        this._noticePreviewEl = null;
+        this._noticeLastClickedIndex = -1;
+        this._noticePanelSig = '';
         this.buildSlides();
     }
 
@@ -4375,11 +4557,34 @@ class BibleProjectionOverlay {
         }
         measureClockSpace();
 
+        // 顶部通告区：永久占位、投影内容自动下移。拖动条紧随其后。
+        // overlay 是 flex column，DOM 顺序就是布局顺序，必须用 append 而非 insertBefore（测试桩不支持）。
+        this.noticeZoneEl = document.createElement('div');
+        this.noticeZoneEl.className = 'bible-proj-notice-zone bible-proj-notice-zone-top is-hidden';
+        this.noticeZoneEl.setAttribute('role', 'status');
+        this.overlay.appendChild(this.noticeZoneEl);
+        this.noticeZoneResizerEl = document.createElement('div');
+        this.noticeZoneResizerEl.className = 'bible-proj-notice-zone-resizer bible-proj-notice-zone-resizer-top is-hidden';
+        this.noticeZoneResizerEl.setAttribute('role', 'separator');
+        this.noticeZoneResizerEl.title = '拖动调节顶部通告区高度';
+        this.overlay.appendChild(this.noticeZoneResizerEl);
+
         this.contentArea = document.createElement('div');
         this.contentArea.className = 'bible-proj-content';
         this.contentArea.style.cssText = 'flex:1;overflow:auto;display:flex;flex-direction:column;align-items:center;position:relative;';
         this.overlay.appendChild(this.contentArea);
 
+        // 底部通告区：贴在底栏上方、投影内容自动上移。拖动条在区上方（拖的是上边界）。
+        this.noticeBottomResizerEl = document.createElement('div');
+        this.noticeBottomResizerEl.className = 'bible-proj-notice-zone-resizer bible-proj-notice-zone-resizer-bottom is-hidden';
+        this.noticeBottomResizerEl.setAttribute('role', 'separator');
+        this.noticeBottomResizerEl.title = '拖动调节底部通告区高度';
+        this.overlay.appendChild(this.noticeBottomResizerEl);
+        this.noticeBottomZoneEl = document.createElement('div');
+        this.noticeBottomZoneEl.className = 'bible-proj-notice-zone bible-proj-notice-zone-bottom is-hidden';
+        this.noticeBottomZoneEl.setAttribute('role', 'status');
+        this.overlay.appendChild(this.noticeBottomZoneEl);
+        this.bindNoticeZoneDrag();
         const bottomBar = document.createElement('div');
         bottomBar.className = 'bible-proj-bottombar';
         bottomBar.style.cssText = 'flex-shrink:0;background:var(--bp-bar-bg);border-top:1px solid var(--bp-bar-border);';
@@ -4424,9 +4629,23 @@ class BibleProjectionOverlay {
                 attr: { 'data-action': action, title: title }
             });
         };
-        addToolBtn('−', 'font-smaller', '缩小字体', 'bible-proj-tool-icon');
+        // 投影正文字号：滑轨一次到位（16–120px），数值仍紧随其后；−/+ 键与 R 重置照旧可用。
+        const fontRange = toolCenter.createEl('input', {
+            cls: 'bible-proj-font-range',
+            attr: {
+                type: 'range', min: '16', max: '120', step: '2',
+                title: '投影字体大小（16–120px）', 'aria-label': '投影字体大小',
+                'data-action': 'font-size-range'
+            }
+        });
+        fontRange.value = String(this.fontSize);
+        this.fontRangeEl = fontRange;
+        fontRange.addEventListener('input', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            this.fontSize = normalizeProjectionFontSize(e && e.target ? e.target.value : fontRange.value);
+            this.updateFontSize();
+        });
         toolCenter.createEl('span', { cls: 'bible-proj-font-size', text: this.fontSize + 'px' });
-        addToolBtn('+', 'font-larger', '放大字体', 'bible-proj-tool-icon');
         const resetBtn = addToolBtn('', 'font-reset', '重置字体', 'bible-proj-tool-icon');
         setIcon(resetBtn, 'rotate-ccw');
         const centerBtn = addToolBtn('', 'toggle-centered', '切换居中', 'bible-proj-tool-icon');
@@ -4440,8 +4659,11 @@ class BibleProjectionOverlay {
         if (isMobileDeviceEnv()) desktopFullBtn.style.display = 'none';
         const searchBtn = addToolBtn('', 'open-search', '打开检索窗口（S）', 'bible-proj-tool-icon');
         setIcon(searchBtn, 'search');
+        // 通告按钮：打开投影通告面板（开关 / 切换条目 / 编辑文档）。N 键是它的快捷入口。
+        const noticeBtn = addIconToolBtn('megaphone', 'toggle-notice', '打开 / 关闭通告（N）', '📢', 'bible-proj-notice-btn');
+        this.noticeBtn = noticeBtn;
         // 设置按钮紧贴关闭按钮左侧：时间开关 / 是否显示秒数都在这里改，设置写回插件持久化
-        const settingsBtn = addIconToolBtn('settings', 'projection-settings', '投影设置（时间显示）', '⚙', 'bible-proj-settings');
+        const settingsBtn = addIconToolBtn('settings', 'projection-settings', '投影设置', '⚙', 'bible-proj-settings');
         this.settingsBtn = settingsBtn;
         addToolBtn('✕', 'close', '关闭投影', 'bible-proj-tool-emoji');
 
@@ -4471,6 +4693,7 @@ class BibleProjectionOverlay {
         document.addEventListener('click', this._noteOutsideHandler);
         this.bindEvents(toolCenter, bottomRow);
         this.renderSlide();
+        this.initNotice();
         // 投影刚打开就把键盘焦点从笔记编辑器 / 输入框收回投影容器：
         // iPad 上笔记处于编辑模式时 contentEditable 会持续持有焦点，
         // 否则按快捷键会直接写进笔记正文并唤起输入法。延后执行以应对 Obsidian 的自动重聚焦。
@@ -5043,6 +5266,11 @@ class BibleProjectionOverlay {
         const enterContextOk = () => {
             if (this._closed || this._bookPickerOpen || this._pageJumpOpen || this._historyMenuOpen || this._projSettingsOpen) return false;
             const ae = document.activeElement;
+            // 通告管理面板开着时 Enter 一律归面板里的输入框 / 按钮：
+            // 本监听注册在 document 捕获阶段，会先 preventDefault + stopImmediatePropagation，
+            // 若不在这里让行，正文 textarea 按 Enter 无法换行；松手后的「短按补做」还会
+            // 走 _replayShortEnter() 把焦点抢到顶部搜索框。
+            if (this._noticePanelsOpen || (ae && ae.closest && ae.closest('.bible-proj-notice-manage'))) return false;
             const insideProj = !!(ae && ae.closest && ae.closest('.bible-projection-fullscreen'));
             if (!insideProj && !this.ownsScreen()) return false;
             if (!insideProj && ae && ae.closest && ae.closest(
@@ -5112,6 +5340,7 @@ class BibleProjectionOverlay {
             else if (action === 'toggle-centered') { this.toggleCentered(); }
             else if (action === 'toggle-theme') { this.showThemeMenu(btn); }
             else if (action === 'toggle-desktop-full') this.toggleDesktopFullscreen();
+            else if (action === 'toggle-notice') this.toggleNoticeEnabled();
             else if (action === 'projection-settings') this.showProjectionSettings(btn);
         });
 
@@ -5141,6 +5370,16 @@ class BibleProjectionOverlay {
                     if (e.preventDefault) e.preventDefault();
                     if (e.stopPropagation) e.stopPropagation();
                     this.closeProjectionSettings();
+                    return true;
+                }
+                return false;
+            }
+            // 通告区管理界面：Esc 只收起管理；其余键归输入框，不当成投影快捷键。
+            if (this._noticePanelsOpen) {
+                if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229) {
+                    if (e.preventDefault) e.preventDefault();
+                    if (e.stopPropagation) e.stopPropagation();
+                    this.closeNoticeManager();
                     return true;
                 }
                 return false;
@@ -5229,6 +5468,8 @@ class BibleProjectionOverlay {
             // 旧实现把 ESC 排在按键分派的最末尾，检索分屏、标签页模式、焦点落在投影按钮
             // 或笔记编辑器时会被前面的分支放行，表现就是「按 ESC 关不掉投影」。
             if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229) {
+                // 通告区管理界面开着时 Esc 只收起管理，不关投影
+                if (this._noticePanelsOpen) { this.closeNoticeManager(); return true; }
                 const openMenu = this.overlay && typeof this.overlay.querySelector === 'function'
                     ? this.overlay.querySelector('.bible-proj-mode-menu, .bible-proj-theme-menu') : null;
                 // 菜单开着时第一次 ESC 只收菜单（与弹出层习惯一致），再按一次才关投影
@@ -5335,6 +5576,7 @@ class BibleProjectionOverlay {
             else if (e.key === 'c' || e.key === 'C') this.toggleCentered();
             else if (e.key === 'r' || e.key === 'R') { this.fontSize = this.defaultFontSize || 48; this.updateFontSize(); }
             else if (e.key === 'z' || e.key === 'Z') this.goBackProjection();
+            else if (e.key === 'n' || e.key === 'N') this.toggleNoticeEnabled();
             else if (e.key === '/' && !e.shiftKey) this.focusQuickSearch();
             else if (e.key === 'q' || e.key === 'Q' || e.key === 'w' || e.key === 'W' || e.key === 'e' || e.key === 'E') {
                 // 已经处在投影里（投影独占屏幕）时，Q/W/E 就是切换排版模式：直接在这里切并阻断传播。
@@ -5604,6 +5846,9 @@ class BibleProjectionOverlay {
     updateFontSize() {
         const fontSizeEl = this.overlay.querySelector('.bible-proj-font-size');
         if (fontSizeEl) fontSizeEl.textContent = this.fontSize + 'px';
+        // 键盘 +/-/R 也改字号，滑条要跟着走，不能出现「显示 72px、滑块还在 48」。
+        const fontRangeEl = this.fontRangeEl || this.overlay.querySelector('.bible-proj-font-range');
+        if (fontRangeEl) fontRangeEl.value = String(this.fontSize);
         this.overlay.querySelectorAll('.bible-proj-focus-text').forEach(el => { el.style.fontSize = (this.fontSize + (parseInt(el.dataset.projDelta || '0', 10))) + 'px'; });
         this.overlay.querySelectorAll('.bible-proj-focus-ref').forEach(el => {
             if (el.classList.contains('bible-proj-intro-title')) return;
@@ -5647,6 +5892,8 @@ class BibleProjectionOverlay {
             el.style.fontSize = (this.fontSize * scale) + 'px';
         });
         // 幻灯片宽度由 CSS 控制（min(900px, 92%)），分屏/全屏都能自适应，无需在此改写
+        // 通告条也跟着投影字号一起放大/缩小（+/−/R 键即时生效）
+        if (this.applyNoticeFontSize) this.applyNoticeFontSize();
     }
 
     toggleCentered() {
@@ -5690,6 +5937,15 @@ class BibleProjectionOverlay {
         o.classList.toggle('bp-theme-cream', t.id === 'cream');
         // 自定义主题不挂任何内置族类，颜色全部由下面写在覆盖层上的内联变量接管。
         o.classList.toggle('bp-theme-custom', !!t.custom);
+        // 投影内的原生控件（复选框 / 输入框 / 滚动条 / 下拉）只跟随投影主题明暗，
+        // 绝不跟随 Obsidian 的浅色 / 深色模式：否则换 Obsidian 主题时投影控件颜色会乱跳。
+        // 内置浅色系＝light / yellow / cream；自定义主题按其 bg 亮度判定。
+        const lightThemes = ['light', 'yellow', 'cream'];
+        const isLightTheme = t.custom
+            ? isLightHexColor((getCustomProjectionTheme(t.id) || {}).colors &&
+                getCustomProjectionTheme(t.id).colors.bg)
+            : lightThemes.indexOf(t.id) >= 0;
+        try { o.style.colorScheme = isLightTheme ? 'light' : 'dark'; } catch (e) { /* 忽略 */ }
         const custom = t.custom ? getCustomProjectionTheme(t.id) : null;
         applyCustomThemeVars(o, custom ? custom.colors : null, custom ? custom.boxBgStyle : 'solid',
             custom ? custom.boxBorderStyle : 'solid', custom ? custom.outlineBorderStyle : 'solid');
@@ -6677,6 +6933,613 @@ class BibleProjectionOverlay {
         this._pageJumpToken = null;
     }
 
+    // ===== 投影通告（共享 md）=====
+    // 打开投影时读一次共享文档；随后任何一端（含 Hymns）改了文件，都用 DOM 事件即时同步，
+    // 因此从经文投影切到诗歌投影再切回，无需用户重选，状态自然延续。
+    async initNotice() {
+        if (!this.plugin || typeof this.plugin.readNoticeDoc !== 'function') return;
+        const state = await this.plugin.readNoticeDoc(false);
+        if (this._closed) return;
+        this.applyNoticeState(state);
+        // 跨插件 / 跨实例的状态广播：只在第一次注册，close 时逐条注销。
+        if (!this._noticeEvent) {
+            this._noticeEvent = (e) => {
+                if (this._closed || !e || !e.detail) return;
+                if (e.detail.path && e.detail.path !== (this.plugin && this.plugin.noticePath())) return;
+                this.applyNoticeState(e.detail);
+                // 面板开着时同步刷新里面的勾选 / 高亮
+                if (this._noticePanelsOpen) this.refreshNoticePanel();
+            };
+            try { document.addEventListener(NOTICE_STATE_EVENT, this._noticeEvent); } catch (err) { /* 忽略 */ }
+        }
+        // 用户在 Obsidian 里直接编辑 md 时，vault 的 modify 事件也能触发刷新。
+        if (!this._noticeVaultEvent && this.app && this.app.vault && typeof this.app.vault.on === 'function') {
+            this._noticeVaultEvent = (file) => {
+                if (this._closed || !file || !file.path) return;
+                if (file.path !== this.plugin.noticePath()) return;
+                this.plugin.readNoticeDoc(false).then(s => { if (!this._closed) this.applyNoticeState(s); });
+            };
+            try { this.app.vault.on('modify', this._noticeVaultEvent); } catch (err) { /* 忽略 */ }
+        }
+        // 文档位置被改（设置页或另一端插件）：跟进新路径并重读，避免继续盯旧文件。
+        if (!this._noticePathEvent) {
+            this._noticePathEvent = (e) => {
+                // newFolder 允许是空串（另一端把文件搬回根目录），不能当作「无信息」丢掉
+                if (this._closed || !e || !e.detail) return;
+                const cur = this.plugin && typeof this.plugin.noticeFolder === 'function'
+                    ? this.plugin.noticeFolder() : '';
+                if (cur === normalizeProjNoticeFolder(e.detail.newFolder)) return;   // 本插件已改过 settings
+                if (e.detail.oldFolder != null && cur !== normalizeProjNoticeFolder(e.detail.oldFolder)) return;
+                if (this.plugin) {
+                    this.plugin.settings.noticeFolder = normalizeProjNoticeFolder(e.detail.newFolder);
+                    if (typeof this.plugin.saveSettings === 'function') {
+                        const p = this.plugin.saveSettings();
+                        if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ });
+                    }
+                }
+                if (this.plugin && typeof this.plugin.readNoticeDoc === 'function') {
+                    this.plugin.readNoticeDoc(false).then(s => { if (!this._closed) this.applyNoticeState(s); });
+                }
+            };
+            try { document.addEventListener(NOTICE_PATH_EVENT, this._noticePathEvent); } catch (err) { /* 忽略 */ }
+        }
+        // 另一端（Hymns）改了通告模式 / 区高度 / 字号 / 分界线：同步到本地设置并重画
+        if (!this._noticeSettingsEvent) {
+            this._noticeSettingsEvent = (e) => {
+                if (this._closed || !e || !e.detail || e.detail.source === 'bible') return;
+                const plugin = this.plugin;
+                if (!plugin || typeof plugin.applyNoticeSettingsSnapshot !== 'function') return;
+                // 插件级监听可能已经先写过设置（返回 false），这里照样要重画一次
+                if (plugin.applyNoticeSettingsSnapshot(e.detail)) {
+                    try {
+                        const p = plugin.saveSettings();
+                        if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ });
+                    } catch (err) { /* 忽略 */ }
+                }
+                if (typeof this.refreshNoticeSettingsUi === 'function') this.refreshNoticeSettingsUi();
+                this.renderNotice();
+            };
+            try { document.addEventListener(NOTICE_SETTINGS_EVENT, this._noticeSettingsEvent); } catch (err) { /* 忽略 */ }
+        }
+    }
+    applyNoticeState(state) {
+        const s = state || {};
+        const items = Array.isArray(s.items) ? s.items : [];
+        const last = Math.max(0, items.length - 1);
+        const active = Math.min(last, Math.max(0, parseInt(s.active, 10) || 0));
+        const idx = (key) => {
+            const v = s[key] != null ? parseInt(s[key], 10) : NaN;
+            return Math.min(last, Math.max(0, Number.isFinite(v) ? v : active));
+        };
+        this._notice = {
+            enabled: !!s.enabled,
+            active,
+            activeTop: idx('activeTop'),
+            activeBottom: idx('activeBottom'),
+            items
+        };
+        this.renderNotice();
+    }
+    // 顶部 / 底部各自记住当前第几条：管理面板由哪个区打开，就改哪个区的序号。
+    noticeZoneKey(zone) {
+        return zone === this.noticeBottomZoneEl ? 'bottom' : 'top';
+    }
+    noticeManagerZoneKey() {
+        return this.noticeZoneKey(this._noticeManagerZone);
+    }
+    noticeActiveIndex(key) {
+        const st = this._notice || {};
+        const n = key === 'bottom'
+            ? (st.activeBottom != null ? st.activeBottom : st.active)
+            : (st.activeTop != null ? st.activeTop : st.active);
+        const len = ((st.items || []).length);
+        const v = parseInt(n, 10);
+        return Math.max(0, Math.min(Math.max(0, len - 1), Number.isFinite(v) ? v : 0));
+    }
+    // 新建 / 编辑 / 删除后写回：只改当前区的选中序号，另一区保持原样。
+    noticeActivePatch(active, key) {
+        const st = this._notice || {};
+        const top = this.noticeActiveIndex('top');
+        const bottom = this.noticeActiveIndex('bottom');
+        const which = key || this.noticeManagerZoneKey();
+        return {
+            active,
+            activeTop: which === 'top' ? active : top,
+            activeBottom: which === 'bottom' ? active : bottom
+        };
+    }
+    // 统一渲染入口：top / bottom / all（上下双区同时显示），逐区填内容并绑定双击管理。
+    renderNotice() {
+        this.clearNoticeTimers();
+        const st = this._notice || { enabled: false, items: [] };
+        const items = Array.isArray(st.items) ? st.items : [];
+        const show = !!st.enabled && items.length > 0;
+        const settings = (this.plugin && this.plugin.settings) || {};
+        const mode = normalizeProjNoticeMode(settings.noticeMode);
+        this._noticeMode = mode;
+        // 喇叭按钮的亮起状态反映通告开/关（只改 class，绝不写 textContent 冲掉图标）
+        if (this.noticeBtn && this.noticeBtn.classList) this.noticeBtn.classList.toggle('active', !!st.enabled);
+        const top = this.noticeZoneEl;
+        const topR = this.noticeZoneResizerEl;
+        const bottom = this.noticeBottomZoneEl;
+        const bottomR = this.noticeBottomResizerEl;
+        // 字号与分界线即使管理面板开着也要即时生效，所以放在 DOM 守卫之前。
+        this.applyNoticeDivider();
+        this.applyNoticeFontSize();
+        // 区内管理界面展开时只更新数据、不碰区 DOM，否则会把管理界面冲掉
+        if (this._noticePanelsOpen && this._noticeManagerEl) return;
+        // 先全收起，并清掉区上的管理绑定，避免切模式后残留
+        for (const el of [top, bottom]) {
+            if (!el) continue;
+            el.classList.add('is-hidden');
+            if (el.empty) el.empty(); else el.textContent = '';
+            el.onclick = null;
+            el.ondblclick = null;
+        }
+        if (topR) topR.classList.add('is-hidden');
+        if (bottomR) bottomR.classList.add('is-hidden');
+        if (!show) return;
+        const self = this;
+        // all＝两区都显示，各自读自己的高度；top / bottom 仍是互斥二选一。
+        const pairs = mode === 'all'
+            ? [[top, topR, 'noticeTopZoneHeight'], [bottom, bottomR, 'noticeBottomZoneHeight']]
+            : [[mode === 'top' ? top : bottom, mode === 'top' ? topR : bottomR,
+                mode === 'top' ? 'noticeTopZoneHeight' : 'noticeBottomZoneHeight']];
+        for (const [zone, resizer, key] of pairs) {
+            if (!zone) continue;
+            // 上下区各读自己的选中条；all 模式下同一时刻可以显示两条不同公告。
+            const zoneKey = zone === top ? 'top' : 'bottom';
+            const item = items[this.noticeActiveIndex(zoneKey)] || items[0];
+            this.fillNoticeTarget(zone, item);
+            const h = normalizeProjNoticeZoneHeight(settings[key]);
+            this._noticeZoneHeight = h;
+            if (zone.style) zone.style.height = h + 'px';
+            zone.classList.remove('is-hidden');
+            if (resizer) resizer.classList.remove('is-hidden');
+            // 双击通告区本体才打开内容管理，单击不再误触。
+            zone.ondblclick = (e) => {
+                if (e && e.target && e.target.closest && e.target.closest('.bible-proj-notice-manage')) return;
+                self.openNoticeManager(zone);
+            };
+        }
+        // 上面的字号应用发生在 fillNoticeTarget 之前：首帧标题 / 正文节点刚创建，
+        // 还没吃到内联字号。这里再套一次，否则「改字号后第一次开公告」仍是 CSS 默认大小。
+        this.applyNoticeFontSize();
+    }
+    // 标题 + 正文填充，顶部区 / 底部区 DOM 结构一致，样式由各自父级 CSS 类区分。
+    fillNoticeTarget(el, item) {
+        if (!el) return;
+        if (el.empty) el.empty(); else el.textContent = '';
+        if (!el.createEl) return;
+        el.createEl('div', { cls: 'bible-proj-notice-title', text: String((item && item.title) || '') });
+        el.createEl('div', { cls: 'bible-proj-notice-body', text: String((item && item.body) || '') });
+    }
+    clearNoticeTimers() {
+        if (this._noticeDwellTimer) { clearTimeout(this._noticeDwellTimer); this._noticeDwellTimer = null; }
+        if (this._noticeFloatTimer) { clearTimeout(this._noticeFloatTimer); this._noticeFloatTimer = null; }
+    }
+    // 分界线粗细：写投影根级变量，顶/底两条 resizer 的亮线一起生效。
+    applyNoticeDivider() {
+        const s = (this.plugin && this.plugin.settings) || {};
+        const w = normalizeProjNoticeDividerWidth(
+            s.noticeDividerWidth != null ? s.noticeDividerWidth : s.noticeZoneDividerWidth);
+        if (this.overlay && this.overlay.style && typeof this.overlay.style.setProperty === 'function') {
+            this.overlay.style.setProperty('--bp-notice-divider-w', w + 'px');
+        }
+    }
+    // 自动字号：正文 ≈ 投影字号 0.7 倍、标题 ≈ 0.8 倍，带下限。
+    noticeAutoFontSize(kind) {
+        const fs = Math.max(16, parseInt(this.fontSize, 10) || 48);
+        return kind === 'title' ? Math.max(26, Math.round(fs * 0.8)) : Math.max(22, Math.round(fs * 0.7));
+    }
+    // 投影设置里可固定标题 / 正文字号；未设置（null）时仍跟随投影字号。两个区一起套用。
+    applyNoticeFontSize() {
+        const s = (this.plugin && this.plugin.settings) || {};
+        const titleSize = normalizeProjNoticeFontSize(s.noticeTitleFontSize) || this.noticeAutoFontSize('title');
+        const bodySize = normalizeProjNoticeFontSize(s.noticeBodyFontSize) || this.noticeAutoFontSize('body');
+        for (const el of [this.noticeZoneEl, this.noticeBottomZoneEl]) {
+            if (!el || !el.querySelector) continue;
+            const title = el.querySelector('.bible-proj-notice-title');
+            const body = el.querySelector('.bible-proj-notice-body');
+            if (title && title.style) title.style.fontSize = titleSize + 'px';
+            if (body && body.style) body.style.fontSize = bodySize + 'px';
+        }
+    }
+    // 两个通告区的边界拖动：顶部区拖下边界（越往下越高），底部区拖上边界（越往下越矮）。
+    bindNoticeZoneDrag() {
+        this.bindOneNoticeDrag(this.noticeZoneResizerEl, () => this.noticeZoneEl, 'noticeTopZoneHeight', 1);
+        this.bindOneNoticeDrag(this.noticeBottomResizerEl, () => this.noticeBottomZoneEl, 'noticeBottomZoneHeight', -1);
+    }
+    bindOneNoticeDrag(resizer, getZone, key, direction) {
+        if (!resizer || !resizer.addEventListener) return;
+        resizer.addEventListener('pointerdown', (e) => {
+            if (this._closed) return;
+            if (e && e.preventDefault) e.preventDefault();
+            // 同一时刻只允许一个拖动监听
+            if (this._noticeDragCleanup) { try { this._noticeDragCleanup(); } catch (err) { /* 忽略 */ } }
+            const zone = getZone();
+            if (!zone) return;
+            const startY = (e && typeof e.clientY === 'number') ? e.clientY : 0;
+            const curH = (this.plugin && this.plugin.settings) ? this.plugin.settings[key] : 120;
+            const startH = normalizeProjNoticeZoneHeight(curH);
+            const clamp = (h) => Math.max(40, Math.min(360, Math.round(h)));
+            let lastH = startH;
+            const onMove = (ev) => {
+                const y = (ev && typeof ev.clientY === 'number') ? ev.clientY : startY;
+                lastH = clamp(startH + direction * (y - startY));
+                if (zone.style) zone.style.height = lastH + 'px';
+            };
+            const cleanup = () => {
+                if (typeof window !== 'undefined' && window.removeEventListener) {
+                    window.removeEventListener('pointermove', onMove, true);
+                    window.removeEventListener('pointerup', cleanup, true);
+                }
+                this._noticeDragCleanup = null;
+                if (this.plugin && typeof this.plugin.saveSettings === 'function') {
+                    this.plugin.settings[key] = lastH;
+                    const p = this.plugin.saveSettings();
+                    if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ });
+                }
+                if (this.plugin && typeof this.plugin.scheduleNoticeSettingsBroadcast === 'function') {
+                    this.plugin.scheduleNoticeSettingsBroadcast({ source: 'bible' });
+                }
+            };
+            this._noticeDragCleanup = cleanup;
+            if (typeof window !== 'undefined' && window.addEventListener) {
+                window.addEventListener('pointermove', onMove, true);
+                window.addEventListener('pointerup', cleanup, true);
+            }
+        });
+    }
+    // 底栏喇叭按钮 / N 键：只切换通告开/关，不再打开独立面板。
+    toggleNoticeEnabled() {
+        if (!this.plugin || typeof this.plugin.writeNoticeDoc !== 'function') return;
+        const cur = this._notice || { enabled: false, active: 0 };
+        const settings = (this.plugin && this.plugin.settings) || {};
+        const key = normalizeProjNoticeMode(settings.noticeMode) === 'bottom' ? 'bottom' : 'top';
+        const r = this.plugin.writeNoticeDoc(Object.assign({ enabled: !cur.enabled },
+            this.noticeActivePatch(this.noticeActiveIndex(key), key)));
+        if (r && typeof r.catch === 'function') r.catch(() => { /* 忽略写盘失败 */ });
+    }
+    // 点通告区本体就地展开内容管理（选择 / 编辑 / 新增 / 删除），点「完成」或 Esc 收起。
+    openNoticeManager(zone) {
+        if (!zone || this._closed) return;
+        if (this._noticePanelsOpen) { this.closeNoticeManager(); return; }
+        const self = this;
+        const mk = (tag, cls, text) => {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            if (text != null) el.textContent = text;
+            return el;
+        };
+        const mgr = mk('div', 'bible-proj-notice-manage');
+        mgr.addEventListener('pointerdown', (e) => { if (e && e.stopPropagation) e.stopPropagation(); });
+        mgr.addEventListener('click', (e) => { if (e && e.stopPropagation) e.stopPropagation(); });
+        const zoneKey = this.noticeZoneKey(zone);
+        this._noticeManagerKey = zoneKey;
+        const head = mk('div', 'bible-proj-notice-manage-head');
+        // 标题标出当前管理的是哪一侧；全选模式下两区可各自选不同公告，不会改错边。
+        head.appendChild(mk('span', 'bible-proj-notice-manage-title',
+            (zoneKey === 'bottom' ? '管理底部通告' : '管理顶部通告')));
+        // 头部只留「＋ 新增通告」与「完成」；「打开 md」按用户要求取消。
+        const actions = mk('span', 'bible-proj-notice-manage-actions');
+        const addBtn = mk('button', 'bible-proj-notice-add', '＋ 新增通告');
+        addBtn.type = 'button';
+        addBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            self.addNoticeItem();
+        });
+        actions.appendChild(addBtn);
+        const doneBtn = mk('button', 'bible-proj-notice-manage-done', '完成');
+        doneBtn.type = 'button';
+        doneBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            self.closeNoticeManager();
+        });
+        actions.appendChild(doneBtn);
+        head.appendChild(actions);
+        mgr.appendChild(head);
+        // 列表上方直接显示当前选中的那条：单击条目即更新，不需要按「完成」确认。
+        const preview = mk('div', 'bible-proj-notice-preview');
+        mgr.appendChild(preview);
+        this._noticePreviewEl = preview;
+        const list = mk('div', 'bible-proj-notice-list');
+        // 双击某一行直接编辑该条；单击仍只选中并即时预览。
+        // 监听挂在列表容器上：即使单击后的事件刷新换了行节点，dblclick 仍会落到共同祖先，
+        // 用 _noticeLastClickedIndex 兜底取到刚才选中的序号。
+        list.addEventListener('dblclick', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            const t = e && e.target;
+            const rowEl = t && t.closest ? t.closest('.bible-proj-notice-item') : null;
+            let idx = this._noticeLastClickedIndex;
+            if (rowEl && rowEl.dataset && rowEl.dataset.noticeIndex != null) {
+                const n = parseInt(rowEl.dataset.noticeIndex, 10);
+                if (Number.isFinite(n)) idx = n;
+            }
+            if (!Number.isInteger(idx) || idx < 0) return;
+            this._noticeEditingIndex = idx;
+            this.fillNoticePanel();
+        });
+        mgr.appendChild(list);
+        // 展开时通告区临时增高容纳管理界面，收起后恢复设置里的高度。
+        // all 模式下由被双击的那个区决定用哪一侧高度，不能只看全局模式。
+        const key = zone === self.noticeBottomZoneEl ? 'noticeBottomZoneHeight' : 'noticeTopZoneHeight';
+        const baseH = normalizeProjNoticeZoneHeight(self.plugin && self.plugin.settings && self.plugin.settings[key]);
+        this._noticeBaseHeight = baseH;
+        this._noticeManagerZone = zone;
+        if (zone.style) zone.style.height = Math.max(baseH, 320) + 'px';
+        if (zone.empty) zone.empty(); else zone.textContent = '';
+        zone.appendChild(mgr);
+        this._noticeManagerEl = mgr;
+        this._noticePanelsOpen = true;
+        this.bindNoticeOutsideClose();
+        this.fillNoticePanel();
+    }
+    // 点通告区 / 管理面板之外的任何地方都能收起管理界面。
+    // 捕获阶段注册，和设置面板同一套做法；通告区自身留给它自己的 onclick（点空白处＝收起）。
+    bindNoticeOutsideClose() {
+        this.unbindNoticeOutsideClose();
+        const self = this;
+        const token = {};
+        this._noticeOutsideToken = token;
+        this._noticeOutside = (e) => {
+            if (self._noticeOutsideToken !== token || !self._noticePanelsOpen) return;
+            const t = e && e.target;
+            if (t && t.closest && (t.closest('.bible-proj-notice-manage') ||
+                t.closest('.bible-proj-notice-zone'))) return;
+            self.closeNoticeManager();
+        };
+        this._noticeOutsideEvents = [
+            [document, 'pointerdown', { capture: true }],
+            [document, 'click', { capture: true }]
+        ];
+        setTimeout(() => {
+            if (self._noticeOutsideToken !== token || !self._noticeOutside || self._closed) return;
+            for (const [target, type, opts] of self._noticeOutsideEvents) {
+                try { target.addEventListener(type, self._noticeOutside, opts); } catch (err) { /* 忽略 */ }
+            }
+        }, 0);
+    }
+    unbindNoticeOutsideClose() {
+        if (this._noticeOutside && this._noticeOutsideEvents) {
+            for (const [target, type, opts] of this._noticeOutsideEvents) {
+                try { target.removeEventListener(type, this._noticeOutside, opts); } catch (err) { /* 忽略 */ }
+            }
+        }
+        this._noticeOutside = null;
+        this._noticeOutsideEvents = null;
+        this._noticeOutsideToken = null;
+    }
+    // 管理面板顶部的「正在显示」：随选中条目即时更新，标题带序号。
+    updateNoticePreview() {
+        const el = this._noticePreviewEl;
+        if (!el) return;
+        if (el.empty) el.empty(); else el.textContent = '';
+        const st = this._notice || { enabled: false, active: 0, items: [] };
+        const idx = this.noticeActiveIndex(this.noticeManagerZoneKey());
+        const item = (st.items || [])[idx];
+        if (!st.enabled) {
+            el.appendChild(document.createTextNode('通告当前为关闭状态（点底栏喇叭或按 N 开启）'));
+            return;
+        }
+        if (!item) { el.appendChild(document.createTextNode('（还没有通告）')); return; }
+        const title = document.createElement('div');
+        title.className = 'bible-proj-notice-preview-title';
+        title.textContent = (idx + 1) + '. ' + String(item.title || '');
+        const body = document.createElement('div');
+        body.className = 'bible-proj-notice-preview-body';
+        body.textContent = String(item.body || '');
+        el.appendChild(title);
+        el.appendChild(body);
+    }
+    closeNoticeManager() {
+        const zone = this._noticeManagerZone;
+        this.unbindNoticeOutsideClose();
+        this._noticePreviewEl = null;
+        this._noticeLastClickedIndex = -1;
+        this._noticePanelSig = '';
+        this._noticeManagerEl = null;
+        this._noticeManagerZone = null;
+        this._noticeManagerKey = null;
+        this._noticePanelsOpen = false;
+        this._noticeEditingIndex = -1;
+        const baseH = this._noticeBaseHeight;
+        this._noticeBaseHeight = null;
+        if (!zone) return;
+        if (zone.style && baseH) zone.style.height = normalizeProjNoticeZoneHeight(baseH) + 'px';
+        if (typeof this.renderNotice === 'function') this.renderNotice();
+    }
+    fillNoticePanel() {
+        const list = this._noticeManagerEl && this._noticeManagerEl.querySelector('.bible-proj-notice-list');
+        if (!list) return;
+        this._noticePanelSig = JSON.stringify((this._notice && this._notice.items) || []) + '|' + this._noticeEditingIndex;
+        this.updateNoticePreview();
+        list.empty ? list.empty() : (list.textContent = '');
+        const items = (this._notice && this._notice.items) || [];
+        if (!items.length) { list.appendChild(document.createTextNode('（还没有通告，点上方「＋ 新增通告」添加）')); return; }
+        const self = this;
+        items.forEach((it, i) => {
+            if (i === self._noticeEditingIndex) {
+                // 编辑态：标题 + 正文就在投影面板里改，保存写回共享 md，取消丢弃输入。
+                const form = document.createElement('div');
+                form.className = 'bible-proj-notice-item-form';
+                form.addEventListener('click', (e) => { if (e && e.stopPropagation) e.stopPropagation(); });
+                // 编号 + 标题 + 保存/取消同一行：按钮紧跟标题栏，不用滚到编辑框底部。
+                const titleRow = document.createElement('div');
+                titleRow.className = 'bible-proj-notice-item-title-row';
+                const formIdx = document.createElement('span');
+                formIdx.className = 'bible-proj-notice-item-index';
+                formIdx.textContent = (i + 1) + '.';
+                titleRow.appendChild(formIdx);
+                const titleInput = document.createElement('input');
+                titleInput.className = 'bible-proj-notice-item-title';
+                titleInput.type = 'text';
+                titleInput.value = String(it.title || '');
+                titleInput.placeholder = '标题';
+                titleRow.appendChild(titleInput);
+                const btns = document.createElement('div');
+                btns.className = 'bible-proj-notice-form-btns';
+                const saveBtn = document.createElement('button');
+                saveBtn.className = 'bible-proj-notice-save';
+                saveBtn.type = 'button';
+                saveBtn.textContent = '保存';
+                saveBtn.addEventListener('click', (e) => {
+                    if (e && e.stopPropagation) e.stopPropagation();
+                    self.saveNoticeEdit(i);
+                });
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'bible-proj-notice-cancel';
+                cancelBtn.type = 'button';
+                cancelBtn.textContent = '取消';
+                cancelBtn.addEventListener('click', (e) => {
+                    if (e && e.stopPropagation) e.stopPropagation();
+                    self._noticeEditingIndex = -1;
+                    self.fillNoticePanel();
+                });
+                btns.appendChild(saveBtn);
+                btns.appendChild(cancelBtn);
+                titleRow.appendChild(btns);
+                form.appendChild(titleRow);
+                const bodyInput = document.createElement('textarea');
+                bodyInput.className = 'bible-proj-notice-item-body';
+                bodyInput.value = String(it.body || '');
+                bodyInput.placeholder = '通告内容：直接按 Enter 换行';
+                bodyInput.rows = 5;
+                // 输入框里按 Enter 就是换行：handleKey 的通告管理门禁已把按键让给输入框，
+                // 不显式拦也不会触发投影翻页；这里再兜一道，防止将来门禁变动时换行被吞。
+                bodyInput.addEventListener('keydown', (ev) => {
+                    if (ev && ev.stopPropagation) ev.stopPropagation();
+                });
+                form.appendChild(bodyInput);
+                const editHint = document.createElement('div');
+                editHint.className = 'bible-proj-notice-edit-hint';
+                editHint.textContent = '按 Enter 换行';
+                form.appendChild(editHint);
+                list.appendChild(form);
+                setTimeout(() => { try { titleInput.focus(); } catch (err) { /* 忽略 */ } }, 0);
+                return;
+            }
+            // 普通态：按顺序编号、行间横线；点条目即选中并即时显示，点 ✎ / 🗑 编辑删除。
+            const row = document.createElement('div');
+            row.className = 'bible-proj-notice-item' +
+                (i === self.noticeActiveIndex(self.noticeManagerZoneKey()) ? ' is-active' : '');
+            row.dataset.noticeIndex = String(i);
+            const idx = document.createElement('span');
+            idx.className = 'bible-proj-notice-item-index';
+            idx.textContent = (i + 1) + '.';
+            row.appendChild(idx);
+            const label = document.createElement('span');
+            label.className = 'bible-proj-notice-item-label';
+            label.textContent = String(it.title || ('第 ' + (i + 1) + ' 条'));
+            row.appendChild(label);
+            const editBtn = document.createElement('button');
+            editBtn.className = 'bible-proj-notice-item-edit';
+            editBtn.type = 'button';
+            editBtn.textContent = '✎';
+            editBtn.title = '编辑这一条';
+            editBtn.addEventListener('click', (e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                self._noticeEditingIndex = i;
+                self.fillNoticePanel();
+            });
+            row.appendChild(editBtn);
+            const delBtn = document.createElement('button');
+            delBtn.className = 'bible-proj-notice-item-del';
+            delBtn.type = 'button';
+            delBtn.textContent = '🗑';
+            delBtn.title = '删除这一条';
+            delBtn.addEventListener('click', (e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                self.deleteNoticeItem(i);
+            });
+            row.appendChild(delBtn);
+            row.addEventListener('click', (e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                const active = i;
+                const key = self.noticeManagerZoneKey();
+                if (self._notice) Object.assign(self._notice, self.noticeActivePatch(active, key));
+                self._noticeLastClickedIndex = i;
+                // 只更新选中态与预览，不重建列表 DOM——否则第一次单击会把行节点换掉，
+                // 浏览器随后派发的 dblclick 落不到原行，双击编辑就失灵。
+                self.syncNoticePanelActive();
+                if (!self.plugin || typeof self.plugin.writeNoticeDoc !== 'function') return;
+                const r = self.plugin.writeNoticeDoc(Object.assign(
+                    { enabled: self._notice.enabled }, self.noticeActivePatch(active, key)));
+                if (r && typeof r.catch === 'function') r.catch(() => { /* 忽略 */ });
+            });
+            list.appendChild(row);
+        });
+    }
+    // 就地编辑的统一写回：items 整体交给共享 md，事件会同步到另一端插件与同插件其它投影实例。
+    // 先本地渲染一次保证即时反馈；写盘失败只提示，不回滚内存显示。
+    commitNoticeItems(items, active, zoneKey) {
+        const list = Array.isArray(items) ? items : [];
+        const idx = Math.max(0, Math.min(Math.max(0, list.length - 1), parseInt(active, 10) || 0));
+        const key = zoneKey || this.noticeManagerZoneKey();
+        const state = Object.assign({
+            enabled: !!(this._notice && this._notice.enabled),
+            items: list
+        }, this.noticeActivePatch(idx, key));
+        this.applyNoticeState(state);
+        if (this._noticePanelsOpen) this.refreshNoticePanel();
+        if (!this.plugin || typeof this.plugin.writeNoticeDoc !== 'function') return;
+        const r = this.plugin.writeNoticeDoc(state, { source: 'bible-panel' });
+        if (r && typeof r.catch === 'function') {
+            r.catch(() => { try { new Notice('保存通告失败：无法写入通告文档'); } catch (err) { /* 忽略 */ } });
+        }
+    }
+    saveNoticeEdit(index) {
+        const form = this._noticeManagerEl && this._noticeManagerEl.querySelector('.bible-proj-notice-item-form');
+        if (!form) return;
+        const titleEl = form.querySelector('.bible-proj-notice-item-title');
+        const bodyEl = form.querySelector('.bible-proj-notice-item-body');
+        const items = ((this._notice && this._notice.items) || []).map((it, i) => {
+            if (i !== index) return { title: it.title, body: it.body };
+            const title = String((titleEl && titleEl.value) || '').trim() || '未命名通告';
+            const body = String((bodyEl && bodyEl.value) || '');
+            return { title, body };
+        });
+        this._noticeEditingIndex = -1;
+        this.commitNoticeItems(items, index, this.noticeManagerZoneKey());
+    }
+    deleteNoticeItem(index) {
+        const items = ((this._notice && this._notice.items) || []).filter((it, i) => i !== index);
+        if (!items.length) { try { new Notice('至少保留一条通告'); } catch (err) { /* 忽略 */ } return; }
+        const key = this.noticeManagerZoneKey();
+        const cur = this.noticeActiveIndex(key);
+        this._noticeEditingIndex = -1;
+        this.commitNoticeItems(items, Math.min(cur, items.length - 1), key);
+    }
+    addNoticeItem() {
+        const items = ((this._notice && this._notice.items) || []).slice();
+        items.push({ title: '新通告', body: '' });
+        const active = items.length - 1;
+        this._noticeEditingIndex = active;   // 新增后直接进入编辑态，省得再点一次 ✎
+        this.commitNoticeItems(items, active, this.noticeManagerZoneKey());
+    }
+    // 只同步选中态与预览，保留列表 DOM（双击编辑依赖同一行节点）。
+    syncNoticePanelActive() {
+        const list = this._noticeManagerEl && this._noticeManagerEl.querySelector('.bible-proj-notice-list');
+        if (!list || typeof list.querySelectorAll !== 'function') return;
+        const active = this.noticeActiveIndex(this.noticeManagerZoneKey());
+        for (const row of list.querySelectorAll('.bible-proj-notice-item')) {
+            const idx = row.dataset ? parseInt(row.dataset.noticeIndex, 10) : NaN;
+            row.classList.toggle('is-active', idx === active);
+        }
+        this.updateNoticePreview();
+    }
+    refreshNoticePanel() {
+        if (!this._noticePanelsOpen) return;
+        // 条目内容与编辑态没变时（例如仅切换选中条），不要重建 DOM，避免吞掉双击。
+        const sig = JSON.stringify((this._notice && this._notice.items) || []) + '|' + this._noticeEditingIndex;
+        if (sig === this._noticePanelSig) { this.syncNoticePanelActive(); return; }
+        this.fillNoticePanel();
+    }
+    // 兼容旧调用名：独立面板已取消，统一收起区内管理界面
+    closeNoticePanel() {
+        this.closeNoticeManager();
+    }
+
     // 投影时钟：用递归 setTimeout（而非 setInterval），关闭投影 / 关掉开关时都能干净停掉，
     // 测试环境里也不会留下常驻定时器。设置变化后调用本方法立即生效，不必重开投影。
     refreshProjectionClock() {
@@ -6744,6 +7607,14 @@ class BibleProjectionOverlay {
         head.appendChild(closeBtn);
         panel.appendChild(head);
 
+        // 版面归纳：时间 / 通告两组，各自带小标题；行内「标签在上、说明灰字、控件靠右」。
+        // 仍保留既有类名与「复选框父节点＝可点击整行」的结构，避免破坏行为与测试。
+        const bodyWrap = mk('div', 'bible-proj-settings-body');
+        const timeGroup = mk('div', 'bible-proj-settings-group');
+        timeGroup.appendChild(mk('div', 'bible-proj-settings-group-title', '时间'));
+        const noticeGroup = mk('div', 'bible-proj-settings-group');
+        panel.appendChild(bodyWrap);
+
         const s = (this.plugin && this.plugin.settings) || {};
         // 先改内存并立即刷新时钟，再异步写盘；写盘失败也不能让勾选看起来没反应。
         // 所有面板内的 click 都 stopPropagation：工具区 / 投影层的点击委托一律不插手。
@@ -6758,7 +7629,7 @@ class BibleProjectionOverlay {
                 } catch (err) { /* 忽略写盘失败 */ }
             }
         };
-        const addCheck = (key, label, desc, checked) => {
+        const addCheck = (key, label, checked) => {
             const row = mk('div', 'bible-proj-settings-row bible-proj-settings-clickable');
             const cb = mk('input', 'bible-proj-settings-check');
             cb.type = 'checkbox';
@@ -6771,79 +7642,437 @@ class BibleProjectionOverlay {
             // 复选框只作视觉指示：pointer-events:none 让点击穿透到整行，
             // 由整行统一翻转 checked。否则点方框时原生勾选状态与手动翻转冲突（WebView 里会回滚）。
             row.addEventListener('click', toggle);
-            row.appendChild(cb);
             const textWrap = mk('span', 'bible-proj-settings-row-text');
             textWrap.appendChild(mk('span', 'bible-proj-settings-row-label', label));
-            textWrap.appendChild(mk('span', 'bible-proj-settings-row-desc', desc));
             row.appendChild(textWrap);
-            panel.appendChild(row);
+            // 复选框与右侧按钮同列，整行左标签 / 右控件对齐，说明文字精简掉。
+            row.appendChild(cb);
+            timeGroup.appendChild(row);
             return cb;
         };
-        addCheck('projectionClockEnabled', '显示时间', '左上角模式按钮旁显示当前时间',
-            s.projectionClockEnabled !== false);
-        addCheck('projectionClockSeconds', '显示秒数', '时间后面带上秒',
-            !!s.projectionClockSeconds);
+        addCheck('projectionClockEnabled', '显示时间', s.projectionClockEnabled !== false);
+        addCheck('projectionClockSeconds', '显示秒数', !!s.projectionClockSeconds);
 
-        // 时间字号：− / + 每次 2px，范围 16–96px；写入 settings，立即作用于时钟元素
+        // 时间字号：滑轨 16–96px（步进 2），写入 settings 后立即作用于时钟元素
         const size = normalizeProjectionClockFontSize(s.projectionClockFontSize);
         const sizeRow = mk('div', 'bible-proj-settings-row');
         const sizeText = mk('span', 'bible-proj-settings-row-text');
         sizeText.appendChild(mk('span', 'bible-proj-settings-row-label', '时间字号'));
-        sizeText.appendChild(mk('span', 'bible-proj-settings-row-desc', '16–96 px，默认 40 px'));
         sizeRow.appendChild(sizeText);
-        const sizeCtrl = mk('span', 'bible-proj-settings-size-ctrl');
-        const sizeMinus = mk('button', 'bible-proj-settings-size-btn', '−');
-        sizeMinus.type = 'button';
-        sizeMinus.title = '缩小时间字号';
+        const sizeCtrl = mk('span', 'bible-proj-settings-divider-ctrl');
+        const sizeRange = mk('input', 'bible-proj-settings-divider-range bible-proj-settings-clock-range');
+        sizeRange.type = 'range';
+        sizeRange.min = '16';
+        sizeRange.max = '96';
+        sizeRange.step = '2';
+        sizeRange.value = String(size);
+        sizeRange.title = '调整时间字号（16–96px）';
+        sizeRange.setAttribute('aria-label', sizeRange.title);
         const sizeValue = mk('span', 'bible-proj-settings-size-value', size + ' px');
-        const sizePlus = mk('button', 'bible-proj-settings-size-btn', '+');
-        sizePlus.type = 'button';
-        sizePlus.title = '放大时间字号';
-        const changeSize = (delta) => {
-            const cur = (self.plugin && self.plugin.settings)
-                ? self.plugin.settings.projectionClockFontSize : size;
-            const next = normalizeProjectionClockFontSize(
-                normalizeProjectionClockFontSize(cur) + delta);
+        sizeRange.addEventListener('input', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            const next = normalizeProjectionClockFontSize(e && e.target ? e.target.value : sizeRange.value);
             sizeValue.textContent = next + ' px';
             applySetting('projectionClockFontSize', next);
-        };
-        sizeMinus.addEventListener('click', (e) => {
-            if (e && e.stopPropagation) e.stopPropagation();
-            changeSize(-2);
         });
-        sizePlus.addEventListener('click', (e) => {
-            if (e && e.stopPropagation) e.stopPropagation();
-            changeSize(2);
-        });
-        sizeCtrl.appendChild(sizeMinus);
+        sizeCtrl.appendChild(sizeRange);
         sizeCtrl.appendChild(sizeValue);
-        sizeCtrl.appendChild(sizePlus);
         sizeRow.appendChild(sizeCtrl);
-        panel.appendChild(sizeRow);
+        timeGroup.appendChild(sizeRow);
+        bodyWrap.appendChild(timeGroup);
 
-        panel.appendChild(mk('div', 'bible-proj-settings-note', '屏幕宽度不足时会自动隐藏时间。'));
+        // ===== 投影通告设置：原本在插件设置页，按用户要求全部搬进这个面板 =====
+        noticeGroup.appendChild(mk('div', 'bible-proj-settings-group-title', '投影通告'));
+        const applyNotice = (key, value, after) => {
+            if (!self.plugin || !self.plugin.settings) return;
+            self.plugin.settings[key] = value;
+            if (typeof after === 'function') after();
+            if (typeof self.renderNotice === 'function') self.renderNotice();
+            if (typeof self.plugin.saveSettings === 'function') {
+                try {
+                    const r = self.plugin.saveSettings();
+                    if (r && typeof r.catch === 'function') r.catch(() => { /* 忽略 */ });
+                } catch (err) { /* 忽略 */ }
+            }
+            // 通告设置同步给 Hymns 端（Hymns 端同样会把它的改动推过来）
+            if (typeof self.plugin.scheduleNoticeSettingsBroadcast === 'function') {
+                self.plugin.scheduleNoticeSettingsBroadcast({ source: 'bible' });
+            }
+        };
+        // 模式：顶部 / 底部 / 全选（上下同时显示）三个按钮，点中即生效
+        const modeRow = mk('div', 'bible-proj-settings-row');
+        const modeText = mk('span', 'bible-proj-settings-row-text');
+        modeText.appendChild(mk('span', 'bible-proj-settings-row-label', '公告模式'));
+        modeRow.appendChild(modeText);
+        const modeCtrl = mk('span', 'bible-proj-settings-mode-ctrl');
+        const topBtn = mk('button', 'bible-proj-settings-mode-btn', '顶部');
+        const bottomBtn = mk('button', 'bible-proj-settings-mode-btn', '底部');
+        const allBtn = mk('button', 'bible-proj-settings-mode-btn', '全选');
+        topBtn.type = 'button';
+        bottomBtn.type = 'button';
+        allBtn.type = 'button';
+        const syncModeBtns = () => {
+            const m = normalizeProjNoticeMode(self.plugin && self.plugin.settings && self.plugin.settings.noticeMode);
+            topBtn.classList.toggle('is-active', m === 'top');
+            bottomBtn.classList.toggle('is-active', m === 'bottom');
+            allBtn.classList.toggle('is-active', m === 'all');
+        };
+        syncModeBtns();
+        topBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            applyNotice('noticeMode', 'top', syncModeBtns);
+        });
+        bottomBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            applyNotice('noticeMode', 'bottom', syncModeBtns);
+        });
+        allBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            applyNotice('noticeMode', 'all', syncModeBtns);
+        });
+        modeCtrl.appendChild(topBtn);
+        modeCtrl.appendChild(bottomBtn);
+        modeCtrl.appendChild(allBtn);
+        modeRow.appendChild(modeCtrl);
+        noticeGroup.appendChild(modeRow);
+
+        // 通告文件夹：文件名固定，输入部分路径给自绘补全选项。
+        // 输入不会直接搬文件——必须点「确定」（Enter 等同确定），「取消」还原成当前实际位置。
+        const folderRow = mk('div', 'bible-proj-settings-row bible-proj-settings-column');
+        const folderText = mk('span', 'bible-proj-settings-row-text');
+        folderText.appendChild(mk('span', 'bible-proj-settings-row-label', '通告文件夹'));
+        folderRow.appendChild(folderText);
+        const folderLine = mk('div', 'bible-proj-notice-folder-line');
+        const folderWrap = mk('div', 'bible-proj-notice-folder-wrap');
+        const folderInput = mk('input', 'bible-proj-notice-folder-input');
+        folderInput.type = 'text';
+        folderInput.placeholder = '留空 = vault 根目录（文件名固定 bible-notice.md）';
+        folderInput.setAttribute('spellcheck', 'false');
+        const currentFolder = () => (self.plugin && typeof self.plugin.noticeFolder === 'function')
+            ? self.plugin.noticeFolder() : '';
+        folderInput.value = currentFolder();
+        const suggest = mk('div', 'bible-proj-notice-folder-suggest is-hidden');
+        let allFolders = null;
+        const getFolders = async () => {
+            if (allFolders) return allFolders;
+            const out = [''];
+            try {
+                const vault = self.app && self.app.vault;
+                if (vault && typeof vault.getAllFolders === 'function') {
+                    for (const f of vault.getAllFolders()) if (f && f.path) out.push(f.path);
+                } else if (vault && vault.adapter && typeof vault.adapter.list === 'function') {
+                    const r = await vault.adapter.list('');
+                    for (const d of ((r && r.folders) || [])) out.push(String(d).replace(/\/$/, ''));
+                }
+            } catch (err) { /* 忽略 */ }
+            allFolders = out.sort();
+            return allFolders;
+        };
+        // 输入框里的一键清空：只清值（＝仓库根目录），再按「确定」才生效
+        const folderClearBtn = mk('button', 'bible-proj-notice-folder-clear is-hidden');
+        folderClearBtn.type = 'button';
+        folderClearBtn.title = '清空（＝仓库根目录），再按「确定」生效';
+        folderClearBtn.setAttribute('aria-label', folderClearBtn.title);
+        try { setIcon(folderClearBtn, 'x'); } catch (err) { folderClearBtn.textContent = '✕'; }
+        // 按下时别把焦点从输入框抢走（否则刚选中的文字会丢）
+        folderClearBtn.addEventListener('mousedown', (e) => { if (e && e.preventDefault) e.preventDefault(); });
+        folderClearBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            setFolderValue('');
+            renderSuggest();
+            try { folderInput.focus(); } catch (err) { /* 忽略 */ }
+        });
+        const syncFolderClear = () => {
+            if (!folderClearBtn || !folderClearBtn.classList) return;
+            folderClearBtn.classList.toggle('is-hidden', !String(folderInput.value || '').trim());
+        };
+        const setFolderValue = (v) => {
+            folderInput.value = String(v == null ? '' : v);
+            syncFolderClear();
+        };
+        let folderBusy = false;
+        const applyFolder = async (value) => {
+            if (!self.plugin || folderBusy) return;
+            suggest.classList.add('is-hidden');
+            const next = normalizeProjNoticeFolder(value);
+            const old = currentFolder();
+            // 输入没变：不搬文件，但也要给个「已保存」的回执，免得以为没点上
+            if (next === old) { setFolderValue(old); flashFolderOk('ok', '✓ 已保存'); return; }
+            folderBusy = true;
+            flashFolderOk('busy', '移动中…');
+            try {
+                const r = await self.plugin.migrateNoticeDoc(old, next);
+                if (!r || !r.ok) {
+                    flashFolderOk('fail', '✗ 失败');
+                    try { new Notice('通告文件移动失败' + (r && r.reason === 'target-exists' ? '：目标文件夹已有同名文件' : '') + '，文件夹保持不变'); } catch (err) { /* 忽略 */ }
+                    setFolderValue(old);
+                    return;
+                }
+                self.plugin.settings.noticeFolder = next;
+                setFolderValue(next);
+                flashFolderOk('ok', '✓ 已保存');
+                try {
+                    new Notice('通告文件夹已更新为' + (next ? '「' + next + '」' : '仓库根目录') + (r.backup ? '；目标处原有的同名文件已备份为 ' + r.backup : ''));
+                } catch (err) { /* 忽略 */ }
+                if (typeof self.plugin.saveSettings === 'function') {
+                    const p = self.plugin.saveSettings();
+                    if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略 */ });
+                }
+                self.renderNotice();
+            } catch (err) {
+                // 兜底：搬移过程抛异常也要给回执，别让按钮永远停在「移动中…」
+                flashFolderOk('fail', '✗ 失败');
+                setFolderValue(old);
+            } finally {
+                folderBusy = false;
+            }
+        };
+        const renderSuggest = async () => {
+            const q = normalizeProjNoticeFolder(folderInput.value).toLowerCase();
+            const list = await getFolders();
+            if (suggest.empty) suggest.empty(); else suggest.textContent = '';
+            const hits = list.filter(p => !q || p.toLowerCase().indexOf(q) >= 0).slice(0, 8);
+            if (!hits.length) { suggest.classList.add('is-hidden'); return; }
+            for (const p of hits) {
+                const opt = mk('div', 'bible-proj-notice-folder-option', p || '（vault 根目录）');
+                opt.addEventListener('click', (e) => {
+                    if (e && e.stopPropagation) e.stopPropagation();
+                    // 点候选只填输入框，按「确定」才真的搬文件
+                    setFolderValue(p);
+                    suggest.classList.add('is-hidden');
+                });
+                suggest.appendChild(opt);
+            }
+            suggest.classList.remove('is-hidden');
+        };
+        // 输入只负责刷新候选，不再防抖自动搬文件
+        folderInput.addEventListener('input', () => { syncFolderClear(); renderSuggest(); });
+        folderInput.addEventListener('focus', renderSuggest);
+        folderInput.addEventListener('keydown', (e) => {
+            if (!e || (e.key !== 'Enter' && e.key !== 'Escape')) return;
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.key === 'Enter') applyFolder(folderInput.value);
+            else { suggest.classList.add('is-hidden'); setFolderValue(currentFolder()); }
+        });
+        folderWrap.appendChild(folderInput);
+        folderWrap.appendChild(folderClearBtn);
+        folderWrap.appendChild(suggest);
+        syncFolderClear();
+
+        const folderBtns = mk('div', 'bible-proj-notice-folder-btns');
+        const folderOkBtn = mk('button', 'bible-proj-notice-folder-ok', '确定');
+        folderOkBtn.type = 'button';
+        folderOkBtn.title = '按这个文件夹保存，并搬移通告文件';
+        // 「确定」兼作状态灯：移动中… → ✓ 已保存 / ✗ 失败，1.6 秒后回「确定」。
+        // 这样点下去有没有生效一眼能看见，不用等 Notice 飘过去。
+        let folderOkTimer = null;
+        function flashFolderOk(state, text) {
+            if (!folderOkBtn || !folderOkBtn.classList) return;
+            if (folderOkTimer) { clearTimeout(folderOkTimer); folderOkTimer = null; }
+            folderOkBtn.classList.remove('is-ok', 'is-fail', 'is-busy');
+            if (state) folderOkBtn.classList.add('is-' + state);
+            folderOkBtn.textContent = text || '确定';
+            folderOkBtn.disabled = state === 'busy';
+            if (state !== 'ok' && state !== 'fail') return;
+            folderOkTimer = setTimeout(() => {
+                folderOkTimer = null;
+                if (!folderOkBtn || !folderOkBtn.classList) return;
+                folderOkBtn.classList.remove('is-ok', 'is-fail', 'is-busy');
+                folderOkBtn.disabled = false;
+                folderOkBtn.textContent = '确定';
+            }, 1600);
+        }
+        folderOkBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            applyFolder(folderInput.value);
+        });
+        const folderCancelBtn = mk('button', 'bible-proj-notice-folder-cancel', '取消');
+        folderCancelBtn.type = 'button';
+        folderCancelBtn.title = '放弃修改，保持当前文件夹';
+        folderCancelBtn.addEventListener('click', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            suggest.classList.add('is-hidden');
+            setFolderValue(currentFolder());
+        });
+        folderBtns.appendChild(folderOkBtn);
+        folderBtns.appendChild(folderCancelBtn);
+
+        folderLine.appendChild(folderWrap);
+        folderLine.appendChild(folderBtns);
+        folderRow.appendChild(folderLine);
+        noticeGroup.appendChild(folderRow);
+
+        // 上下两个通告区各自的高度：滑轨 40–360px，拖动时直接改区高度
+        const addHeightRow = (key, label, initial) => {
+            const row = mk('div', 'bible-proj-settings-row');
+            const text = mk('span', 'bible-proj-settings-row-text');
+            text.appendChild(mk('span', 'bible-proj-settings-row-label', label));
+            row.appendChild(text);
+            const ctrl = mk('span', 'bible-proj-settings-divider-ctrl');
+            const range = mk('input', 'bible-proj-settings-divider-range bible-proj-settings-height-range');
+            range.type = 'range';
+            range.min = '40';
+            range.max = '360';
+            range.step = '1';
+            range.value = String(initial);
+            // 自身标题必须写全，否则原生 tooltip 会向上找到 ⚙ 的「投影设置」。
+            range.title = '调整' + label + '（40–360px）';
+            range.setAttribute('aria-label', range.title);
+            const val = mk('span', 'bible-proj-notice-height-value', initial + ' px');
+            range.addEventListener('input', (e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                const next = normalizeProjNoticeZoneHeight(e && e.target ? e.target.value : range.value);
+                val.textContent = next + ' px';
+                applyNotice(key, next);
+            });
+            ctrl.appendChild(range);
+            ctrl.appendChild(val);
+            row.appendChild(ctrl);
+            noticeGroup.appendChild(row);
+        };
+        addHeightRow('noticeTopZoneHeight', '顶部区高度', normalizeProjNoticeZoneHeight(s.noticeTopZoneHeight));
+        addHeightRow('noticeBottomZoneHeight', '底部区高度', normalizeProjNoticeZoneHeight(s.noticeBottomZoneHeight));
+
+        // 通告标题 / 正文字号：12–96px 滑条，默认「自动」= 跟随投影字号；点「自动」可回到跟随。
+        const addFontRow = (key, label, kind) => {
+            const row = mk('div', 'bible-proj-settings-row');
+            const text = mk('span', 'bible-proj-settings-row-text');
+            text.appendChild(mk('span', 'bible-proj-settings-row-label', label));
+            row.appendChild(text);
+            const ctrl = mk('span', 'bible-proj-settings-divider-ctrl');
+            const range = mk('input', 'bible-proj-settings-divider-range bible-proj-settings-font-range');
+            range.type = 'range';
+            range.min = '12';
+            range.max = '96';
+            range.step = '1';
+            const explicit = normalizeProjNoticeFontSize(s[key]);
+            const auto = self.noticeAutoFontSize(kind);
+            const val = mk('span', 'bible-proj-settings-font-value',
+                (explicit || auto) + ' px' + (explicit ? '' : '（自动）'));
+            const autoBtn = mk('button', 'bible-proj-settings-mode-btn' + (explicit ? '' : ' is-active'), '自动');
+            autoBtn.type = 'button';
+            autoBtn.title = '恢复跟随投影字号';
+            range.value = String(explicit || auto);
+            range.addEventListener('input', (e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                const next = normalizeProjNoticeFontSize(e && e.target ? e.target.value : range.value) || auto;
+                val.textContent = next + ' px';
+                autoBtn.classList.remove('is-active');
+                applyNotice(key, next);
+            });
+            autoBtn.addEventListener('click', (e) => {
+                if (e && e.stopPropagation) e.stopPropagation();
+                const autoNow = self.noticeAutoFontSize(kind);
+                range.value = String(autoNow);
+                val.textContent = autoNow + ' px（自动）';
+                autoBtn.classList.add('is-active');
+                applyNotice(key, null);
+            });
+            ctrl.appendChild(range);
+            ctrl.appendChild(val);
+            ctrl.appendChild(autoBtn);
+            row.appendChild(ctrl);
+            noticeGroup.appendChild(row);
+        };
+        addFontRow('noticeTitleFontSize', '公告标题字号', 'title');
+        addFontRow('noticeBodyFontSize', '公告正文字号', 'body');
+
+        // 分界线粗细：1–12px 滑条，直接改投影根级变量，两条区的亮线一起变粗/变细。
+        const dividerRow = mk('div', 'bible-proj-settings-row');
+        const dividerText = mk('span', 'bible-proj-settings-row-text');
+        dividerText.appendChild(mk('span', 'bible-proj-settings-row-label', '分界线粗细'));
+        dividerRow.appendChild(dividerText);
+        const dividerCtrl = mk('span', 'bible-proj-settings-divider-ctrl');
+        const dividerRange = mk('input', 'bible-proj-settings-divider-range');
+        dividerRange.type = 'range';
+        dividerRange.min = '1';
+        dividerRange.max = '12';
+        dividerRange.step = '1';
+        const dividerVal = mk('span', 'bible-proj-settings-divider-value',
+            normalizeProjNoticeDividerWidth(s.noticeDividerWidth) + ' px');
+        dividerRange.value = String(normalizeProjNoticeDividerWidth(s.noticeDividerWidth));
+        dividerRange.addEventListener('input', (e) => {
+            if (e && e.stopPropagation) e.stopPropagation();
+            const next = normalizeProjNoticeDividerWidth(
+                e && e.target ? e.target.value : dividerRange.value);
+            dividerVal.textContent = next + ' px';
+            applyNotice('noticeDividerWidth', next);
+        });
+        dividerCtrl.appendChild(dividerRange);
+        dividerCtrl.appendChild(dividerVal);
+        dividerRow.appendChild(dividerCtrl);
+        noticeGroup.appendChild(dividerRow);
+
+        bodyWrap.appendChild(noticeGroup);
+
         anchorEl.appendChild(panel);
         this._projSettingsPanel = panel;
         this._projSettingsOpen = true;
         const token = {};
         this._projSettingsToken = token;
 
+        // 从面板里按下、在面板外松开（拉选文字 / 拖滑条）时，浏览器会把 click 派发到
+        // 两者的共同祖先——也就是面板外。这种 click 是那次手势的尾巴，绝不能当成「点了外面」。
+        // 所以只认手势起点：pointerdown 落在面板里，则随后的 click 一律放过。
+        let pressInsidePanel = false;
+        const inSettingsPanel = (t) => !!(t && t.closest &&
+            (t.closest('.bible-proj-settings-panel') || t.closest('.bible-proj-settings')));
         this._projSettingsOutside = (e) => {
             const t = e && e.target;
-            if (t && t.closest && (t.closest('.bible-proj-settings-panel') ||
-                t.closest('.bible-proj-settings'))) return;
+            const inside = inSettingsPanel(t);
+            if (e && e.type === 'pointerdown') {
+                pressInsidePanel = inside;
+                if (inside) return;
+                self.closeProjectionSettings();
+                return;
+            }
+            if (inside) return;
+            if (pressInsidePanel) return;
             self.closeProjectionSettings();
         };
         this._projSettingsOutsideEvents = [
             [document, 'pointerdown', { capture: true }],
             [document, 'click', { capture: true }]
         ];
+        // 文件夹补全弹框：点面板里其它位置（或面板外）都要收起选项。
+        // 整块面板的外部监听只管「关面板」，这里单独管弹框，且必须放过文件夹输入区自身。
+        this._projFolderSuggestClose = (e) => {
+            const t = e && e.target;
+            if (t && t.closest && t.closest('.bible-proj-notice-folder-wrap')) return;
+            // 同上：从输入框里往外拖选，松手在面板外时不该把候选收掉
+            if (e && e.type === 'click' && pressInsidePanel) return;
+            suggest.classList.add('is-hidden');
+        };
+        this._projFolderSuggestEvents = [
+            [document, 'pointerdown', { capture: true }],
+            [document, 'click', { capture: true }]
+        ];
         setTimeout(() => {
-            if (self._projSettingsToken !== token || !self._projSettingsOutside || self._closed) return;
-            for (const [target, type, opts] of self._projSettingsOutsideEvents) {
-                try { target.addEventListener(type, self._projSettingsOutside, opts); } catch (err) { /* 忽略 */ }
+            if (self._projSettingsToken !== token || self._closed) return;
+            if (self._projSettingsOutside) {
+                for (const [target, type, opts] of self._projSettingsOutsideEvents) {
+                    try { target.addEventListener(type, self._projSettingsOutside, opts); } catch (err) { /* 忽略 */ }
+                }
+            }
+            if (self._projFolderSuggestClose) {
+                for (const [target, type, opts] of self._projFolderSuggestEvents) {
+                    try { target.addEventListener(type, self._projFolderSuggestClose, opts); } catch (err) { /* 忽略 */ }
+                }
             }
         }, 0);
+    }
+
+    // 另一端同步过来时，设置面板正开着就重画一遍，滑条 / 模式按钮跟着变。
+    // 用户正在面板输入框里打字就先不重画，免得把他的半截输入冲掉。
+    refreshNoticeSettingsUi() {
+        if (!this._projSettingsOpen || !this._projSettingsPanel) return;
+        const active = (typeof document !== 'undefined') ? document.activeElement : null;
+        if (active && this._projSettingsPanel.contains && this._projSettingsPanel.contains(active) &&
+            active.tagName === 'INPUT' && active.type !== 'range') return;
+        const anchor = this.settingsBtn || null;
+        this.closeProjectionSettings();
+        if (anchor) this.showProjectionSettings(anchor);
     }
 
     closeProjectionSettings() {
@@ -6854,6 +8083,13 @@ class BibleProjectionOverlay {
         }
         this._projSettingsOutside = null;
         this._projSettingsOutsideEvents = null;
+        if (this._projFolderSuggestClose && this._projFolderSuggestEvents) {
+            for (const [target, type, opts] of this._projFolderSuggestEvents) {
+                try { target.removeEventListener(type, this._projFolderSuggestClose, opts); } catch (err) { /* 忽略 */ }
+            }
+        }
+        this._projFolderSuggestClose = null;
+        this._projFolderSuggestEvents = null;
         const panel = this._projSettingsPanel;
         if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
         this._projSettingsPanel = null;
@@ -7206,6 +8442,29 @@ class BibleProjectionOverlay {
             clearTimeout(this._clockTimer);
             this._clockTimer = null;
         }
+        // 通告面板与跨插件 / vault 监听：放在时钟清理之后，保持与旧版清理顺序兼容。
+        this.closeNoticePanel();
+        this.clearNoticeTimers();
+        if (this._noticeDragCleanup) {
+            try { this._noticeDragCleanup(); } catch (e) { /* 忽略 */ }
+            this._noticeDragCleanup = null;
+        }
+        if (this._noticeEvent && typeof document !== 'undefined' && document.removeEventListener) {
+            try { document.removeEventListener(NOTICE_STATE_EVENT, this._noticeEvent); } catch (e) { /* 忽略 */ }
+            this._noticeEvent = null;
+        }
+        if (this._noticePathEvent && typeof document !== 'undefined' && document.removeEventListener) {
+            try { document.removeEventListener(NOTICE_PATH_EVENT, this._noticePathEvent); } catch (e) { /* 忽略 */ }
+            this._noticePathEvent = null;
+        }
+        if (this._noticeSettingsEvent && typeof document !== 'undefined' && document.removeEventListener) {
+            try { document.removeEventListener(NOTICE_SETTINGS_EVENT, this._noticeSettingsEvent); } catch (e) { /* 忽略 */ }
+            this._noticeSettingsEvent = null;
+        }
+        if (this._noticeVaultEvent && this.app && this.app.vault && typeof this.app.vault.offref === 'function') {
+            try { this.app.vault.offref(this._noticeVaultEvent); } catch (e) { /* 忽略 */ }
+        }
+        this._noticeVaultEvent = null;
         if (this._clockResizeObserver) {
             try { this._clockResizeObserver.disconnect(); } catch (e) { /* 忽略 */ }
             this._clockResizeObserver = null;
@@ -7619,6 +8878,12 @@ class BibleProjectionOverlay {
             document.body.appendChild(this.overlay);
             this.overlay.classList.remove('bible-proj-in-tab');
             this.overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:9999;display:flex;flex-direction:column;background:var(--bp-bg);color:var(--bp-fg);';
+            // cssText 会清掉之前写在覆盖层上的全部内联变量：投影主题的 color-scheme、
+            // 自定义主题色、通告分界线粗细都会丢。必须在这里补回，否则按 S 进出检索后
+            // 亮线跳回默认 2px，原生控件也会重新跟随 Obsidian 明暗模式。
+            if (typeof this.applyTheme === 'function') this.applyTheme(this.themeId, true);
+            if (typeof this.applyNoticeDivider === 'function') this.applyNoticeDivider();
+            if (typeof this.applyNoticeFontSize === 'function') this.applyNoticeFontSize();
         }
         this.focusProjection(true);
         setTimeout(() => this.focusProjection(true), 0);
@@ -15406,6 +16671,42 @@ class BibleSearchPlugin extends Plugin {
             this.registerEvent(this.app.vault.on('delete', clearAudioIndex));
             this.registerEvent(this.app.vault.on('rename', clearAudioIndex));
         } catch (e) { /* 事件 API 不可用时退回「只在首次构建」 */ }
+        // 通告文件被另一端（Hymns）搬走后，插件级也要跟进 settings.noticeFolder：
+        // 否则投影没开着时设置会停在旧目录，下次开投影又在旧位置重建一份文件，
+        // 之后再想把文件夹改回根目录就会被这份「同名文件」挡住（见 migrateNoticeDoc 的备份覆盖）。
+        this._onNoticePathFollow = (e) => {
+            if (this._unloaded || !e || !e.detail || e.detail.source === 'bible') return;
+            const nf = normalizeProjNoticeFolder(e.detail.newFolder);
+            const cur = this.noticeFolder();
+            if (cur === nf) return;
+            if (e.detail.oldFolder != null && cur !== normalizeProjNoticeFolder(e.detail.oldFolder)) return;
+            this.settings.noticeFolder = nf;
+            try {
+                const p = this.saveSettings();
+                if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略写盘失败 */ });
+            } catch (err) { /* 忽略写盘失败 */ }
+        };
+        try { document.addEventListener(NOTICE_PATH_EVENT, this._onNoticePathFollow); } catch (e) { /* 忽略 */ }
+        this.register(() => { try { document.removeEventListener(NOTICE_PATH_EVENT, this._onNoticePathFollow); } catch (e) { /* 忽略 */ } });
+        // 通告显示设置同步：Hymns 端改了模式 / 高度 / 字号 / 分界线时，投影没开着也要落到本地设置，
+        // 这样下次开投影就是另一端那一套。投影开着时各自实例也会收到同一事件并重画。
+        this._onNoticeSettingsFollow = (e) => {
+            if (this._unloaded || !e || !e.detail || e.detail.source === 'bible') return;
+            if (typeof this.applyNoticeSettingsSnapshot !== 'function') return;
+            if (!this.applyNoticeSettingsSnapshot(e.detail)) return;
+            try {
+                const p = this.saveSettings();
+                if (p && typeof p.catch === 'function') p.catch(() => { /* 忽略写盘失败 */ });
+            } catch (err) { /* 忽略写盘失败 */ }
+        };
+        try { document.addEventListener(NOTICE_SETTINGS_EVENT, this._onNoticeSettingsFollow); } catch (e) { /* 忽略 */ }
+        this.register(() => { try { document.removeEventListener(NOTICE_SETTINGS_EVENT, this._onNoticeSettingsFollow); } catch (e) { /* 忽略 */ } });
+        // 启动时对一次账：另一端在本次会话之前改过「通告文件夹」也能跟上，
+        // 否则会按旧路径在根目录再生成一份 bible-notice.md（用户遇到的重复文件）。
+        try {
+            const p = this.adoptNoticeLocation();
+            if (p && typeof p.then === 'function') p.catch(() => { /* 忽略 */ });
+        } catch (e) { /* 忽略 */ }
         this.registerView(BIBLE_SEARCH_VIEW_TYPE, (leaf) => {
             const view = new BibleSearchView(leaf, this);
             this.searchViewRef = view;
@@ -16086,7 +17387,16 @@ class BibleSearchPlugin extends Plugin {
             mp3DownloadNoticeDismissed: false,
             // 投影历史：默认 50 条，只存书卷章节 / 搜索词 + 首次打开时间，重启后仍保留
             projectionHistoryLimit: 50,
-            projectionHistory: []
+            projectionHistory: [],
+            // 投影通告：文件名固定 bible-notice.md，这里只存所在文件夹（'' = vault 根）
+            noticeFolder: '',
+            // 公告模式：top=顶部区 / bottom=底部区 / all=上下同时（全选）
+            noticeMode: 'top',
+            noticeTopZoneHeight: 120,     // 顶部通告区高度，可在投影里拖边界调节
+            noticeBottomZoneHeight: 120,  // 底部通告区高度，同上
+            noticeDividerWidth: 2,        // 通告区与投影区的分界亮线粗细，1–12px
+            noticeTitleFontSize: null,    // 标题字号；null = 自动跟随投影字号
+            noticeBodyFontSize: null      // 正文字号；null = 自动跟随投影字号
         };
         const loaded = await this.loadData() || {};
         this.settings = Object.assign({}, defaults, loaded);
@@ -16095,6 +17405,27 @@ class BibleSearchPlugin extends Plugin {
         this.settings.projectionHistoryLimit = normalizeProjectionHistoryLimit(this.settings.projectionHistoryLimit);
         this.settings.projectionHistory = normalizeProjectionHistoryList(
             this.settings.projectionHistory, this.settings.projectionHistoryLimit);
+        // 兼容旧数据：旧版只有 noticeDocPath（完整路径），取其目录作为 noticeFolder；
+        // 旧的底部条 / 浮窗 / 驻留秒数设置一并清理，模式归到新的两种通告区。
+        if (typeof this.settings.noticeFolder === 'undefined' || this.settings.noticeFolder === null) {
+            const legacy = normalizeProjNoticePath(this.settings.noticeDocPath);
+            const slash = legacy.lastIndexOf('/');
+            this.settings.noticeFolder = slash >= 0 ? legacy.slice(0, slash) : '';
+        }
+        this.settings.noticeFolder = normalizeProjNoticeFolder(this.settings.noticeFolder);
+        this.settings.noticeMode = normalizeProjNoticeMode(this.settings.noticeMode);
+        this.settings.noticeTopZoneHeight = normalizeProjNoticeZoneHeight(
+            this.settings.noticeTopZoneHeight != null ? this.settings.noticeTopZoneHeight : this.settings.noticeZoneHeight);
+        this.settings.noticeBottomZoneHeight = normalizeProjNoticeZoneHeight(this.settings.noticeBottomZoneHeight);
+        this.settings.noticeDividerWidth = normalizeProjNoticeDividerWidth(
+            this.settings.noticeDividerWidth != null ? this.settings.noticeDividerWidth : this.settings.noticeZoneDividerWidth);
+        // 旧版没有字号设置，保持 null = 自动跟随投影字号；
+        // 非法值也归 null，避免坏数据把公告字缩到看不见。
+        this.settings.noticeTitleFontSize = normalizeProjNoticeFontSize(this.settings.noticeTitleFontSize);
+        this.settings.noticeBodyFontSize = normalizeProjNoticeFontSize(this.settings.noticeBodyFontSize);
+        for (const oldKey of ['noticeDocPath', 'noticeDwellSeconds', 'noticeFloatSeconds', 'noticeZoneHeight', 'noticeZoneDividerWidth']) {
+            if (Object.prototype.hasOwnProperty.call(this.settings, oldKey)) delete this.settings[oldKey];
+        }
         // 兼容旧版布尔标志：曾点过「不再提示」的用户，按当时缺失的默认版本写入数组
         if (loaded && loaded.skipMissingVersionPrompt === true && (!this.settings.dismissedVersionPrompts || this.settings.dismissedVersionPrompts.length === 0)) {
             this.settings.dismissedVersionPrompts = (this.settings.versions || [])
@@ -16106,6 +17437,294 @@ class BibleSearchPlugin extends Plugin {
 
     async saveSettings() {
         await this.saveData(this.settings);
+    }
+
+    // ===== 投影通告：md 共享文档的读写与跨插件广播 =====
+    noticePath() {
+        return noticeFolderPath(this.settings && this.settings.noticeFolder);
+    }
+    noticeFolder() {
+        return normalizeProjNoticeFolder(this.settings && this.settings.noticeFolder);
+    }
+
+    /* ---- 通告显示设置的跨插件同步 ----
+       每一项仍各存各的 data.json（另一端没装 / 没开也照常工作）；改动时广播一份快照，
+       另一端收到后覆盖本地这几项并重画投影，不再回广播（不乒乓）。 */
+    noticeSettingsSnapshot() {
+        const s = this.settings || {};
+        return {
+            mode: normalizeProjNoticeMode(s.noticeMode),
+            topHeight: normalizeProjNoticeZoneHeight(s.noticeTopZoneHeight),
+            bottomHeight: normalizeProjNoticeZoneHeight(s.noticeBottomZoneHeight),
+            titleFont: normalizeProjNoticeFontSize(s.noticeTitleFontSize),
+            bodyFont: normalizeProjNoticeFontSize(s.noticeBodyFontSize),
+            dividerWidth: normalizeProjNoticeDividerWidth(s.noticeDividerWidth)
+        };
+    }
+    // 只写真正变了的值；返回 true 表示本地确实被改动（调用方据此决定落盘 / 重画）
+    applyNoticeSettingsSnapshot(snap) {
+        if (!snap || !this.settings) return false;
+        const next = {
+            noticeMode: normalizeProjNoticeMode(snap.mode),
+            noticeTopZoneHeight: normalizeProjNoticeZoneHeight(snap.topHeight),
+            noticeBottomZoneHeight: normalizeProjNoticeZoneHeight(snap.bottomHeight),
+            noticeTitleFontSize: normalizeProjNoticeFontSize(snap.titleFont),
+            noticeBodyFontSize: normalizeProjNoticeFontSize(snap.bodyFont),
+            noticeDividerWidth: normalizeProjNoticeDividerWidth(snap.dividerWidth)
+        };
+        let changed = false;
+        for (const k of Object.keys(next)) {
+            if (this.settings[k] !== next[k]) { this.settings[k] = next[k]; changed = true; }
+        }
+        return changed;
+    }
+    notifyNoticeSettingsChanged(opts) {
+        try {
+            const doc = (typeof document !== 'undefined') ? document : null;
+            if (!doc || typeof doc.dispatchEvent !== 'function') return;
+            doc.dispatchEvent(new CustomEvent(NOTICE_SETTINGS_EVENT, {
+                detail: Object.assign(this.noticeSettingsSnapshot(), { source: (opts && opts.source) || 'bible' })
+            }));
+        } catch (e) { /* 广播失败不影响本地设置 */ }
+    }
+    // 拖滑条 / 分界线会连续触发，合并成一次广播
+    scheduleNoticeSettingsBroadcast(opts) {
+        try { if (this._noticeSettingsTimer) clearTimeout(this._noticeSettingsTimer); } catch (e) { /* 忽略 */ }
+        this._noticeSettingsTimer = setTimeout(() => {
+            this._noticeSettingsTimer = null;
+            this.notifyNoticeSettingsChanged(opts);
+        }, 200);
+    }
+
+    /* ---- 通告文件实际位置跟随 ----
+       另一端改过「通告文件夹」而本插件当时没开、没收广播时，settings.noticeFolder 会停在旧值。
+       这时若直接按旧路径读/写，就会在旧位置再生成一份 bible-notice.md（用户遇到的重复文件）。
+       所以「文件不存在」时先在仓库里找现成的 bible-notice.md，跟着它走。 */
+    noticeDocCandidates() {
+        const vault = this.app && this.app.vault;
+        const out = [];
+        let files = [];
+        try { if (vault && typeof vault.getFiles === 'function') files = vault.getFiles() || []; } catch (e) { files = []; }
+        for (const f of files) {
+            const p = f && typeof f.path === 'string' ? f.path : '';
+            if (p && (p === NOTICE_FILENAME || /\/bible-notice\.md$/i.test(p))) out.push(p);
+        }
+        return out;
+    }
+    async noticeDocItemCount(path) {
+        const adapter = this.app && this.app.vault && this.app.vault.adapter;
+        if (!adapter || typeof adapter.read !== 'function') return -1;
+        try { return (parseNoticeDoc(await adapter.read(path)).items || []).length; } catch (e) { return -1; }
+    }
+    async adoptNoticeLocation(opts) {
+        const adapter = this.app && this.app.vault && this.app.vault.adapter;
+        if (!adapter || typeof adapter.exists !== 'function') return this.noticePath();
+        const curPath = this.noticePath();
+        let curExists = false;
+        try { curExists = !!(await adapter.exists(curPath)); } catch (e) { curExists = false; }
+        if (curExists && opts && opts.missingOnly) return curPath;
+        const cands = this.noticeDocCandidates().filter(p => p !== curPath);
+        if (!cands.length) return curPath;
+        if (curExists) {
+            // 自己这份还是「刚生成、没改过」的模板，而别处那份有真内容 —— 说明该跟的是它。
+            // 已经编辑过就一律不动，绝不替用户搬家。
+            const mine = await this.noticeDocItemCount(curPath);
+            let best = '', bestN = 0;
+            for (const p of cands) {
+                const n = await this.noticeDocItemCount(p);
+                if (n > bestN) { bestN = n; best = p; }
+            }
+            if (!(mine <= 1 && bestN > mine)) return curPath;
+            return this.adoptNoticePath(best);
+        }
+        let best = '', bestN = -1;
+        for (const p of cands) {
+            const n = await this.noticeDocItemCount(p);
+            if (n > bestN) { bestN = n; best = p; }
+        }
+        return this.adoptNoticePath(best || cands[0]);
+    }
+    // 把 settings.noticeFolder 指到某个已有文件的目录（文件本身不动），并落盘
+    adoptNoticePath(path) {
+        const p = String(path || '');
+        const slash = p.lastIndexOf('/');
+        const folder = normalizeProjNoticeFolder(slash >= 0 ? p.slice(0, slash) : '');
+        const next = noticeFolderPath(folder);
+        if (next === this.noticePath()) return next;
+        this.settings.noticeFolder = folder;
+        try {
+            const r = this.saveSettings();
+            if (r && typeof r.catch === 'function') r.catch(() => { /* 忽略写盘失败 */ });
+        } catch (e) { /* 忽略写盘失败 */ }
+        return next;
+    }
+    // 通告文件夹改了：把固定文件名的 md 搬到新文件夹（目标文件夹不存在就逐级创建）。
+    // 用 vault.rename 保留 Obsidian 的引用 / 同步语义，绝不覆盖已存在的目标文件。
+    // 返回 { ok, moved, reason }；调用方只在 ok 时才写 settings.noticeFolder。
+    async migrateNoticeDoc(oldFolder, newFolder) {
+        const from = noticeFolderPath(oldFolder);
+        const to = noticeFolderPath(newFolder);
+        if (from === to) return { ok: true, moved: false };
+        const vault = this.app && this.app.vault;
+        if (!vault) return { ok: false, moved: false, reason: 'no-vault' };
+        try {
+            const file = typeof vault.getAbstractFileByPath === 'function'
+                ? vault.getAbstractFileByPath(from) : null;
+            // 旧文件不存在（还没创建过通告）：只改设置即可，无需造一个空文件
+            if (!file) return { ok: true, moved: false };
+            const adapter = vault.adapter;
+            const dir = to.indexOf('/') >= 0 ? to.slice(0, to.lastIndexOf('/')) : '';
+            if (dir && adapter && typeof adapter.exists === 'function' && typeof adapter.mkdir === 'function') {
+                if (!(await adapter.exists(dir))) {
+                    const parts = dir.split('/');
+                    let cur = '';
+                    for (const part of parts) {
+                        cur = cur ? cur + '/' + part : part;
+                        if (!(await adapter.exists(cur))) await adapter.mkdir(cur);
+                    }
+                }
+            }
+            // 目标处已经有同名文件（最常见：改回根目录时根目录还留着旧副本）：
+            // 以前这里直接报错，导致「无法改回根目录」。现在改成备份目标那份、再用当前这份覆盖，
+            // 既不会被挡住，也不会把任何一份内容直接冲掉。
+            const target = typeof vault.getAbstractFileByPath === 'function' ? vault.getAbstractFileByPath(to) : null;
+            if (target) {
+                const srcText = await this.readNoticeText(vault, file, from);
+                const dstText = await this.readNoticeText(vault, target, to);
+                let backup = '';
+                if (srcText !== dstText) {
+                    backup = await this.noticeBackupPath(to);
+                    await this.writeNoticeText(vault, adapter, backup, dstText);
+                    await this.writeNoticeText(vault, adapter, to, srcText);
+                }
+                await this.deleteNoticeFile(vault, adapter, file, from);
+                this.notifyNoticePathChanged(from, to, normalizeProjNoticeFolder(oldFolder), normalizeProjNoticeFolder(newFolder));
+                return { ok: true, moved: true, backup };
+            }
+            if (typeof vault.rename === 'function') await vault.rename(file, to);
+            else if (adapter && typeof adapter.rename === 'function') await adapter.rename(from, to);
+            else return { ok: false, moved: false, reason: 'no-rename-api' };
+            this.notifyNoticePathChanged(from, to, normalizeProjNoticeFolder(oldFolder), normalizeProjNoticeFolder(newFolder));
+            return { ok: true, moved: true, backup: '' };
+        } catch (e) {
+            return { ok: false, moved: false, reason: String((e && e.message) || e) };
+        }
+    }
+    // 读文件优先走 vault.read，失败再退到底层 adapter；读不到就当作空内容
+    async readNoticeText(vault, file, path) {
+        try { if (vault && typeof vault.read === 'function' && file) return await vault.read(file); } catch (e) { /* 忽略 */ }
+        try {
+            const adapter = vault && vault.adapter;
+            if (adapter && typeof adapter.read === 'function') return await adapter.read(path);
+        } catch (e) { /* 忽略 */ }
+        return '';
+    }
+    // 写文件：已有文件走 vault.modify（保留 Obsidian 的引用 / 同步语义），没有就新建
+    async writeNoticeText(vault, adapter, path, text) {
+        const existing = (vault && typeof vault.getAbstractFileByPath === 'function')
+            ? vault.getAbstractFileByPath(path) : null;
+        if (existing && typeof vault.modify === 'function') { await vault.modify(existing, text); return; }
+        if (typeof vault.create === 'function') { await vault.create(path, text); return; }
+        if (adapter && typeof adapter.write === 'function') { await adapter.write(path, text); return; }
+        throw new Error('no-write-api');
+    }
+    // 删文件优先走 vault.delete（跟随用户的「删除进回收站」设置），没有再退到底层 adapter
+    async deleteNoticeFile(vault, adapter, file, path) {
+        if (vault && typeof vault.delete === 'function' && file) { await vault.delete(file); return; }
+        if (adapter && typeof adapter.remove === 'function') { await adapter.remove(path); return; }
+        throw new Error('no-delete-api');
+    }
+    // 备份文件与被搬的通告同目录，文件名带秒级时间戳；撞名再加序号
+    async noticeBackupPath(targetPath) {
+        const slash = targetPath.lastIndexOf('/');
+        const dir = slash >= 0 ? targetPath.slice(0, slash + 1) : '';
+        const d = new Date();
+        const pad = (n) => (n < 10 ? '0' : '') + n;
+        const stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' +
+            pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+        const vault = this.app && this.app.vault;
+        const adapter = vault && vault.adapter;
+        let p = dir + 'bible-notice.backup-' + stamp + '.md';
+        let i = 2;
+        while (adapter && typeof adapter.exists === 'function' && i < 20 && (await adapter.exists(p))) {
+            p = dir + 'bible-notice.backup-' + stamp + '-' + i + '.md';
+            i++;
+        }
+        return p;
+    }
+    // 路径变更广播：另一端插件据此把 settings.noticeFolder 跟进到新位置
+    notifyNoticePathChanged(oldPath, newPath, oldFolder, newFolder) {
+        try {
+            const doc = (typeof document !== 'undefined') ? document : null;
+            if (!doc || typeof doc.dispatchEvent !== 'function') return;
+            doc.dispatchEvent(new CustomEvent(NOTICE_PATH_EVENT, {
+                detail: {
+                    oldPath: oldPath, newPath: newPath,
+                    oldFolder: oldFolder, newFolder: newFolder, source: 'bible'
+                }
+            }));
+        } catch (e) { /* 忽略 */ }
+    }
+    // 从文件读回完整状态；文件不存在时按需创建初始模板。任何异常都退回「关闭 + 无条目」，
+    // 绝不因为一份写坏的 md 让投影打不开。
+    async readNoticeDoc(createIfMissing) {
+        // 建文件前先对一次账：别处的 bible-notice.md 才是正主时，跟着它走而不是另起一份
+        if (createIfMissing) {
+            try { await this.adoptNoticeLocation({ missingOnly: true }); } catch (e) { /* 忽略 */ }
+        }
+        const path = this.noticePath();
+        const adapter = this.app && this.app.vault && this.app.vault.adapter;
+        if (!adapter || typeof adapter.read !== 'function') return { enabled: false, active: 0, activeTop: 0, activeBottom: 0, items: [], path };
+        try {
+            if (!(await adapter.exists(path))) {
+                if (!createIfMissing) return { enabled: false, active: 0, activeTop: 0, activeBottom: 0, items: [], path };
+                await adapter.write(path, buildNoticeDoc());
+            }
+            const raw = await adapter.read(path);
+            return Object.assign(parseNoticeDoc(raw), { path });
+        } catch (e) {
+            return { enabled: false, active: 0, activeTop: 0, activeBottom: 0, items: [], path };
+        }
+    }
+    // 写回状态：写前重读一次，只覆盖状态字段与显式传入的 items，避免覆盖另一端刚编辑的正文。
+    // 写完派发 DOM 事件，另一端插件 / 同插件的其它投影实例都能即时刷新。
+    async writeNoticeDoc(patch, opts) {
+        const path = this.noticePath();
+        const adapter = this.app && this.app.vault && this.app.vault.adapter;
+        if (!adapter || typeof adapter.read !== 'function' || typeof adapter.write !== 'function') return null;
+        try {
+            const cur = await this.readNoticeDoc(true);
+            const next = Object.assign({
+                enabled: cur.enabled,
+                active: cur.active,
+                activeTop: cur.activeTop,
+                activeBottom: cur.activeBottom
+            }, patch || {});
+            const items = Object.prototype.hasOwnProperty.call(patch || {}, 'items') ? patch.items : cur.items;
+            await adapter.write(path, serializeNoticeDoc(next, items));
+            this.notifyNoticeChanged(next, items, opts);
+            return Object.assign(parseNoticeDoc(serializeNoticeDoc(next, items)), { path });
+        } catch (e) {
+            return null;
+        }
+    }
+    // detail 带上解析后的状态，接收端可直接用，省一次读盘；source 用来让自己别重复刷新。
+    notifyNoticeChanged(state, items, opts) {
+        try {
+            const detail = {
+                path: this.noticePath(),
+                enabled: !!(state && state.enabled),
+                active: Math.max(0, parseInt(state && state.active, 10) || 0),
+                activeTop: Math.max(0, parseInt(state && state.activeTop, 10) || 0),
+                activeBottom: Math.max(0, parseInt(state && state.activeBottom, 10) || 0),
+                items: Array.isArray(items) ? items : [],
+                source: (opts && opts.source) || 'bible'
+            };
+            const doc = (typeof document !== 'undefined') ? document : null;
+            if (doc && typeof doc.dispatchEvent === 'function') {
+                doc.dispatchEvent(new CustomEvent(NOTICE_STATE_EVENT, { detail }));
+            }
+        } catch (e) { /* 广播失败不影响写盘结果 */ }
     }
 
     // ===== 投影历史（持久化）与「上次投影内容」（仅本次会话）=====
