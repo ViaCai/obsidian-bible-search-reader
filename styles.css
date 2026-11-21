@@ -1713,6 +1713,49 @@ body .bible-projection-fullscreen textarea::placeholder {
 }
 .bible-proj-notice-manage-done:hover,
 .bible-proj-notice-manage-actions .bible-proj-notice-add:hover { background: var(--bp-btn-hover-bg); }
+/* 预览 + 条目容器：窄屏上下堆叠（预览在上，和以前一样）；宽屏改成左预览、右条目的两栏。
+   面板挂在通告区内（高度最少 320px），两栏要各自滚动而不是把区撑高。
+   窄屏不额外加 gap：预览的 margin-bottom 与列表的 margin-top 本来就把间距撑开了。 */
+.bible-proj-notice-manage-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-height: 0;
+}
+/* 宽屏判定：宽度够 500px 就并排（桌面窗口、平板、手机横屏都算），更窄才回上下堆叠。 */
+@media (min-width: 500px) {
+    .bible-proj-notice-manage {
+        width: 100%;
+        max-width: 1040px;
+        box-sizing: border-box;
+    }
+    .bible-proj-notice-manage-body {
+        flex-direction: row;
+        align-items: stretch;
+        gap: 12px;
+        max-height: min(40vh, 240px);
+    }
+    /* 两栏时预览跟着栏高走：正文不再单独限高，由左栏整体滚动 */
+    .bible-proj-notice-preview {
+        flex: 1 1 44%;
+        min-width: 0;
+        margin: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    .bible-proj-notice-preview-body { max-height: none; overflow: visible; }
+    .bible-proj-notice-list {
+        flex: 1 1 56%;
+        min-width: 0;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: none;
+        padding-left: 12px;
+        border-left: 1px solid var(--bp-menu-border);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+}
 .bible-proj-notice-manage-foot {
     display: flex;
     justify-content: flex-end;

@@ -1475,6 +1475,17 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.2.1': `## [6.2.1] - 2026-11-21
+
+### 改进
+- **通告编辑面板宽屏两栏**：窗口宽度 ≥500px 时，预览显示在左栏、通告条目在右栏，中间有分隔线，两栏各自滚动；更窄的窗口仍是上预览、下条目。
+
+### 修复
+- **触屏双击打不开通告管理**：手机上连续点两下通告区即可打开管理界面（原先移动浏览器把连点当缩放手势，\`dblclick\` 不派发）；上下划动通告不计数，不会滚完就误开。
+- **触屏双击条目进不了编辑**：管理面板里连点某一条通告直接进入该条编辑，鼠标双击行为不变；连点与右侧 ✎ 按钮互不干扰。
+
+### 小提示
+- 本次修复与 Hymns 2.8.1 配套，两个插件一起更新体验一致。`,
     '6.2.0': `## [6.2.0] - 2026-11-21
 
 ### 新增
@@ -7075,6 +7086,8 @@ class BibleProjectionOverlay {
             if (el.empty) el.empty(); else el.textContent = '';
             el.onclick = null;
             el.ondblclick = null;
+            el.onpointerdown = null;
+            el.onpointerup = null;
         }
         if (topR) topR.classList.add('is-hidden');
         if (bottomR) bottomR.classList.add('is-hidden');
@@ -7099,7 +7112,18 @@ class BibleProjectionOverlay {
             // 双击通告区本体才打开内容管理，单击不再误触。
             zone.ondblclick = (e) => {
                 if (e && e.target && e.target.closest && e.target.closest('.bible-proj-notice-manage')) return;
-                self.openNoticeManager(zone);
+                self.openNoticeManagerOnce(zone);
+            };
+            // 触屏：移动端 WebView 常把连点当缩放手势，dblclick 不一定派发。
+            // 用 onpointerdown / onpointerup（属性形式，每次重画只是覆盖、不会叠监听）自己认「连点两下」。
+            zone.onpointerdown = (e) => {
+                if (!e || (e.pointerType !== 'touch' && e.pointerType !== 'pen')) return;
+                self.registerNoticeTapStart(zone, e);
+            };
+            zone.onpointerup = (e) => {
+                if (!e || (e.pointerType !== 'touch' && e.pointerType !== 'pen')) return;
+                if (e.target && e.target.closest && e.target.closest('.bible-proj-notice-manage')) return;
+                self.registerNoticeTap(zone, e);
             };
         }
         // 上面的字号应用发生在 fillNoticeTarget 之前：首帧标题 / 正文节点刚创建，
@@ -7201,6 +7225,52 @@ class BibleProjectionOverlay {
             this.noticeActivePatch(this.noticeActiveIndex(key), key)));
         if (r && typeof r.catch === 'function') r.catch(() => { /* 忽略写盘失败 */ });
     }
+    // 双击 / 连点两下的去重入口：鼠标与触屏事件在部分设备上会同时到达，500ms 内同一侧只认第一次。
+    openNoticeManagerOnce(zone) {
+        const now = Date.now();
+        const g = this._noticeOpenGuard;
+        if (g && g.zone === zone && now - g.at < 500) return;
+        this._noticeOpenGuard = { zone, at: now };
+        this.openNoticeManager(zone);
+    }
+    // 触屏按下：记住起点，用来区分「点一下」和「滑动滚动通告」。
+    registerNoticeTapStart(zone, e) {
+        this._noticeTapDown = { zone, x: Number(e && e.clientX) || 0, y: Number(e && e.clientY) || 0 };
+    }
+    // 触屏连点识别：同一区两次点击间隔 <400ms、位移 <32px 记为双击；
+    // 按下一处、松手跑到 12px 以外的算滑动（滚通告），不参与计数。
+    // 上下两区各自计数——上区点一下、下区点一下不会被误判成双击。
+    registerNoticeTap(zone, e) {
+        const down = this._noticeTapDown;
+        this._noticeTapDown = null;
+        const now = Date.now();
+        const x = Number(e && e.clientX) || 0;
+        const y = Number(e && e.clientY) || 0;
+        if (!down || down.zone !== zone) return;
+        if (Math.abs(x - down.x) > 12 || Math.abs(y - down.y) > 12) return;
+        const prev = this._noticeTap;
+        if (prev && prev.zone === zone && now - prev.at < 400 &&
+            Math.abs(x - prev.x) < 32 && Math.abs(y - prev.y) < 32) {
+            this._noticeTap = null;
+            this.openNoticeManagerOnce(zone);
+            return;
+        }
+        this._noticeTap = { zone, at: now, x, y };
+    }
+    // 双击 / 触屏连点条目 → 把这一条切成编辑态。节点上没序号就退回「最后点中的那条」，
+    // 因为单击后的事件刷新可能已把行节点换掉。
+    editNoticeItemFromNode(node) {
+        const rowEl = node && node.closest ? node.closest('.bible-proj-notice-item') : null;
+        let idx = this._noticeLastClickedIndex;
+        if (rowEl && rowEl.dataset && rowEl.dataset.noticeIndex != null) {
+            const n = parseInt(rowEl.dataset.noticeIndex, 10);
+            if (Number.isFinite(n)) idx = n;
+        }
+        if (!Number.isInteger(idx) || idx < 0) return false;
+        this._noticeEditingIndex = idx;
+        this.fillNoticePanel();
+        return true;
+    }
     // 点通告区本体就地展开内容管理（选择 / 编辑 / 新增 / 删除），点「完成」或 Esc 收起。
     openNoticeManager(zone) {
         if (!zone || this._closed) return;
@@ -7239,9 +7309,12 @@ class BibleProjectionOverlay {
         actions.appendChild(doneBtn);
         head.appendChild(actions);
         mgr.appendChild(head);
+        // 预览 + 条目放进同一个 body：宽屏左右分栏（左预览、右条目），窄屏仍上下堆叠，
+        // 断点见 styles.css 的 .bible-proj-notice-manage-body。
+        const body = mk('div', 'bible-proj-notice-manage-body');
         // 列表上方直接显示当前选中的那条：单击条目即更新，不需要按「完成」确认。
         const preview = mk('div', 'bible-proj-notice-preview');
-        mgr.appendChild(preview);
+        body.appendChild(preview);
         this._noticePreviewEl = preview;
         const list = mk('div', 'bible-proj-notice-list');
         // 双击某一行直接编辑该条；单击仍只选中并即时预览。
@@ -7249,18 +7322,36 @@ class BibleProjectionOverlay {
         // 用 _noticeLastClickedIndex 兜底取到刚才选中的序号。
         list.addEventListener('dblclick', (e) => {
             if (e && e.stopPropagation) e.stopPropagation();
-            const t = e && e.target;
-            const rowEl = t && t.closest ? t.closest('.bible-proj-notice-item') : null;
-            let idx = this._noticeLastClickedIndex;
-            if (rowEl && rowEl.dataset && rowEl.dataset.noticeIndex != null) {
-                const n = parseInt(rowEl.dataset.noticeIndex, 10);
-                if (Number.isFinite(n)) idx = n;
-            }
-            if (!Number.isInteger(idx) || idx < 0) return;
-            this._noticeEditingIndex = idx;
-            this.fillNoticePanel();
+            this.editNoticeItemFromNode(e && e.target);
         });
-        mgr.appendChild(list);
+        body.appendChild(list);
+        // 触屏：移动 WebView 基本不派发 dblclick，双击条目同样改不了。按 pointerup 时间差自己认连点：
+        // 按下→松手位移 >12px 视为滚动条目列表，不计数；✎ / 🗑 / 编辑表单内的点击不参与。
+        // 监听挂在列表容器上，条目重画（选中态、开始编辑）都不会丢。
+        let itemTapAt = 0, itemTapX = 0, itemTapY = 0, itemDownX = 0, itemDownY = 0, itemDownOk = false;
+        list.onpointerdown = (e) => {
+            if (!e || (e.pointerType !== 'touch' && e.pointerType !== 'pen')) { itemDownOk = false; return; }
+            itemDownOk = true;
+            itemDownX = Number(e.clientX) || 0;
+            itemDownY = Number(e.clientY) || 0;
+        };
+        list.onpointerup = (e) => {
+            if (!e || !itemDownOk) return;
+            itemDownOk = false;
+            const t = e && e.target;
+            if (t && t.closest && (t.closest('.bible-proj-notice-item-ops') || t.closest('.bible-proj-notice-item-form'))) return;
+            const x = Number(e.clientX) || 0, y = Number(e.clientY) || 0;
+            if (Math.abs(x - itemDownX) > 12 || Math.abs(y - itemDownY) > 12) return;
+            const now = Date.now();
+            if (!itemTapAt || now - itemTapAt >= 400 ||
+                Math.abs(x - itemTapX) >= 32 || Math.abs(y - itemTapY) >= 32) {
+                itemTapAt = now; itemTapX = x; itemTapY = y;
+                return;
+            }
+            itemTapAt = 0;
+            this.editNoticeItemFromNode(t);
+        };
+        mgr.appendChild(body);
         // 展开时通告区临时增高容纳管理界面，收起后恢复设置里的高度。
         // all 模式下由被双击的那个区决定用哪一侧高度，不能只看全局模式。
         const key = zone === self.noticeBottomZoneEl ? 'noticeBottomZoneHeight' : 'noticeTopZoneHeight';
