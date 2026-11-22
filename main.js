@@ -1593,6 +1593,18 @@ function parseChapterRangeRef(text, pos, book) {
 
 // ==================== 更新日志内容 ====================
 const CHANGELOG_CONTENT = {
+    '6.3.1': `## [6.3.1] - 2026-11-23
+
+### 改进
+- **图表投影让开手机 / 平板状态栏**：iPhone 灵动岛与刘海、iPad 顶部状态栏、安卓状态栏、横屏左右缺口与底部手势条，图表标题和按钮不再被时间、电池、信号压住。做法与经文投影一致——按投影顶栏实际让开的距离对齐，窗口缩放、横竖屏切换、进出整屏后自动重新贴合。
+- **图表菜单按安全区计算尺寸**：不再用整屏宽度，横屏时不会伸进左右刘海；iPhone 上菜单也不会整体下移一个状态栏高度、反过来盖住入口按钮。
+- **窄屏图表顶栏更紧凑**：≤640px 允许换行、标题独占一行、按钮不小于 30px；≤380px 再压一档，关闭与翻页按钮不会被顶出屏幕。
+- **iPad 顶部状态栏兜底**：iPad 没有刘海、\`env()\` 常为 0，旧宿主也不注入安全区变量时，按设备补 24px 顶部 / 20px 底部，经文投影与图表投影都不会被顶栏压住。
+
+### 小提示
+- 移动端更新后请完全重启 Obsidian，插件才会加载新的样式与脚本。
+`,
+
     '6.3.0': `## [6.3.0] - 2026-11-23
 
 ### 新增
@@ -4070,31 +4082,48 @@ function isMobileDeviceEnv() {
     return false;
 }
 
-// 安卓状态栏兜底：Obsidian 会把真实状态栏高度注入 --safe-area-inset-top，
-// 但部分 WebView / 老宿主既不给这个变量，env(safe-area-inset-top) 又恒为 0，
-// 投影顶部就会被状态栏压住。CSS 已用 max() 优先读宿主变量；这里只在宿主确实
-// 没给时，往投影层写一个保守的状态栏高度（24dp），不会盖过真实 inset。
-function applyProjectionSafeAreaFallback(el, cssVar) {
+// 移动端状态栏兜底：Obsidian 通常会把真实状态栏高度注入 --safe-area-inset-top，
+// 但部分 WebView / 老宿主既不给这个变量，env(safe-area-inset-*) 又恒为 0，投影顶部
+// 就会被状态栏压住。CSS 已用 max() 优先读宿主变量；这里只在宿主确实没给时补保守值：
+//   · 安卓：状态栏约 24dp；
+//   · iPad：没有刘海，环境变量常为 0，但 iPadOS 顶栏（时间 / 电池 / Wi‑Fi）仍压着内容，
+//     高约 24pt；全面屏 iPad 底部还有 home indicator，约 20pt。
+// 图形投影的顶栏、图表菜单都按投影层 padding 计算，所以补在这里一次就都对齐。
+function applyProjectionSafeAreaFallback(el) {
     if (!el || !el.style || typeof el.style.setProperty !== 'function') return;
     const doc = el.ownerDocument || (typeof document !== 'undefined' ? document : null);
     if (!doc) return;
-    let host = 0;
-    try {
-        const win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
-        if (win && typeof win.getComputedStyle === 'function') {
+    const readInset = (name) => {
+        try {
+            const win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+            if (!win || typeof win.getComputedStyle !== 'function') return 0;
             const roots = [doc.documentElement, doc.body];
-            for (let i = 0; i < roots.length && !host; i++) {
+            for (let i = 0; i < roots.length; i++) {
                 if (!roots[i]) continue;
-                host = parseFloat(win.getComputedStyle(roots[i]).getPropertyValue('--safe-area-inset-top')) || 0;
+                const v = parseFloat(win.getComputedStyle(roots[i]).getPropertyValue(name)) || 0;
+                if (v > 0) return v;
             }
-        }
-    } catch (err) { /* 忽略：取不到就走兜底 */ }
-    if (host > 0) return;                 // 宿主已给出真实 inset，CSS 的 max() 会取更大值
+        } catch (err) { /* 忽略：取不到就走兜底 */ }
+        return 0;
+    };
+    const hostTop = readInset('--safe-area-inset-top');
+    const hostBottom = readInset('--safe-area-inset-bottom');
+    let ua = '';
+    let touchPoints = 0;
     try {
-        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
-        if (!/Android/i.test(ua)) return; // 只兜安卓；iOS 的 env() 本来就有效
-    } catch (err) { return; }
-    el.style.setProperty(cssVar, '24px');
+        ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+        touchPoints = (typeof navigator !== 'undefined' && navigator.maxTouchPoints) || 0;
+    } catch (err) { /* 忽略 */ }
+    if (hostTop <= 0) {
+        if (/Android/i.test(ua)) el.style.setProperty('--bible-android-inset-top', '24px');
+        // iPadOS 13 起「桌面版」UA 是 Macintosh + 多触点，必须两条一起判。
+        else if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && touchPoints > 1)) {
+            el.style.setProperty('--bible-ipad-inset-top', '24px');
+        }
+    }
+    if (hostBottom <= 0 && (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && touchPoints > 1))) {
+        el.style.setProperty('--bible-ipad-inset-bottom', '20px');
+    }
 }
 
 // ==================== 与 Hymns 插件的投影联动 ====================
@@ -4845,8 +4874,8 @@ class BibleProjectionOverlay {
         if (this._measureClockSpace) this._measureClockSpace();
         // 挂载后立刻套用上次记住的主题：类名决定 CSS 变量，内联样式里的 var(...) 随之解析
         this.applyTheme(this.themeId, true);
-        // 安卓状态栏兜底必须在挂载后调用（要读宿主的 computed 变量）
-        applyProjectionSafeAreaFallback(this.overlay, '--bible-android-inset-top');
+        // 各自的状态栏兜底必须在挂载后调用（要读宿主的 computed 变量）
+        applyProjectionSafeAreaFallback(this.overlay);
         if (this.plugin) this.plugin.currentProjection = this;
         // 点击注解 / 串珠面板以外的任何区域即收起已展开的面板。
         // 上标（sup）自身的点击处理器里调了 stopPropagation，不会冒泡到这里，
@@ -6131,6 +6160,70 @@ class BibleProjectionOverlay {
         hits.sort((a, b) => String(a.path).localeCompare(String(b.path)));
         return hits[0] || null;
     }
+    // 投影层把顶部状态栏 / 刘海 / 横屏缺口 / 底部手势条让成 padding；
+    // 图表菜单的 absolute 原点在 padding 内边缘，所以必须先拿到这块「安全可用区」，
+    // 既用于换算本地坐标（不偏移一个 padding），也用于夹紧边界（不越回安全区）。
+    chartSafeBox() {
+        const fallback = {
+            left: 0, top: 0,
+            width: (typeof window !== 'undefined' && window.innerWidth) || 1024,
+            height: (typeof window !== 'undefined' && window.innerHeight) || 768
+        };
+        const el = this.overlay;
+        if (!el || typeof el.getBoundingClientRect !== 'function') return fallback;
+        let rect = null;
+        try { rect = el.getBoundingClientRect(); } catch (err) { return fallback; }
+        if (!rect) return fallback;
+        let cs = null;
+        try { cs = (typeof getComputedStyle === 'function') ? getComputedStyle(el) : null; } catch (err) { cs = null; }
+        const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+        const padL = cs ? num(cs.paddingLeft) : 0;
+        const padT = cs ? num(cs.paddingTop) : 0;
+        const padR = cs ? num(cs.paddingRight) : 0;
+        const padB = cs ? num(cs.paddingBottom) : 0;
+        return {
+            left: (rect.left || 0) + padL,
+            top: (rect.top || 0) + padT,
+            width: Math.max(0, (rect.width || fallback.width) - padL - padR),
+            height: Math.max(0, (rect.height || fallback.height) - padT - padB)
+        };
+    }
+    // ⚠️ 绝对定位的图表查看层不认投影层的 padding（它的包含块是 padding box），
+    // 所以除了 CSS 的 --bp-safe-* 之外，这里再按「经文投影顶栏 / 底栏的真实位置」写一次内联偏移：
+    // 顶栏是流内子元素，它让开多少，图表层就让开多少 —— 安卓状态栏、iPad 顶栏、刘海
+    // 这些宿主差异全由实测值兜住，不再依赖 env() / 宿主变量是否生效。
+    applyChartSafeInsets(view) {
+        const el = view || this._chartViewEl;
+        if (!el || !el.style) return;
+        const overlay = this.overlay;
+        if (!overlay || typeof overlay.getBoundingClientRect !== 'function') return;
+        let box = null;
+        try { box = overlay.getBoundingClientRect(); } catch (err) { return; }
+        if (!box || !box.height) return;
+        const rectOf = (sel) => {
+            try {
+                const node = overlay.querySelector(sel);
+                return node && typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+            } catch (err) { return null; }
+        };
+        const topBar = rectOf('.bible-proj-topbar');
+        const bottomBar = rectOf('.bible-proj-bottombar');
+        let top = 0, left = 0, right = 0, bottom = 0;
+        if (topBar && topBar.height > 0) {
+            top = Math.max(0, Math.round(topBar.top - box.top));
+            left = Math.max(0, Math.round(topBar.left - box.left));
+            right = Math.max(0, Math.round(box.right - topBar.right));
+        }
+        if (bottomBar && bottomBar.height > 0) {
+            bottom = Math.max(0, Math.round(box.bottom - bottomBar.bottom));
+        }
+        // 量不出来（顶栏隐藏 / 宿主没布局）时保留 CSS 的结果，别用 0 覆盖掉
+        if (!top && !left && !right && !bottom) return;
+        el.style.top = top + 'px';
+        el.style.right = right + 'px';
+        el.style.bottom = bottom + 'px';
+        el.style.left = left + 'px';
+    }
     showChartMenu(anchorEl) {
         const overlay = this.overlay;
         if (!overlay || this._closed) return null;
@@ -6178,9 +6271,20 @@ class BibleProjectionOverlay {
         try {
             const r = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : null;
             const w = menu.offsetWidth || 260, h = menu.offsetHeight || 320;
-            const vw = window.innerWidth || 1024, vh = window.innerHeight || 768;
-            menu.style.left = Math.max(8, Math.min(vw - w - 8, r ? r.left : vw / 2 - w / 2)) + 'px';
-            menu.style.top = Math.max(8, r ? r.top - h - 8 : vh / 2 - h / 2) + 'px';
+            const box = this.chartSafeBox();
+            const maxX = Math.max(8, box.width - w - 8);
+            const maxY = Math.max(8, box.height - h - 8);
+            const wantX = r ? r.left - box.left : box.width / 2 - w / 2;
+            let wantY = r ? r.top - box.top - h - 8 : box.height / 2 - h / 2;
+            // 手机上图表的入口按钮就在顶栏，上方放不下整份菜单（顶部安全区已经让开），
+            // 这时改为从按钮下方展开，否则夹紧后会反过来盖住按钮与标题。
+            if (r && wantY < 8) {
+                const anchorBottom = Number.isFinite(r.bottom) ? r.bottom : (r.top || 0) + (r.height || 0);
+                const below = anchorBottom - box.top + 8;
+                if (below + h <= box.height - 8) wantY = below;
+            }
+            menu.style.left = Math.max(8, Math.min(maxX, wantX)) + 'px';
+            menu.style.top = Math.max(8, Math.min(maxY, wantY)) + 'px';
         } catch (err) { /* 定位失败交给 CSS 兜底 */ }
         // 拖选文字时松手落在面板外不能被当成「点了外面」：只认手势起点在菜单外。
         let pressInside = false;
@@ -6516,12 +6620,16 @@ class BibleProjectionOverlay {
         // 否则 PDF 的 contain 尺寸会停留在旧舞台大小，放大后位置偏、看不全。
         const onResize = () => {
             if (!self._chartViewEl) return;
+            // 窗口缩放 / 横竖屏切换 / 进出整屏后安全区会变，先重新贴合再算适配
+            self.applyChartSafeInsets();
             if (self._chartIsPdf) self.refreshChartPdfFit();
             else self.applyChartZoom();
         };
         if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', onResize);
+        if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('fullscreenchange', onResize);
         self._chartResizeCleanup = () => {
             if (typeof window !== 'undefined' && window.removeEventListener) window.removeEventListener('resize', onResize);
+            if (typeof document !== 'undefined' && document.removeEventListener) document.removeEventListener('fullscreenchange', onResize);
         };
     }
 
@@ -6827,6 +6935,8 @@ class BibleProjectionOverlay {
         view.appendChild(stage);
         this.overlay.appendChild(view);
         this._chartViewEl = view;
+        // 先按经文投影让开的距离把查看层摆好，再算适配尺寸，PDF 一屏一页才不会偏
+        this.applyChartSafeInsets(view);
         this.applyChartZoom();
         this.bindChartGestures(stage);
         setTimeout(() => {

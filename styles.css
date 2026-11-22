@@ -4670,12 +4670,26 @@ body .bible-projection-fullscreen .bible-proj-history-empty {
    padding（并改成 border-box）才能把顶栏推到状态栏下方；标签页模式不适用。
    ⚠️ 安卓 WebView 里 env(safe-area-inset-*) 常返回 0（宿主没有 viewport-fit=cover），
    但 Obsidian 会把真实状态栏高度注入 --safe-area-inset-*：两者取大者才能不被遮挡。
-   老版本连变量都不给时，main.js 会写 --bible-android-inset-top 作为最后兜底。 */
+   ⚠️ iPad 没有刘海，env(safe-area-inset-top) 一般为 0，但 iPadOS 顶栏（时间 / 电池）
+   仍压在内容上；老版本连变量都不给时，main.js 会写 --bible-android-inset-top（安卓）
+   或 --bible-ipad-inset-top / -bottom（iPad 顶栏与 home indicator）作为最后兜底。
+   安全区同时导出成 --bp-safe-*：绝对定位子元素（图表查看层里的菜单）要按这块
+   「可用区」算本地坐标，否则会偏移一个 padding 的距离、顶到灵动岛下面。 */
+.bible-projection-fullscreen {
+    --bp-safe-top: 0px;
+    --bp-safe-right: 0px;
+    --bp-safe-bottom: 0px;
+    --bp-safe-left: 0px;
+}
 .bible-projection-fullscreen:not(.bible-proj-in-tab) {
-    padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px), var(--bible-android-inset-top, 0px));
-    padding-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
-    padding-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+    --bp-safe-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px), var(--bible-android-inset-top, 0px), var(--bible-ipad-inset-top, 0px));
+    --bp-safe-right: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+    --bp-safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px), var(--bible-ipad-inset-bottom, 0px));
+    --bp-safe-left: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+    padding-top: var(--bp-safe-top);
+    padding-right: var(--bp-safe-right);
+    padding-bottom: var(--bp-safe-bottom);
+    padding-left: var(--bp-safe-left);
     box-sizing: border-box;
     max-height: 100dvh;
 }
@@ -7654,9 +7668,13 @@ body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-edi
 .bible-proj-blank-btn.active { color: #000; background: var(--bp-outline, #ffe14a); }
 
 /* 图表菜单与图表查看层 */
+/* ⚠️ 尺寸一律相对「安全区内的可用区」计算，不要用 100vw：手机横屏时左右刘海
+   各占 ~47px，100vw 会把菜单推到圆角 / 刘海下面；顶部与底部同样由安全区让开。 */
 .bible-proj-chart-menu {
-    position: absolute; z-index: 90; width: 320px; max-width: calc(100vw - 16px);
-    max-height: 60vh; overflow-y: auto; padding: 6px;
+    position: absolute; z-index: 90;
+    width: min(320px, calc(100% - 16px));
+    max-height: min(60vh, calc(100% - 16px)); overflow-y: auto; padding: 6px;
+    box-sizing: border-box;
     background: var(--bp-menu-bg); color: var(--bp-menu-fg);
     border: 1px solid var(--bp-menu-border); border-radius: 8px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
@@ -7687,8 +7705,10 @@ body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-edi
     padding: 2px 8px; font-size: 12px; line-height: 1.4;
 }
 .bible-proj-chart-switch-menu {
-    position: absolute; z-index: 98; width: 340px; max-width: calc(100vw - 16px);
-    max-height: 60vh; overflow-y: auto; padding: 6px;
+    position: absolute; z-index: 98;
+    width: min(340px, calc(100% - 16px));
+    max-height: min(60vh, calc(100% - 16px)); overflow-y: auto; padding: 6px;
+    box-sizing: border-box;
     background: var(--bp-menu-bg); color: var(--bp-menu-fg);
     border: 1px solid var(--bp-menu-border); border-radius: 8px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
@@ -7707,8 +7727,15 @@ body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-edi
 .bible-proj-chart-switch-item.is-current { background: var(--bp-btn-hover-bg); }
 .bible-proj-chart-switch-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .bible-proj-chart-switch-mark { flex: 0 0 auto; font-size: 11px; opacity: .65; }
+/* ⚠️ 绝对定位元素的包含块是投影层的 padding box，padding 只会推开流内子元素，
+   对 left/top/right/bottom:0 完全无效 —— 图表查看层必须自己按安全区让位，
+   否则 iPhone 灵动岛 / 刘海、iPad 顶栏（时间、电池）、安卓状态栏都会压住图表顶栏标题。
+   这里用的 --bp-safe-* 与投影层 padding 同源（env / 宿主变量 / 设备兜底取 max），
+   标签页模式下为 0，跟随标签内容区。 */
 .bible-proj-chart-view {
-    position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 95;
+    position: absolute; z-index: 95;
+    top: var(--bp-safe-top, 0px); right: var(--bp-safe-right, 0px);
+    bottom: var(--bp-safe-bottom, 0px); left: var(--bp-safe-left, 0px);
     display: flex; flex-direction: column; background: var(--bp-bg); color: var(--bp-fg);
 }
 .bible-proj-chart-view-head {
@@ -7775,10 +7802,28 @@ body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-edi
     background: rgba(0, 0, 0, .8); color: #fff; font-size: 14px; text-align: center;
     z-index: 3;
 }
-@media (max-width: 420px) {
-    .bible-proj-chart-view-head { flex-wrap: wrap; gap: 4px 8px; padding: 6px 8px; }
+/* 窄屏（手机竖屏 / 横屏 / 小窗）：顶栏放不下「标题＋切换＋缩放＋翻页＋关闭」一行，
+   允许换行并把控件压紧，避免因一行溢出把关闭 / 翻页按钮顶到刘海里。
+   头部高度直接吃掉舞台高度，横屏时尤其宝贵，所以按钮不用 44px 触控规格，
+   只保证 ≥30px 且留出间隙，减少误触又不至于占满一屏。 */
+@media (max-width: 640px) {
+    .bible-proj-chart-view-head { flex-wrap: wrap; gap: 4px 6px; padding: 6px 10px; font-size: 13px; }
     .bible-proj-chart-view-head > span { flex-basis: 100%; }
-    .bible-proj-chart-zoom-ctl { margin-left: auto; }
+    .bible-proj-chart-zoom-ctl { margin-left: auto; gap: 2px; }
+    .bible-proj-chart-zoom-btn,
+    .bible-proj-chart-switch-btn,
+    .bible-proj-chart-close { min-height: 30px; padding: 3px 7px; font-size: 12px; }
+    .bible-proj-chart-zoom-value { min-width: 42px; }
+    .bible-proj-chart-page-ctl { margin-left: 2px; padding-left: 6px; gap: 2px; }
+    .bible-proj-chart-page-value { min-width: 48px; }
+}
+@media (max-width: 380px) {
+    /* 极窄机（安卓 360dp）：再省掉标题的整行占位，让舞台多留 20px 高度 */
+    .bible-proj-chart-view-head { gap: 3px 4px; padding: 5px 8px; }
+    .bible-proj-chart-zoom-btn,
+    .bible-proj-chart-switch-btn,
+    .bible-proj-chart-close { padding: 2px 6px; }
+    .bible-proj-chart-zoom-value { min-width: 36px; }
 }
 
 /* 设置面板里的图表清单 */
