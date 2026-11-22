@@ -1147,6 +1147,11 @@ body .bible-projection-fullscreen textarea::placeholder {
     font-size: 13px;
 }
 .bible-proj-settings-clickable { cursor: pointer; }
+.bible-proj-settings-select {
+    max-width: 150px; padding: 3px 6px; font: inherit; font-size: 12px;
+    color: var(--bp-fg); background: var(--bp-box-bg);
+    border: 1px solid var(--bp-btn-border); border-radius: 5px;
+}
 .bible-proj-settings-check {
     flex: 0 0 auto;
     margin: 2px 0 0;
@@ -7633,6 +7638,195 @@ body .bible-projection-fullscreen .bible-proj-theme-editor .bible-proj-theme-edi
         border-bottom: 1px solid var(--bp-menu-border, #555555);
     }
     .bible-proj-theme-editor-list { max-height: 110px; }
+}
+
+/* ===== 投影图表 / 黑屏 ===== */
+/* 黑屏遮罩：内容区那份只盖经文，整屏那份盖住工具栏；都留在投影层内部 */
+.bible-proj-blank-content {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+    background: #000; z-index: 30; cursor: pointer; touch-action: none;
+}
+.bible-proj-blank-full {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+    background: #000; z-index: 10000; cursor: pointer; touch-action: none;
+}
+.bible-proj-blank-content.is-hidden, .bible-proj-blank-full.is-hidden { display: none; }
+.bible-proj-blank-btn.active { color: #000; background: var(--bp-outline, #ffe14a); }
+
+/* 图表菜单与图表查看层 */
+.bible-proj-chart-menu {
+    position: absolute; z-index: 90; width: 320px; max-width: calc(100vw - 16px);
+    max-height: 60vh; overflow-y: auto; padding: 6px;
+    background: var(--bp-menu-bg); color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border); border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+    -webkit-app-region: no-drag; app-region: no-drag;
+}
+.bible-proj-chart-menu-title {
+    padding: 6px 8px; font-size: 12px; opacity: .7;
+    border-bottom: 1px solid var(--bp-menu-border); margin-bottom: 4px;
+}
+.bible-proj-chart-menu-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 7px 8px; border: 0; border-radius: 5px; text-align: left;
+    background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+}
+.bible-proj-chart-menu-item:hover { background: var(--bp-btn-hover-bg); }
+.bible-proj-chart-menu-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.bible-proj-chart-menu-mark { flex: 0 0 auto; font-size: 11px; opacity: .65; }
+/* 投影图表菜单 / 切换图表菜单：默认与额外图表之间的分隔说明 */
+.bible-proj-chart-menu-divider {
+    margin: 6px 4px 4px; padding: 5px 6px 0;
+    border-top: 1px solid var(--bp-menu-border);
+    font-size: 11px; opacity: .7; white-space: nowrap;
+}
+/* 图表查看层里的切换菜单：挂在查看层内部，盖在舞台上但不妨碍窗口拖动区 */
+.bible-proj-chart-switch-btn {
+    flex: 0 0 auto; border: 1px solid var(--bp-btn-border); border-radius: 5px;
+    background: transparent; color: var(--bp-btn-fg); cursor: pointer;
+    padding: 2px 8px; font-size: 12px; line-height: 1.4;
+}
+.bible-proj-chart-switch-menu {
+    position: absolute; z-index: 98; width: 340px; max-width: calc(100vw - 16px);
+    max-height: 60vh; overflow-y: auto; padding: 6px;
+    background: var(--bp-menu-bg); color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border); border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+    -webkit-app-region: no-drag; app-region: no-drag;
+}
+.bible-proj-chart-switch-title {
+    padding: 6px 8px; font-size: 12px; opacity: .7;
+    border-bottom: 1px solid var(--bp-menu-border); margin-bottom: 4px;
+}
+.bible-proj-chart-switch-item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 7px 8px; border: 0; border-radius: 5px; text-align: left;
+    background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+}
+.bible-proj-chart-switch-item:hover { background: var(--bp-btn-hover-bg); }
+.bible-proj-chart-switch-item.is-current { background: var(--bp-btn-hover-bg); }
+.bible-proj-chart-switch-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.bible-proj-chart-switch-mark { flex: 0 0 auto; font-size: 11px; opacity: .65; }
+.bible-proj-chart-view {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 95;
+    display: flex; flex-direction: column; background: var(--bp-bg); color: var(--bp-fg);
+}
+.bible-proj-chart-view-head {
+    display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+    padding: 8px 14px; font-size: 14px; background: var(--bp-bar-bg);
+    border-bottom: 1px solid var(--bp-bar-border);
+    /* 图表层盖住了原来的顶栏拖动区，这里接替它，让窗口仍可拖动 */
+    -webkit-app-region: drag; app-region: drag;
+}
+.bible-proj-chart-view-head button,
+.bible-proj-chart-view-head select,
+.bible-proj-chart-view-head input { -webkit-app-region: no-drag; app-region: no-drag; }
+.bible-proj-chart-view-head > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bible-proj-chart-close {
+    border: 1px solid var(--bp-btn-border); border-radius: 5px;
+    background: transparent; color: var(--bp-btn-fg); cursor: pointer; padding: 2px 10px;
+}
+/* 缩放控件与手势舞台：iframe/image 都不接指针事件，统一由 stage 处理滚轮 / 捏合 / 拖动 */
+.bible-proj-chart-zoom-ctl { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.bible-proj-chart-zoom-btn {
+    border: 1px solid var(--bp-btn-border); border-radius: 5px;
+    background: transparent; color: var(--bp-btn-fg); cursor: pointer;
+    padding: 2px 8px; font-size: 12px; line-height: 1.4;
+}
+.bible-proj-chart-zoom-value { min-width: 46px; text-align: center; font-size: 12px; opacity: .85; }
+.bible-proj-chart-page-ctl {
+    display: flex; align-items: center; gap: 4px; flex: 0 0 auto;
+    margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--bp-btn-border);
+}
+.bible-proj-chart-page-value { min-width: 54px; text-align: center; font-size: 12px; opacity: .85; }
+.bible-proj-chart-stage {
+    position: relative; flex: 1; min-height: 0; overflow: hidden;
+    touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.bible-proj-chart-stage:active { cursor: grabbing; }
+.bible-proj-chart-stage:focus { outline: none; }
+.bible-proj-chart-zoom {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+    transform-origin: 0 0; will-change: transform;
+}
+/* PDF 插件会绕过 iframe 的 pointer-events 吞掉滚轮 / 焦点，盖一层透明面板统一接手势 */
+.bible-proj-chart-shield {
+    position: absolute; inset: 0; z-index: 2;
+    background: transparent; outline: none; touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}
+.bible-proj-chart-frame, .bible-proj-chart-image {
+    display: block; width: 100%; height: 100%; border: 0;
+    background: var(--bp-bg); pointer-events: none; -webkit-user-drag: none;
+}
+.bible-proj-chart-image { object-fit: contain; }
+/* PDF 由 pdf.js 绘到 canvas：整页 contain 居中，一屏一页；放大后超出部分靠舞台拖动查看。 */
+.bible-proj-chart-zoom.is-pdf {
+    display: flex; align-items: center; justify-content: center;
+}
+.bible-proj-chart-pdf-canvas {
+    display: block; flex: 0 0 auto; max-width: none; border: 0;
+    background: #fff; box-shadow: 0 4px 24px rgba(0, 0, 0, .35);
+    pointer-events: none; -webkit-user-drag: none;
+}
+.bible-proj-chart-pdf-error {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    max-width: 80%; padding: 12px 16px; border-radius: 8px;
+    background: rgba(0, 0, 0, .8); color: #fff; font-size: 14px; text-align: center;
+    z-index: 3;
+}
+@media (max-width: 420px) {
+    .bible-proj-chart-view-head { flex-wrap: wrap; gap: 4px 8px; padding: 6px 8px; }
+    .bible-proj-chart-view-head > span { flex-basis: 100%; }
+    .bible-proj-chart-zoom-ctl { margin-left: auto; }
+}
+
+/* 设置面板里的图表清单 */
+.bible-proj-settings-chart-list {
+    max-height: 190px; overflow-y: auto; margin: 4px 0;
+    border-top: 1px solid var(--bp-menu-border);
+}
+.bible-proj-settings-chart-row {
+    display: flex; align-items: center; gap: 6px; padding: 5px 2px;
+    border-bottom: 1px solid var(--bp-menu-border); font-size: 12px;
+}
+.bible-proj-settings-chart-divider {
+    display: flex; align-items: center; gap: 8px; padding: 8px 2px 5px;
+}
+.bible-proj-settings-chart-divider-line {
+    flex: 1; height: 1px; background: var(--bp-menu-border);
+}
+.bible-proj-settings-chart-divider-text {
+    flex: 0 0 auto; font-size: 11px; opacity: .7; white-space: nowrap;
+}
+.bible-proj-settings-chart-name { flex: 1 1 50%; min-width: 0; overflow-wrap: anywhere; }
+.bible-proj-settings-chart-status {
+    flex: 1 1 40%; min-width: 0; opacity: .6; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+}
+.bible-proj-settings-chart-status.is-found { opacity: .85; }
+.bible-proj-settings-chart-fixed {
+    flex: 0 0 auto; font-size: 11px; opacity: .6;
+    padding: 0 4px; border: 1px solid var(--bp-menu-border); border-radius: 4px;
+}
+.bible-proj-settings-chart-ops { display: flex; gap: 2px; flex: 0 0 auto; }
+.bible-proj-settings-chart-op {
+    border: 1px solid var(--bp-btn-border); border-radius: 4px;
+    background: transparent; color: var(--bp-btn-fg); cursor: pointer;
+    padding: 1px 6px; font-size: 12px;
+}
+.bible-proj-settings-chart-op:disabled { opacity: .35; cursor: default; }
+.bible-proj-settings-chart-input {
+    flex: 1; min-width: 0; padding: 5px 7px; font: inherit; font-size: 12px;
+    background: var(--bp-menu-bg); color: var(--bp-menu-fg);
+    -webkit-text-fill-color: var(--bp-menu-fg);
+    border: 1px solid var(--bp-menu-border); border-radius: 5px;
+    -webkit-app-region: no-drag; app-region: no-drag;
+}
+.bible-proj-settings-chart-add {
+    flex: 0 0 auto; padding: 5px 10px; font: inherit; font-size: 12px;
+    color: var(--bp-outline, var(--bp-btn-fg)); border: 1px solid var(--bp-outline, var(--bp-btn-border));
+    border-radius: 5px; background: transparent; cursor: pointer;
 }
 
 /* （注：内容由AI生成） */
