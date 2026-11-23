@@ -11,9 +11,11 @@
  * 做法：
  *   把两份 pdf.js 源码以 JSON 字符串字面量内联进 main.js 的一个函数体内
  *   （V8 对未调用的函数做懒解析，模块加载时不会创建这两个大字符串，
- *    只有插件目录确实缺 lib/ 时才还原，因此不拖慢启动）。
- *   运行时 loadChartPdfJs() 先尝试 lib/，读不到才回退到这份内联副本，
- *   并在隔离作用域里执行，避免覆盖 Obsidian 自带 PDF 阅读器的 window.pdfjsLib。
+ *    首次打开图表时才还原）。
+ *   运行时 loadChartPdfJs() 只执行这份内联副本，并在隔离作用域里求值，
+ *   避免覆盖 Obsidian 自带 PDF 阅读器的 window.pdfjsLib。
+ *   ⚠️ 不再从插件目录 lib/ 注入 <script>：官方审核把运行时创建脚本元素判为错误。
+ *   lib/ 下的两个文件因此只是构建期源文件。
  *
  * 用法：node scripts/embed-pdfjs.mjs
  * 幂等：重复执行只会替换标记之间的内容，不会重复追加。
@@ -34,7 +36,41 @@ const ANCHOR = 'module.exports = BibleSearchPlugin;';
 /** JSON 转义成可直接放进 JS 的字符串字面量（并规避 U+2028/2029 的兼容性问题） */
 const esc = (s) => JSON.stringify(s).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
-const mainSrc = fs.readFileSync(LIB_MAIN, 'utf8');
+/**
+ * 抹掉 pdf.js 里自带的 loadScript()。
+ * pdf.js 的 display/utils 导出一个 loadScript()，函数体里写着 document.createElement("script")；
+ * 它只服务于 PDF 表单 JS / XFA 那类场景，我们只渲染页面，永远不会调用。
+ * 但内联进 main.js 后，官方审核的静态扫描仍然会把这段文本算作「运行时创建脚本元素」，
+ * 于是把函数体换成直接 reject 的桩：行为不变，文本里不再出现脚本注入。
+ * 找不到时返回原样（不因版本差异中断构建），只提示。
+ */
+function stubPdfjsLoadScript(src, label) {
+    const KEY = 'loadScript=function loadScript(';
+    const at = src.indexOf(KEY);
+    if (at < 0) {
+        console.log(`[embed-pdfjs] 提示：${label} 里没有 loadScript 导出，跳过。`);
+        return src;
+    }
+    const brace = src.indexOf('{', at);
+    if (brace < 0) return src;
+    let depth = 0;
+    let end = -1;
+    for (let i = brace; i < src.length; i++) {
+        const ch = src[i];
+        if (ch === '{') depth += 1;
+        else if (ch === '}') {
+            depth -= 1;
+            if (depth === 0) { end = i; break; }
+        }
+    }
+    if (end < 0) return src;
+    const body = src.slice(brace, end + 1);
+    if (!body.includes('createElement("script")')) return src;
+    const stub = '{return Promise.reject(new Error("loadScript is disabled in this build"))}';
+    return src.slice(0, brace) + stub + src.slice(end + 1);
+}
+
+let mainSrc = fs.readFileSync(LIB_MAIN, 'utf8');
 const workerSrc = fs.readFileSync(LIB_WORKER, 'utf8');
 const libVersion = (mainSrc.match(/version\s*=\s*"([\d.]+)"/) || [])[1] || 'unknown';
 
@@ -42,12 +78,20 @@ if (!mainSrc.includes('pdfjsLib')) {
     console.error('[embed-pdfjs] 警告：lib/pdf.min.js 里没找到 pdfjsLib，确认文件是否正确。');
 }
 
+mainSrc = stubPdfjsLoadScript(mainSrc, 'lib/pdf.min.js');
+const leftover = [mainSrc, workerSrc].filter((s) => s.includes('createElement("script")')).length;
+if (leftover) {
+    console.error('[embed-pdfjs] 失败：内联副本里仍有 createElement("script")，官方审核会判错。');
+    process.exit(1);
+}
+
 const block = `${START}（由 scripts/embed-pdfjs.mjs 生成，请勿手改）===== */
 /* 内联 PDF.js v${libVersion}（Apache-2.0，见 https://github.com/mozilla/pdf.js）。
    内联原因：Obsidian 官方插件市场只分发 main.js / styles.css / manifest.json，
    插件目录里没有 lib/，依赖必须打包进 main.js（规范亦禁止运行时下载远程代码）。
    两份源码置于函数体内，由 V8 懒解析：模块加载时不会创建这两段大字符串，
-   只有插件目录确实缺 lib/ 时才还原，避免拖慢启动。 */
+   首次打开图表时才还原，避免拖慢启动。pdf.js 自带的 loadScript()（会创建
+   script 元素）已在构建时替换为桩，官方审核不会判「动态注入脚本」。 */
 let __BIBLE_INLINE_PDFJS = null;
 function bibleInlinePdfjs() {
     if (!__BIBLE_INLINE_PDFJS) {

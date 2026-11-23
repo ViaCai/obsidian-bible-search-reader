@@ -2739,7 +2739,6 @@ body .bible-projection-fullscreen textarea::placeholder {
 }
 .bible-proj-text-para {
     margin: 0 0 0.9em 0;
-    text-indent: 0;
 }
 .bible-proj-text-para:last-child {
     margin-bottom: 0;
@@ -2837,7 +2836,6 @@ body .bible-projection-fullscreen textarea::placeholder {
 }
 .bible-proj-note-para {
     margin: 0 0 0.85em 0;
-    text-indent: 0;
 }
 .bible-proj-note-para:last-child {
     margin-bottom: 0;
@@ -4793,8 +4791,6 @@ body.is-mobile .bible-proj-tool-btn[data-action="toggle-desktop-full"] {
     --bp-scroll-thumb: rgba(255,255,255,0.45);
     --bp-scroll-thumb-hover: rgba(255,255,255,0.68);
     --bp-scroll-track: rgba(255,255,255,0.08);
-    scrollbar-width: thin;
-    scrollbar-color: var(--bp-scroll-thumb) var(--bp-scroll-track);
 }
 /* 亮色模式：其余元素沿用上面原有的 .light-mode 规则，这里补齐内联样式引用的变量，
    并把滚动条改成深灰——浏览器默认的浅灰滑块在白底上几乎看不见（反馈的看不清问题）。 */
@@ -5651,7 +5647,6 @@ body .bible-projection-fullscreen.bp-theme-blue.bp-theme-crystal .bible-proj-par
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
-    scrollbar-color: var(--bp-scroll-thumb) var(--bp-scroll-track);
     -webkit-app-region: no-drag;
 }
 .bible-projection-fullscreen .bible-proj-picker-books { flex: 1 1 62%; }
